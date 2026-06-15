@@ -77,9 +77,10 @@ export async function initDb(): Promise<void> {
       recipient_id TEXT NOT NULL,
       body TEXT NOT NULL,
       read BOOLEAN DEFAULT false,
-      created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-      INDEX idx_recipient (recipient_id),
-      INDEX idx_conversation (sender_id, recipient_id)
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now()
     );
   `);
+
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_recipient ON messages (recipient_id);`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_conversation ON messages (sender_id, recipient_id);`);
 }
