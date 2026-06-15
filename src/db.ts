@@ -17,6 +17,8 @@ export async function initDb(): Promise<void> {
     );
   `);
 
+  await pool.query(`ALTER TABLE push_subscriptions ADD COLUMN IF NOT EXISTS user_email TEXT;`);
+
   await pool.query(`
     CREATE TABLE IF NOT EXISTS content_schedule (
       date DATE PRIMARY KEY,
