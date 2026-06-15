@@ -2,7 +2,8 @@ import webpush from "web-push";
 import { pool } from "./db";
 import { verifyMembership } from "./membership";
 
-const LOGO_URL = "https://lorettabates.com/wp-content/uploads/2025/11/WELL-Logo-white.png";
+const LOGO_URL = "https://app.lorettabates.com/icons/notification-icon.png";
+const BADGE_URL = "https://app.lorettabates.com/icons/notification-badge.png";
 const BRAND_COLOR = "#0191CE";
 
 webpush.setVapidDetails(
@@ -23,7 +24,7 @@ function buildPayload(payload: NotificationPayload): string {
     title: payload.title,
     body: payload.body,
     icon: LOGO_URL,
-    badge: LOGO_URL,
+    badge: BADGE_URL,
     image: LOGO_URL,
     color: BRAND_COLOR,
     tag: payload.tag,
