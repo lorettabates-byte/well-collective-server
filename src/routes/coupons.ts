@@ -1,7 +1,12 @@
 import { Router } from "express";
 import { pool } from "../db";
 import { requireAdmin } from "../middleware/adminAuth";
-import { createWooCommerceCoupon, isWooCommerceConfigured, searchWooCommerceProducts } from "../woocommerce";
+import {
+  createWooCommerceCoupon,
+  isWooCommerceConfigured,
+  searchWooCommerceProductCategories,
+  searchWooCommerceProducts,
+} from "../woocommerce";
 
 const router = Router();
 
@@ -32,6 +37,27 @@ router.get("/wc-products", requireAdmin, async (req, res) => {
   } catch (err) {
     console.error("WooCommerce product search error:", err);
     res.status(502).json({ error: "Failed to search products on the store" });
+  }
+});
+
+// Search WooCommerce product categories by name (admin only)
+router.get("/wc-categories", requireAdmin, async (req, res) => {
+  const { search } = req.query as { search?: string };
+
+  if (!search) {
+    return res.status(400).json({ error: "search query required" });
+  }
+
+  if (!isWooCommerceConfigured()) {
+    return res.status(500).json({ error: "WooCommerce is not configured on the server" });
+  }
+
+  try {
+    const categories = await searchWooCommerceProductCategories(search);
+    res.json({ categories });
+  } catch (err) {
+    console.error("WooCommerce category search error:", err);
+    res.status(502).json({ error: "Failed to search categories on the store" });
   }
 });
 
@@ -126,18 +152,29 @@ router.post("/bulk", requireAdmin, async (req, res) => {
 
 // Generate a batch of unique random coupon codes sharing one discount config (admin only)
 router.post("/generate", requireAdmin, async (req, res) => {
-  const { count, prefix, description, discount_type, discount_value, max_uses, expires_at, restrict_product, pool: poolTag } =
-    req.body as {
-      count: number;
-      prefix?: string;
-      description?: string;
-      discount_type: "percentage" | "fixed";
-      discount_value: number;
-      max_uses?: number;
-      expires_at?: string;
-      restrict_product?: string;
-      pool?: string;
-    };
+  const {
+    count,
+    prefix,
+    description,
+    discount_type,
+    discount_value,
+    max_uses,
+    expires_at,
+    restrict_product,
+    restrict_category,
+    pool: poolTag,
+  } = req.body as {
+    count: number;
+    prefix?: string;
+    description?: string;
+    discount_type: "percentage" | "fixed";
+    discount_value: number;
+    max_uses?: number;
+    expires_at?: string;
+    restrict_product?: string;
+    restrict_category?: string;
+    pool?: string;
+  };
 
   if (!count || count < 1 || count > 500) {
     return res.status(400).json({ error: "count must be between 1 and 500" });
@@ -166,6 +203,20 @@ router.post("/generate", requireAdmin, async (req, res) => {
     } catch (err) {
       console.error("WooCommerce product search error:", err);
       return res.status(502).json({ error: "Failed to look up product on the store" });
+    }
+  }
+
+  let categoryIds: number[] | undefined;
+  if (restrict_category) {
+    try {
+      const categories = await searchWooCommerceProductCategories(restrict_category);
+      if (categories.length === 0) {
+        return res.status(400).json({ error: `No product category found on the store matching '${restrict_category}'` });
+      }
+      categoryIds = [categories[0].id];
+    } catch (err) {
+      console.error("WooCommerce category search error:", err);
+      return res.status(502).json({ error: "Failed to look up category on the store" });
     }
   }
 
@@ -208,6 +259,7 @@ router.post("/generate", requireAdmin, async (req, res) => {
           discount_type: wcDiscountType,
           description: description || undefined,
           product_ids: productIds,
+          product_categories: categoryIds,
           usage_limit: max_uses || 1,
           usage_limit_per_user: 1,
           date_expires: expires_at || undefined,
