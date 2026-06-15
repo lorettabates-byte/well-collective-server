@@ -5,6 +5,7 @@ import { initDb } from "./db";
 import authRouter from "./routes/auth";
 import contentRouter from "./routes/content";
 import couponsRouter from "./routes/coupons";
+import messagesRouter from "./routes/messages";
 import subscriptionsRouter from "./routes/subscriptions";
 import { startScheduler } from "./scheduler";
 
@@ -31,6 +32,7 @@ app.get("/health", (_req, res) => {
 
 app.use("/api/auth", authRouter);
 app.use("/api/coupons", couponsRouter);
+app.use("/api/messages", messagesRouter);
 app.use("/api", subscriptionsRouter);
 app.use("/api", contentRouter);
 

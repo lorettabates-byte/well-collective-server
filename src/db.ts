@@ -68,4 +68,17 @@ export async function initDb(): Promise<void> {
       redeemed_at TIMESTAMPTZ NOT NULL DEFAULT now()
     );
   `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS messages (
+      id SERIAL PRIMARY KEY,
+      sender_id TEXT NOT NULL,
+      recipient_id TEXT NOT NULL,
+      body TEXT NOT NULL,
+      read BOOLEAN DEFAULT false,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      INDEX idx_recipient (recipient_id),
+      INDEX idx_conversation (sender_id, recipient_id)
+    );
+  `);
 }
