@@ -12,6 +12,7 @@ export async function initDb(): Promise<void> {
       endpoint TEXT UNIQUE NOT NULL,
       p256dh TEXT NOT NULL,
       auth TEXT NOT NULL,
+      user_email TEXT,
       created_at TIMESTAMPTZ NOT NULL DEFAULT now()
     );
   `);
