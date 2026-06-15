@@ -63,6 +63,8 @@ export async function initDb(): Promise<void> {
     );
   `);
 
+  await pool.query(`ALTER TABLE coupons ADD COLUMN IF NOT EXISTS pool TEXT;`);
+
   await pool.query(`
     CREATE TABLE IF NOT EXISTS coupon_redemptions (
       id SERIAL PRIMARY KEY,

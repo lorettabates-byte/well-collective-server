@@ -126,7 +126,7 @@ router.post("/bulk", requireAdmin, async (req, res) => {
 
 // Generate a batch of unique random coupon codes sharing one discount config (admin only)
 router.post("/generate", requireAdmin, async (req, res) => {
-  const { count, prefix, description, discount_type, discount_value, max_uses, expires_at, restrict_product } =
+  const { count, prefix, description, discount_type, discount_value, max_uses, expires_at, restrict_product, pool: poolTag } =
     req.body as {
       count: number;
       prefix?: string;
@@ -136,6 +136,7 @@ router.post("/generate", requireAdmin, async (req, res) => {
       max_uses?: number;
       expires_at?: string;
       restrict_product?: string;
+      pool?: string;
     };
 
   if (!count || count < 1 || count > 500) {
@@ -218,9 +219,9 @@ router.post("/generate", requireAdmin, async (req, res) => {
       }
 
       await pool.query(
-        `INSERT INTO coupons (code, description, discount_type, discount_value, max_uses, expires_at)
-         VALUES ($1, $2, $3, $4, $5, $6)`,
-        [code, description || null, discount_type, discount_value, max_uses || 1, expires_at || null]
+        `INSERT INTO coupons (code, description, discount_type, discount_value, max_uses, expires_at, pool)
+         VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+        [code, description || null, discount_type, discount_value, max_uses || 1, expires_at || null, poolTag || null]
       );
       codes.push(code);
     }
@@ -233,6 +234,72 @@ router.post("/generate", requireAdmin, async (req, res) => {
   } catch (err) {
     console.error("Generate coupons error:", err);
     res.status(500).json({ error: "Failed to generate coupon codes" });
+  }
+});
+
+// Claim a coupon code from a pool (e.g. birthday gift options) - member-facing
+router.post("/claim", async (req, res) => {
+  const { pool: poolTag, email } = req.body as { pool?: string; email?: string };
+
+  if (!poolTag || !email) {
+    return res.status(400).json({ error: "pool and email required" });
+  }
+
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+
+    const { rows: existing } = await client.query(
+      `SELECT c.code, c.discount_type, c.discount_value
+       FROM coupon_redemptions r
+       JOIN coupons c ON c.id = r.coupon_id
+       WHERE c.pool = $1 AND r.user_id = $2
+       LIMIT 1`,
+      [poolTag, email]
+    );
+
+    if (existing.length > 0) {
+      await client.query("COMMIT");
+      return res.json({
+        code: existing[0].code,
+        discount_type: existing[0].discount_type,
+        discount_value: existing[0].discount_value,
+        alreadyClaimed: true,
+      });
+    }
+
+    const { rows: available } = await client.query(
+      `SELECT id, code, discount_type, discount_value FROM coupons
+       WHERE pool = $1 AND used_count < COALESCE(max_uses, 1)
+       ORDER BY id
+       FOR UPDATE SKIP LOCKED
+       LIMIT 1`,
+      [poolTag]
+    );
+
+    if (available.length === 0) {
+      await client.query("ROLLBACK");
+      return res.status(404).json({ error: "No codes available in this pool" });
+    }
+
+    const coupon = available[0];
+
+    await client.query("UPDATE coupons SET used_count = used_count + 1 WHERE id = $1", [coupon.id]);
+    await client.query("INSERT INTO coupon_redemptions (coupon_id, user_id) VALUES ($1, $2)", [coupon.id, email]);
+
+    await client.query("COMMIT");
+    res.json({
+      code: coupon.code,
+      discount_type: coupon.discount_type,
+      discount_value: coupon.discount_value,
+      alreadyClaimed: false,
+    });
+  } catch (err) {
+    await client.query("ROLLBACK");
+    console.error("Claim coupon error:", err);
+    res.status(500).json({ error: "Failed to claim coupon code" });
+  } finally {
+    client.release();
   }
 });
 
