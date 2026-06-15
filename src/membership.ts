@@ -1,43 +1,34 @@
-// Verify membership status against WordPress Ultimate Membership Pro
+const WORDPRESS_URL = process.env.WORDPRESS_URL || "https://lorettabates.com";
+const WELL_API_KEY = process.env.WELL_API_KEY || "";
+
+// Verify membership status against WordPress Ultimate Membership Pro via the
+// well/v1/membership-status endpoint (added to WordPress through Code Snippets).
 export async function verifyMembership(email: string): Promise<boolean> {
+  if (!WELL_API_KEY) {
+    console.warn("WELL_API_KEY not set, skipping membership verification");
+    return true; // Allow if not configured (fail open)
+  }
+
   try {
-    // Query WordPress REST API for member status
     const response = await fetch(
-      'https://lorettabates.com/wp-json/wp/v2/users',
+      `${WORDPRESS_URL}/wp-json/well/v1/membership-status?email=${encodeURIComponent(email)}`,
       {
         headers: {
-          'Authorization': `Bearer ${process.env.WORDPRESS_API_TOKEN || ''}`,
+          "X-WELL-API-KEY": WELL_API_KEY,
         },
       }
     );
 
     if (!response.ok) {
-      console.warn('Failed to verify membership, allowing notification');
-      return true; // Allow if verification fails (fallback to safe default)
+      console.warn(`Membership check failed for ${email}: HTTP ${response.status}`);
+      return true; // Allow if verification fails (fail open)
     }
 
-    const users = (await response.json()) as Array<any>;
-    const user = users.find((u: any) => u.email === email);
-
-    if (!user) {
-      return false; // User not found = not a member
-    }
-
-    // Check if user has active membership meta
-    // Ultimate Membership Pro stores membership status in user meta
-    // Check for membership_level or subscription_status
-    const membershipStatus = user.acf?.membership_status || user.meta?.membership_status || null;
-
-    if (!membershipStatus) {
-      return false; // No membership = not a member
-    }
-
-    // Check if status is "active" or similar
-    return membershipStatus.toLowerCase() === 'active';
+    const data = (await response.json()) as { active?: boolean };
+    return data.active === true;
   } catch (err) {
-    console.error('Membership verification error:', err);
-    // On error, allow notification (better to send than block)
-    return true;
+    console.error("Membership verification error:", err);
+    return true; // On error, allow (fail open)
   }
 }
 

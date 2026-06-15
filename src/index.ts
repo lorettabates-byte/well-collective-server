@@ -5,6 +5,7 @@ import { initDb } from "./db";
 import authRouter from "./routes/auth";
 import contentRouter from "./routes/content";
 import couponsRouter from "./routes/coupons";
+import membershipRouter from "./routes/membership";
 import messagesRouter from "./routes/messages";
 import subscriptionsRouter from "./routes/subscriptions";
 import { startScheduler } from "./scheduler";
@@ -35,6 +36,7 @@ app.use("/api/coupons", couponsRouter);
 app.use("/api/messages", messagesRouter);
 app.use("/api", subscriptionsRouter);
 app.use("/api", contentRouter);
+app.use("/api", membershipRouter);
 
 async function main() {
   await initDb();
