@@ -36,9 +36,13 @@ function buildPayload(payload: NotificationPayload): string {
  * Subscriptions that the push service reports as gone (404/410) are removed.
  */
 export async function broadcastNotification(payload: NotificationPayload): Promise<{ sent: number; removed: number; blocked: number }> {
+  console.log(`[PUSH] Broadcasting notification: "${payload.title}"`);
+
   const { rows } = await pool.query<{ endpoint: string; p256dh: string; auth: string; user_email: string | null }>(
     "SELECT endpoint, p256dh, auth, user_email FROM push_subscriptions"
   );
+
+  console.log(`[PUSH] Found ${rows.length} total subscriptions`);
 
   const body = buildPayload(payload);
   let sent = 0;
@@ -50,10 +54,14 @@ export async function broadcastNotification(payload: NotificationPayload): Promi
       // Verify membership if email is available
       if (row.user_email) {
         const isMember = await verifyMembership(row.user_email);
+        console.log(`[PUSH] Email: ${row.user_email}, Is Member: ${isMember}`);
         if (!isMember) {
           blocked += 1;
+          console.log(`[PUSH] Blocked subscription for ${row.user_email} - not a member`);
           return; // Skip this subscription
         }
+      } else {
+        console.log(`[PUSH] No email for subscription, allowing notification`);
       }
 
       const subscription = {
@@ -63,11 +71,13 @@ export async function broadcastNotification(payload: NotificationPayload): Promi
       try {
         await webpush.sendNotification(subscription, body);
         sent += 1;
+        console.log(`[PUSH] Successfully sent notification`);
       } catch (err) {
         const statusCode = (err as { statusCode?: number }).statusCode;
         if (statusCode === 404 || statusCode === 410) {
           await pool.query("DELETE FROM push_subscriptions WHERE endpoint = $1", [row.endpoint]);
           removed += 1;
+          console.log(`[PUSH] Removed expired subscription (${statusCode})`);
         } else {
           console.error("Push send failed:", err);
         }
@@ -75,5 +85,6 @@ export async function broadcastNotification(payload: NotificationPayload): Promi
     })
   );
 
+  console.log(`[PUSH] Summary - Sent: ${sent}, Removed: ${removed}, Blocked: ${blocked}`);
   return { sent, removed, blocked };
 }

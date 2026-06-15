@@ -45,18 +45,29 @@ async function sendWeeklyTheme(): Promise<void> {
 
 async function sendDailyInspiration(): Promise<void> {
   const date = todayInTimezone();
-  if (await alreadySent(date, "dailyInspiration")) return;
+  console.log(`[SCHEDULER] Daily inspiration check for ${date}`);
+
+  if (await alreadySent(date, "dailyInspiration")) {
+    console.log(`[SCHEDULER] Daily inspiration already sent for ${date}`);
+    return;
+  }
 
   const { rows } = await pool.query("SELECT daily_inspiration FROM content_schedule WHERE date = $1", [date]);
   const inspiration = rows[0]?.daily_inspiration as { title: string; body: string } | undefined;
-  if (!inspiration) return;
 
-  await broadcastNotification({
+  if (!inspiration) {
+    console.log(`[SCHEDULER] No daily inspiration found in content_schedule for ${date}`);
+    return;
+  }
+
+  console.log(`[SCHEDULER] Sending daily inspiration: "${inspiration.title}"`);
+  const result = await broadcastNotification({
     title: inspiration.title,
     body: inspiration.body,
     tag: "daily-inspiration",
     url: "/inspirations",
   });
+  console.log(`[SCHEDULER] Daily inspiration result:`, result);
   await markSent(date, "dailyInspiration");
 }
 
