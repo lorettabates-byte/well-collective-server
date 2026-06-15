@@ -1,6 +1,7 @@
 import { Router } from "express";
 import { pool } from "../db";
 import { requireAdmin } from "../middleware/adminAuth";
+import { createWooCommerceCoupon, isWooCommerceConfigured, searchWooCommerceProducts } from "../woocommerce";
 
 const router = Router();
 
@@ -12,6 +13,27 @@ interface CouponInput {
   max_uses?: number;
   expires_at?: string;
 }
+
+// Search WooCommerce products by name (admin only)
+router.get("/wc-products", requireAdmin, async (req, res) => {
+  const { search } = req.query as { search?: string };
+
+  if (!search) {
+    return res.status(400).json({ error: "search query required" });
+  }
+
+  if (!isWooCommerceConfigured()) {
+    return res.status(500).json({ error: "WooCommerce is not configured on the server" });
+  }
+
+  try {
+    const products = await searchWooCommerceProducts(search);
+    res.json({ products });
+  } catch (err) {
+    console.error("WooCommerce product search error:", err);
+    res.status(502).json({ error: "Failed to search products on the store" });
+  }
+});
 
 // Get all coupons (admin only)
 router.get("/", requireAdmin, async (_req, res) => {
@@ -104,15 +126,17 @@ router.post("/bulk", requireAdmin, async (req, res) => {
 
 // Generate a batch of unique random coupon codes sharing one discount config (admin only)
 router.post("/generate", requireAdmin, async (req, res) => {
-  const { count, prefix, description, discount_type, discount_value, max_uses, expires_at } = req.body as {
-    count: number;
-    prefix?: string;
-    description?: string;
-    discount_type: "percentage" | "fixed";
-    discount_value: number;
-    max_uses?: number;
-    expires_at?: string;
-  };
+  const { count, prefix, description, discount_type, discount_value, max_uses, expires_at, restrict_product } =
+    req.body as {
+      count: number;
+      prefix?: string;
+      description?: string;
+      discount_type: "percentage" | "fixed";
+      discount_value: number;
+      max_uses?: number;
+      expires_at?: string;
+      restrict_product?: string;
+    };
 
   if (!count || count < 1 || count > 500) {
     return res.status(400).json({ error: "count must be between 1 and 500" });
@@ -126,6 +150,24 @@ router.post("/generate", requireAdmin, async (req, res) => {
     return res.status(400).json({ error: "discount_type must be 'percentage' or 'fixed'" });
   }
 
+  if (!isWooCommerceConfigured()) {
+    return res.status(500).json({ error: "WooCommerce is not configured on the server" });
+  }
+
+  let productIds: number[] | undefined;
+  if (restrict_product) {
+    try {
+      const products = await searchWooCommerceProducts(restrict_product);
+      if (products.length === 0) {
+        return res.status(400).json({ error: `No product found on the store matching '${restrict_product}'` });
+      }
+      productIds = [products[0].id];
+    } catch (err) {
+      console.error("WooCommerce product search error:", err);
+      return res.status(502).json({ error: "Failed to look up product on the store" });
+    }
+  }
+
   const cleanPrefix = (prefix || "").toUpperCase().replace(/[^A-Z0-9]/g, "");
   const ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"; // no ambiguous 0/O/1/I
 
@@ -137,8 +179,11 @@ router.post("/generate", requireAdmin, async (req, res) => {
     return cleanPrefix ? `${cleanPrefix}-${suffix}` : suffix;
   };
 
+  const wcDiscountType = discount_type === "percentage" ? "percent" : "fixed_cart";
+
   try {
     const codes: string[] = [];
+    let failed = 0;
 
     for (let i = 0; i < count; i++) {
       let code = "";
@@ -155,6 +200,23 @@ router.post("/generate", requireAdmin, async (req, res) => {
         return res.status(500).json({ error: "Could not generate enough unique codes, try again" });
       }
 
+      try {
+        await createWooCommerceCoupon({
+          code,
+          amount: String(discount_value),
+          discount_type: wcDiscountType,
+          description: description || undefined,
+          product_ids: productIds,
+          usage_limit: max_uses || 1,
+          usage_limit_per_user: 1,
+          date_expires: expires_at || undefined,
+        });
+      } catch (err) {
+        console.error(`WooCommerce coupon creation failed for ${code}:`, err);
+        failed++;
+        continue;
+      }
+
       await pool.query(
         `INSERT INTO coupons (code, description, discount_type, discount_value, max_uses, expires_at)
          VALUES ($1, $2, $3, $4, $5, $6)`,
@@ -163,7 +225,11 @@ router.post("/generate", requireAdmin, async (req, res) => {
       codes.push(code);
     }
 
-    res.status(201).json({ codes, count: codes.length });
+    if (codes.length === 0) {
+      return res.status(502).json({ error: "Failed to create coupons on the store" });
+    }
+
+    res.status(201).json({ codes, count: codes.length, failed });
   } catch (err) {
     console.error("Generate coupons error:", err);
     res.status(500).json({ error: "Failed to generate coupon codes" });
