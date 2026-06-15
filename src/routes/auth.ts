@@ -73,6 +73,7 @@ router.post("/member-login", async (req, res) => {
         "X-WELL-API-KEY": WELL_API_KEY,
       },
       body: JSON.stringify({ username, password }),
+      signal: AbortSignal.timeout(10000),
     });
 
     const wpData = (await wpRes.json()) as {

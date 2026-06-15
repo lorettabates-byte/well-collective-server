@@ -65,13 +65,18 @@ router.delete("/content-schedule/:date", requireAdmin, async (req, res) => {
 });
 
 router.post("/send-test", requireAdmin, async (req, res) => {
-  const { title, body } = req.body as { title?: string; body?: string };
-  const result = await broadcastNotification({
-    title: title || "WELL Collective",
-    body: body || "This is a test notification from your WELL Collective app.",
-    tag: "test",
-  });
-  res.json(result);
+  try {
+    const { title, body } = req.body as { title?: string; body?: string };
+    const result = await broadcastNotification({
+      title: title || "WELL Collective",
+      body: body || "This is a test notification from your WELL Collective app.",
+      tag: "test",
+    });
+    res.json(result);
+  } catch (err) {
+    console.error("send-test error:", err);
+    res.status(500).json({ error: "Failed to send test notification" });
+  }
 });
 
 export default router;

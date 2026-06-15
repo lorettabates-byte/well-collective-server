@@ -16,6 +16,7 @@ export async function verifyMembership(email: string): Promise<boolean> {
         headers: {
           "X-WELL-API-KEY": WELL_API_KEY,
         },
+        signal: AbortSignal.timeout(8000),
       }
     );
 
