@@ -84,8 +84,8 @@ export function startScheduler(): void {
     sendDailyInspiration().catch((err) => console.error("Daily inspiration send failed:", err));
   }, { timezone: TIMEZONE });
 
-  // Livestream reminder: every Tuesday at 6:00pm (1 hour before livestream)
-  cron.schedule("0 18 * * 2", () => {
+  // Livestream reminder: every Tuesday at 8:00am (1 hour before 9am livestream)
+  cron.schedule("0 8 * * 2", () => {
     sendLivestreamReminder().catch((err) => console.error("Livestream reminder send failed:", err));
   }, { timezone: TIMEZONE });
 

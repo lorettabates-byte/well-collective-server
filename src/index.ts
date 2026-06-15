@@ -2,6 +2,7 @@ import cors from "cors";
 import dotenv from "dotenv";
 import express from "express";
 import { initDb } from "./db";
+import authRouter from "./routes/auth";
 import contentRouter from "./routes/content";
 import subscriptionsRouter from "./routes/subscriptions";
 import { startScheduler } from "./scheduler";
@@ -27,6 +28,7 @@ app.get("/health", (_req, res) => {
   res.json({ ok: true });
 });
 
+app.use("/api/auth", authRouter);
 app.use("/api", subscriptionsRouter);
 app.use("/api", contentRouter);
 

@@ -8,19 +8,24 @@
     "build": "tsc",
     "start": "node dist/index.js",
     "dev": "tsx watch src/index.ts",
-    "generate-vapid-keys": "node scripts/generate-vapid-keys.js"
+    "generate-vapid-keys": "node scripts/generate-vapid-keys.js",
+    "create-admin": "node scripts/create-admin.js"
   },
   "dependencies": {
+    "bcrypt": "^6.0.0",
     "cors": "^2.8.5",
     "dotenv": "^16.4.5",
     "express": "^4.19.2",
+    "jsonwebtoken": "^9.0.3",
     "node-cron": "^3.0.3",
     "pg": "^8.12.0",
     "web-push": "^3.6.7"
   },
   "devDependencies": {
+    "@types/bcrypt": "^6.0.0",
     "@types/cors": "^2.8.17",
     "@types/express": "^4.17.21",
+    "@types/jsonwebtoken": "^9.0.10",
     "@types/node": "^20.14.9",
     "@types/node-cron": "^3.0.11",
     "@types/pg": "^8.20.0",
