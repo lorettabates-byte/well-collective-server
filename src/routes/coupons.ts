@@ -102,6 +102,74 @@ router.post("/bulk", requireAdmin, async (req, res) => {
   }
 });
 
+// Generate a batch of unique random coupon codes sharing one discount config (admin only)
+router.post("/generate", requireAdmin, async (req, res) => {
+  const { count, prefix, description, discount_type, discount_value, max_uses, expires_at } = req.body as {
+    count: number;
+    prefix?: string;
+    description?: string;
+    discount_type: "percentage" | "fixed";
+    discount_value: number;
+    max_uses?: number;
+    expires_at?: string;
+  };
+
+  if (!count || count < 1 || count > 500) {
+    return res.status(400).json({ error: "count must be between 1 and 500" });
+  }
+
+  if (!discount_type || discount_value === undefined) {
+    return res.status(400).json({ error: "discount_type and discount_value required" });
+  }
+
+  if (!["percentage", "fixed"].includes(discount_type)) {
+    return res.status(400).json({ error: "discount_type must be 'percentage' or 'fixed'" });
+  }
+
+  const cleanPrefix = (prefix || "").toUpperCase().replace(/[^A-Z0-9]/g, "");
+  const ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"; // no ambiguous 0/O/1/I
+
+  const randomCode = () => {
+    let suffix = "";
+    for (let i = 0; i < 6; i++) {
+      suffix += ALPHABET[Math.floor(Math.random() * ALPHABET.length)];
+    }
+    return cleanPrefix ? `${cleanPrefix}-${suffix}` : suffix;
+  };
+
+  try {
+    const codes: string[] = [];
+
+    for (let i = 0; i < count; i++) {
+      let code = "";
+      for (let attempt = 0; attempt < 10; attempt++) {
+        const candidate = randomCode();
+        const { rows } = await pool.query("SELECT 1 FROM coupons WHERE code = $1", [candidate]);
+        if (rows.length === 0) {
+          code = candidate;
+          break;
+        }
+      }
+
+      if (!code) {
+        return res.status(500).json({ error: "Could not generate enough unique codes, try again" });
+      }
+
+      await pool.query(
+        `INSERT INTO coupons (code, description, discount_type, discount_value, max_uses, expires_at)
+         VALUES ($1, $2, $3, $4, $5, $6)`,
+        [code, description || null, discount_type, discount_value, max_uses || 1, expires_at || null]
+      );
+      codes.push(code);
+    }
+
+    res.status(201).json({ codes, count: codes.length });
+  } catch (err) {
+    console.error("Generate coupons error:", err);
+    res.status(500).json({ error: "Failed to generate coupon codes" });
+  }
+});
+
 // Validate and redeem a coupon
 router.post("/redeem", async (req, res) => {
   const { code, userId } = req.body as { code?: string; userId?: string };
