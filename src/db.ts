@@ -44,4 +44,28 @@ export async function initDb(): Promise<void> {
       created_at TIMESTAMPTZ NOT NULL DEFAULT now()
     );
   `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS coupons (
+      id SERIAL PRIMARY KEY,
+      code TEXT UNIQUE NOT NULL,
+      description TEXT,
+      discount_type TEXT NOT NULL,
+      discount_value DECIMAL(10, 2) NOT NULL,
+      max_uses INT,
+      used_count INT DEFAULT 0,
+      expires_at DATE,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      created_by INT REFERENCES admin_users(id)
+    );
+  `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS coupon_redemptions (
+      id SERIAL PRIMARY KEY,
+      coupon_id INT NOT NULL REFERENCES coupons(id),
+      user_id TEXT NOT NULL,
+      redeemed_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    );
+  `);
 }
