@@ -40,7 +40,7 @@ async function main() {
   await initDb();
   startScheduler();
   app.listen(PORT, () => {
-    console.log(`WELL Collective push server listening on port ${PORT}`);
+    console.log(`✅ WELL Collective push server listening on port ${PORT}`);
   });
 }
 
