@@ -6,6 +6,7 @@ import { pool } from "../db";
 const router = Router();
 const JWT_SECRET = process.env.JWT_SECRET || "well-collective-secret-key-change-in-production";
 const WORDPRESS_URL = process.env.WORDPRESS_URL || "https://lorettabates.com";
+const WELL_API_KEY = process.env.WELL_API_KEY || "";
 
 export interface AuthTokenPayload {
   adminId: number;
@@ -65,17 +66,19 @@ router.post("/member-login", async (req, res) => {
   }
 
   try {
-    const wpRes = await fetch(`${WORDPRESS_URL}/wp-json/jwt-auth/v1/token`, {
+    const wpRes = await fetch(`${WORDPRESS_URL}/wp-json/well/v1/member-login`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        "X-WELL-API-KEY": WELL_API_KEY,
+      },
       body: JSON.stringify({ username, password }),
     });
 
     const wpData = (await wpRes.json()) as {
       message?: string;
-      user_email?: string;
-      user_display_name?: string;
-      user_nicename?: string;
+      email?: string;
+      name?: string;
     };
 
     if (!wpRes.ok) {
@@ -83,8 +86,8 @@ router.post("/member-login", async (req, res) => {
       return res.status(401).json({ error: message });
     }
 
-    const email = wpData.user_email || "";
-    const name = wpData.user_display_name || wpData.user_nicename || username;
+    const email = wpData.email || "";
+    const name = wpData.name || username;
 
     const token = jwt.sign({ email, name }, JWT_SECRET, { expiresIn: "30d" });
 
