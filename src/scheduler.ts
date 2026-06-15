@@ -60,6 +60,19 @@ async function sendDailyInspiration(): Promise<void> {
   await markSent(date, "dailyInspiration");
 }
 
+async function sendLivestreamReminder(): Promise<void> {
+  const date = todayInTimezone();
+  if (await alreadySent(date, "livestreamReminder")) return;
+
+  await broadcastNotification({
+    title: "WELL Collective Live Cardio Class",
+    body: "Join us in 1 hour for a fun live cardio class! Get ready to move and connect with the community. 💪",
+    tag: "livestream-reminder",
+    url: "/videos",
+  });
+  await markSent(date, "livestreamReminder");
+}
+
 export function startScheduler(): void {
   // Weekly theme: every Monday at 7:00am
   cron.schedule("0 7 * * 1", () => {
@@ -69,6 +82,11 @@ export function startScheduler(): void {
   // Daily inspiration: every day at 7:00am
   cron.schedule("0 7 * * *", () => {
     sendDailyInspiration().catch((err) => console.error("Daily inspiration send failed:", err));
+  }, { timezone: TIMEZONE });
+
+  // Livestream reminder: every Tuesday at 6:00pm (1 hour before livestream)
+  cron.schedule("0 18 * * 2", () => {
+    sendLivestreamReminder().catch((err) => console.error("Livestream reminder send failed:", err));
   }, { timezone: TIMEZONE });
 
   console.log(`Scheduler started (timezone: ${TIMEZONE})`);
