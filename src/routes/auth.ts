@@ -5,6 +5,7 @@ import { pool } from "../db";
 
 const router = Router();
 const JWT_SECRET = process.env.JWT_SECRET || "well-collective-secret-key-change-in-production";
+const WORDPRESS_URL = process.env.WORDPRESS_URL || "https://lorettabates.com";
 
 export interface AuthTokenPayload {
   adminId: number;
@@ -53,6 +54,43 @@ router.post("/login", async (req, res) => {
     });
   } catch (err) {
     console.error("Login error:", err);
+    res.status(500).json({ error: "Login failed" });
+  }
+});
+
+router.post("/member-login", async (req, res) => {
+  const { username, password } = req.body as { username?: string; password?: string };
+  if (!username || !password) {
+    return res.status(400).json({ error: "Username and password required" });
+  }
+
+  try {
+    const wpRes = await fetch(`${WORDPRESS_URL}/wp-json/jwt-auth/v1/token`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ username, password }),
+    });
+
+    const wpData = (await wpRes.json()) as {
+      message?: string;
+      user_email?: string;
+      user_display_name?: string;
+      user_nicename?: string;
+    };
+
+    if (!wpRes.ok) {
+      const message = (wpData.message || "Invalid username or password").replace(/<[^>]*>/g, "");
+      return res.status(401).json({ error: message });
+    }
+
+    const email = wpData.user_email || "";
+    const name = wpData.user_display_name || wpData.user_nicename || username;
+
+    const token = jwt.sign({ email, name }, JWT_SECRET, { expiresIn: "30d" });
+
+    res.json({ token, user: { email, name } });
+  } catch (err) {
+    console.error("Member login error:", err);
     res.status(500).json({ error: "Login failed" });
   }
 });
