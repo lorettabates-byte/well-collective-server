@@ -104,6 +104,52 @@ Respond with ONLY a JSON object, no other text, in this exact shape:
   return parsed;
 }
 
+export interface GeneratedDailyInspiration {
+  title: string;
+  body: string;
+}
+
+export async function generateDailyInspiration(
+  weeklyThemeTitle: string | undefined
+): Promise<GeneratedDailyInspiration> {
+  const themeContext = weeklyThemeTitle
+    ? `This week's theme for the WELL Collective wellness community is "${weeklyThemeTitle}".`
+    : "There's no specific weekly theme set right now, so keep it generally uplifting.";
+
+  const prompt = `You are writing today's "Daily Inspiration" message for the WELL Collective, a women's wellness community app run by Loretta Bates. ${themeContext}
+
+Write one short daily inspiration message that ties into that theme. Warm, grounded, and specific — not a generic quote.
+
+Respond with ONLY a JSON object, no other text, in this exact shape:
+{"title": "a short title, under 8 words", "body": "2-3 warm, specific sentences"}`;
+
+  const text = await callClaude(prompt, 400);
+  const parsed = extractJson(text) as GeneratedDailyInspiration;
+  if (!parsed.title || !parsed.body) {
+    throw new Error("AI daily inspiration response missing title/body");
+  }
+  return parsed;
+}
+
+export interface GeneratedWeeklyTheme {
+  title: string;
+  body: string;
+}
+
+export async function generateWeeklyTheme(): Promise<GeneratedWeeklyTheme> {
+  const prompt = `You are setting this week's wellness theme for the WELL Collective, a women's wellness community app run by Loretta Bates. Pick a single grounded, encouraging theme (e.g. rest, boundaries, gentle consistency, self-compassion, movement, connection) that the rest of the week's content can build on.
+
+Respond with ONLY a JSON object, no other text, in this exact shape:
+{"title": "a short theme title, under 6 words", "body": "2-3 sentences introducing the theme for the week"}`;
+
+  const text = await callClaude(prompt, 400);
+  const parsed = extractJson(text) as GeneratedWeeklyTheme;
+  if (!parsed.title || !parsed.body) {
+    throw new Error("AI weekly theme response missing title/body");
+  }
+  return parsed;
+}
+
 export async function generateNutritionTip(): Promise<string> {
   const prompt = `Write one short, practical nutrition tip of the day (1-2 sentences, under 200 characters) for the WELL Collective women's wellness community. Make it specific and actionable, not generic.
 

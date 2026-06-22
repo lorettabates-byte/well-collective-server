@@ -1,5 +1,12 @@
 import cron from "node-cron";
-import { generateMotivationBoost, generateNutritionTip, generateRecipe, isAnthropicConfigured } from "./anthropic";
+import {
+  generateDailyInspiration,
+  generateMotivationBoost,
+  generateNutritionTip,
+  generateRecipe,
+  generateWeeklyTheme,
+  isAnthropicConfigured,
+} from "./anthropic";
 import { pool } from "./db";
 import { broadcastNotification } from "./push";
 
@@ -34,6 +41,15 @@ async function findCurrentWeeklyThemeTitle(date: string): Promise<string | undef
   return undefined;
 }
 
+function mostRecentMonday(dateStr: string): string {
+  const [y, m, d] = dateStr.split("-").map(Number);
+  const date = new Date(Date.UTC(y, m - 1, d));
+  const weekday = date.getUTCDay(); // 0 = Sunday, 1 = Monday, ...
+  const daysSinceMonday = weekday === 0 ? 6 : weekday - 1;
+  date.setUTCDate(date.getUTCDate() - daysSinceMonday);
+  return date.toISOString().slice(0, 10);
+}
+
 export async function generateAIContent(): Promise<void> {
   if (!isAnthropicConfigured()) {
     console.log("[SCHEDULER] Skipping AI content generation — ANTHROPIC_API_KEY not configured");
@@ -51,7 +67,37 @@ export async function generateAIContent(): Promise<void> {
     | { daily_inspiration?: { title?: string }; recipe?: unknown; motivation_boost?: unknown; nutrition_tip?: string }
     | undefined;
 
-  const weeklyThemeTitle = await findCurrentWeeklyThemeTitle(date);
+  let weeklyThemeTitle = await findCurrentWeeklyThemeTitle(date);
+
+  if (!weeklyThemeTitle) {
+    try {
+      const theme = await generateWeeklyTheme();
+      const monday = mostRecentMonday(date);
+      await pool.query(
+        `INSERT INTO content_schedule (date, weekly_theme) VALUES ($1, $2)
+         ON CONFLICT (date) DO UPDATE SET weekly_theme = COALESCE(content_schedule.weekly_theme, $2)`,
+        [monday, JSON.stringify(theme)]
+      );
+      weeklyThemeTitle = theme.title;
+      console.log(`[SCHEDULER] Generated AI weekly theme: "${theme.title}"`);
+    } catch (err) {
+      console.error("[SCHEDULER] Weekly theme generation failed:", err);
+    }
+  }
+
+  if (!row?.daily_inspiration) {
+    try {
+      const inspiration = await generateDailyInspiration(weeklyThemeTitle);
+      await pool.query(
+        `INSERT INTO content_schedule (date, daily_inspiration) VALUES ($1, $2)
+         ON CONFLICT (date) DO UPDATE SET daily_inspiration = COALESCE(content_schedule.daily_inspiration, $2)`,
+        [date, JSON.stringify(inspiration)]
+      );
+      console.log(`[SCHEDULER] Generated AI daily inspiration: "${inspiration.title}"`);
+    } catch (err) {
+      console.error("[SCHEDULER] Daily inspiration generation failed:", err);
+    }
+  }
 
   if (!row?.motivation_boost) {
     try {
