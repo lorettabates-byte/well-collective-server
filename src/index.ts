@@ -7,6 +7,7 @@ import contentRouter from "./routes/content";
 import couponsRouter from "./routes/coupons";
 import membershipRouter from "./routes/membership";
 import messagesRouter from "./routes/messages";
+import songsRouter from "./routes/songs";
 import subscriptionsRouter from "./routes/subscriptions";
 import { startScheduler } from "./scheduler";
 
@@ -37,6 +38,7 @@ app.use("/api/messages", messagesRouter);
 app.use("/api", subscriptionsRouter);
 app.use("/api", contentRouter);
 app.use("/api", membershipRouter);
+app.use("/api", songsRouter);
 
 async function main() {
   await initDb();

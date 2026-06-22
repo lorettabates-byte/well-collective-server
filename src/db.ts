@@ -87,4 +87,15 @@ export async function initDb(): Promise<void> {
 
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_recipient ON messages (recipient_id);`);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_conversation ON messages (sender_id, recipient_id);`);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS songs (
+      id SERIAL PRIMARY KEY,
+      title TEXT NOT NULL,
+      artist TEXT,
+      url TEXT NOT NULL,
+      sort_order INT NOT NULL DEFAULT 0,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    );
+  `);
 }
