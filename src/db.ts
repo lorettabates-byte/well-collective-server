@@ -29,6 +29,9 @@ export async function initDb(): Promise<void> {
     );
   `);
 
+  await pool.query(`ALTER TABLE content_schedule ADD COLUMN IF NOT EXISTS motivation_boost JSONB;`);
+  await pool.query(`ALTER TABLE content_schedule ADD COLUMN IF NOT EXISTS nutrition_tip TEXT;`);
+
   await pool.query(`
     CREATE TABLE IF NOT EXISTS sent_log (
       date DATE NOT NULL,

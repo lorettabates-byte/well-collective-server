@@ -8,7 +8,7 @@ const router = Router();
 
 router.get("/content-schedule", requireAdmin, async (_req, res) => {
   const { rows } = await pool.query(
-    `SELECT date, weekly_theme, daily_inspiration, well_activity, recipe
+    `SELECT date, weekly_theme, daily_inspiration, well_activity, recipe, motivation_boost, nutrition_tip
      FROM content_schedule ORDER BY date ASC`
   );
 
@@ -18,9 +18,60 @@ router.get("/content-schedule", requireAdmin, async (_req, res) => {
     dailyInspiration: row.daily_inspiration ?? undefined,
     wellActivity: row.well_activity ?? undefined,
     recipe: row.recipe ?? undefined,
+    motivationBoost: row.motivation_boost ?? undefined,
+    nutritionTip: row.nutrition_tip ?? undefined,
   }));
 
   res.json({ entries });
+});
+
+// Public: today's content only, for the member-facing app (no admin auth needed).
+router.get("/content-today", async (_req, res) => {
+  try {
+    const formatter = new Intl.DateTimeFormat("en-CA", {
+      timeZone: process.env.SCHEDULE_TIMEZONE || "America/New_York",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    });
+    const today = formatter.format(new Date());
+
+    const { rows } = await pool.query(
+      `SELECT date, weekly_theme, daily_inspiration, well_activity, recipe, motivation_boost, nutrition_tip
+       FROM content_schedule WHERE date = $1`,
+      [today]
+    );
+
+    let weeklyTheme: { title: string; body: string } | undefined = rows[0]?.weekly_theme ?? undefined;
+    if (!weeklyTheme) {
+      for (let i = 1; i < 7 && !weeklyTheme; i++) {
+        const d = new Date(`${today}T00:00:00Z`);
+        d.setUTCDate(d.getUTCDate() - i);
+        const checkDate = d.toISOString().slice(0, 10);
+        const { rows: themeRows } = await pool.query("SELECT weekly_theme FROM content_schedule WHERE date = $1", [
+          checkDate,
+        ]);
+        weeklyTheme = themeRows[0]?.weekly_theme ?? undefined;
+      }
+    }
+
+    const entry: ContentBatchEntry | null = rows[0]
+      ? {
+          date: today,
+          weeklyTheme: rows[0].weekly_theme ?? undefined,
+          dailyInspiration: rows[0].daily_inspiration ?? undefined,
+          wellActivity: rows[0].well_activity ?? undefined,
+          recipe: rows[0].recipe ?? undefined,
+          motivationBoost: rows[0].motivation_boost ?? undefined,
+          nutritionTip: rows[0].nutrition_tip ?? undefined,
+        }
+      : null;
+
+    res.json({ today: entry, currentWeeklyTheme: weeklyTheme ?? null });
+  } catch (err) {
+    console.error("Fetch content-today error:", err);
+    res.status(500).json({ error: "Failed to fetch today's content" });
+  }
 });
 
 router.post("/content-schedule", requireAdmin, async (req, res) => {

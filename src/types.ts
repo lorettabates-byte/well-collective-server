@@ -4,6 +4,8 @@ export interface ContentBatchEntry {
   dailyInspiration?: { title: string; body: string };
   wellActivity?: { title: string; description: string };
   recipe?: { name: string; description: string; ingredients: string[]; steps: string[]; image: string };
+  motivationBoost?: { title: string; body: string };
+  nutritionTip?: string;
 }
 
 export interface PushSubscriptionRecord {
