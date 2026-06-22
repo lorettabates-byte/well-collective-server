@@ -150,6 +150,31 @@ Respond with ONLY a JSON object, no other text, in this exact shape:
   return parsed;
 }
 
+export interface GeneratedWellActivity {
+  title: string;
+  description: string;
+}
+
+export async function generateWellActivity(weeklyThemeTitle: string | undefined): Promise<GeneratedWellActivity> {
+  const themeContext = weeklyThemeTitle
+    ? `This week's theme for the WELL Collective wellness community is "${weeklyThemeTitle}".`
+    : "There's no specific weekly theme right now, so keep it generally restorative.";
+
+  const prompt = `You are suggesting today's "WELL Activity" — a short mental-health or self-care activity — for the WELL Collective, a women's wellness community app run by Loretta Bates. ${themeContext}
+
+Suggest one simple, doable-today activity that ties into that theme (e.g. take a bath, call a friend, write three things you're grateful for, take a 10-minute walk without your phone). Keep it concrete and achievable in one sitting.
+
+Respond with ONLY a JSON object, no other text, in this exact shape:
+{"title": "a short activity title, under 8 words", "description": "1 short sentence describing it"}`;
+
+  const text = await callClaude(prompt, 300);
+  const parsed = extractJson(text) as GeneratedWellActivity;
+  if (!parsed.title || !parsed.description) {
+    throw new Error("AI WELL activity response missing title/description");
+  }
+  return parsed;
+}
+
 export async function generateNutritionTip(): Promise<string> {
   const prompt = `Write one short, practical nutrition tip of the day (1-2 sentences, under 200 characters) for the WELL Collective women's wellness community. Make it specific and actionable, not generic.
 

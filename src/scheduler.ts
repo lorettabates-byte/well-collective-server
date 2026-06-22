@@ -5,6 +5,7 @@ import {
   generateNutritionTip,
   generateRecipe,
   generateWeeklyTheme,
+  generateWellActivity,
   isAnthropicConfigured,
 } from "./anthropic";
 import { pool } from "./db";
@@ -60,11 +61,17 @@ export async function generateAIContent(): Promise<void> {
   console.log(`[SCHEDULER] AI content generation check for ${date}`);
 
   const { rows } = await pool.query(
-    "SELECT daily_inspiration, recipe, motivation_boost, nutrition_tip FROM content_schedule WHERE date = $1",
+    "SELECT daily_inspiration, recipe, motivation_boost, nutrition_tip, well_activity FROM content_schedule WHERE date = $1",
     [date]
   );
   const row = rows[0] as
-    | { daily_inspiration?: { title?: string }; recipe?: unknown; motivation_boost?: unknown; nutrition_tip?: string }
+    | {
+        daily_inspiration?: { title?: string };
+        recipe?: unknown;
+        motivation_boost?: unknown;
+        nutrition_tip?: string;
+        well_activity?: unknown;
+      }
     | undefined;
 
   let weeklyThemeTitle = await findCurrentWeeklyThemeTitle(date);
@@ -138,6 +145,20 @@ export async function generateAIContent(): Promise<void> {
       console.log(`[SCHEDULER] Generated AI nutrition tip: "${tip}"`);
     } catch (err) {
       console.error("[SCHEDULER] Nutrition tip generation failed:", err);
+    }
+  }
+
+  if (!row?.well_activity) {
+    try {
+      const activity = await generateWellActivity(weeklyThemeTitle);
+      await pool.query(
+        `INSERT INTO content_schedule (date, well_activity) VALUES ($1, $2)
+         ON CONFLICT (date) DO UPDATE SET well_activity = COALESCE(content_schedule.well_activity, $2)`,
+        [date, JSON.stringify(activity)]
+      );
+      console.log(`[SCHEDULER] Generated AI WELL activity: "${activity.title}"`);
+    } catch (err) {
+      console.error("[SCHEDULER] WELL activity generation failed:", err);
     }
   }
 }
