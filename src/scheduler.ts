@@ -28,18 +28,29 @@ async function markSent(date: string, kind: string): Promise<void> {
 
 async function sendWeeklyTheme(): Promise<void> {
   const date = todayInTimezone();
-  if (await alreadySent(date, "weeklyTheme")) return;
+  console.log(`[SCHEDULER] Weekly theme check for ${date}`);
+
+  if (await alreadySent(date, "weeklyTheme")) {
+    console.log(`[SCHEDULER] Weekly theme already sent for ${date}`);
+    return;
+  }
 
   const { rows } = await pool.query("SELECT weekly_theme FROM content_schedule WHERE date = $1", [date]);
   const theme = rows[0]?.weekly_theme as { title: string; body: string } | undefined;
-  if (!theme) return;
 
-  await broadcastNotification({
+  if (!theme) {
+    console.log(`[SCHEDULER] No weekly theme found in content_schedule for ${date}`);
+    return;
+  }
+
+  console.log(`[SCHEDULER] Sending weekly theme: "${theme.title}"`);
+  const result = await broadcastNotification({
     title: `This Week's Theme: ${theme.title}`,
     body: theme.body,
     tag: "weekly-theme",
     url: "/inspirations",
   });
+  console.log(`[SCHEDULER] Weekly theme result:`, result);
   await markSent(date, "weeklyTheme");
 }
 
