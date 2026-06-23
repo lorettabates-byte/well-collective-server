@@ -101,4 +101,63 @@ export async function initDb(): Promise<void> {
       created_at TIMESTAMPTZ NOT NULL DEFAULT now()
     );
   `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS forum_categories (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      description TEXT,
+      icon TEXT,
+      color TEXT,
+      sort_order INT NOT NULL DEFAULT 0
+    );
+  `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS forum_threads (
+      id TEXT PRIMARY KEY,
+      category_id TEXT NOT NULL REFERENCES forum_categories(id) ON DELETE CASCADE,
+      title TEXT NOT NULL,
+      author_id TEXT NOT NULL,
+      author_name TEXT NOT NULL,
+      author_avatar TEXT,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    );
+  `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS forum_messages (
+      id TEXT PRIMARY KEY,
+      thread_id TEXT NOT NULL REFERENCES forum_threads(id) ON DELETE CASCADE,
+      author_id TEXT NOT NULL,
+      author_name TEXT NOT NULL,
+      author_avatar TEXT,
+      text TEXT NOT NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      likes TEXT[] NOT NULL DEFAULT '{}',
+      reply_to_id TEXT
+    );
+  `);
+
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_forum_threads_category ON forum_threads (category_id);`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_forum_messages_thread ON forum_messages (thread_id);`);
+
+  // One-time seed of the original built-in categories so the move to a shared
+  // backend doesn't drop them. Uses ON CONFLICT DO NOTHING so admin edits made
+  // afterward are never overwritten by this.
+  const defaultCategories: Array<[string, string, string, string, string, number]> = [
+    ["introductions", "Introductions", "Say hello & introduce yourself to the WELL family", "hand", "#0191CE", 0],
+    ["wellness-nutrition", "Wellness & Nutrition", "Recipes, habits, and nourishment tips", "salad", "#84D8FD", 1],
+    ["fitness-movement", "Fitness & Movement", "Workouts, movement wins, and motivation", "dumbbell", "#01519D", 2],
+    ["emotional-spiritual", "Emotional & Spiritual Growth", "Mindfulness, journaling, and inner work", "leaf", "#0191CE", 3],
+    ["success-stories", "Success Stories", "Celebrate wins — big or small", "award", "#84D8FD", 4],
+    ["general-chat", "General Chat", "Anything & everything WELL Collective", "messages", "#01519D", 5],
+  ];
+  for (const [id, name, description, icon, color, sortOrder] of defaultCategories) {
+    await pool.query(
+      `INSERT INTO forum_categories (id, name, description, icon, color, sort_order)
+       VALUES ($1, $2, $3, $4, $5, $6) ON CONFLICT (id) DO NOTHING`,
+      [id, name, description, icon, color, sortOrder]
+    );
+  }
 }

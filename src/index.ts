@@ -5,6 +5,7 @@ import { initDb } from "./db";
 import authRouter from "./routes/auth";
 import contentRouter from "./routes/content";
 import couponsRouter from "./routes/coupons";
+import forumRouter from "./routes/forum";
 import membershipRouter from "./routes/membership";
 import messagesRouter from "./routes/messages";
 import songsRouter from "./routes/songs";
@@ -35,6 +36,7 @@ app.get("/health", (_req, res) => {
 app.use("/api/auth", authRouter);
 app.use("/api/coupons", couponsRouter);
 app.use("/api/messages", messagesRouter);
+app.use("/api/forum", forumRouter);
 app.use("/api", subscriptionsRouter);
 app.use("/api", contentRouter);
 app.use("/api", membershipRouter);
