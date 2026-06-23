@@ -6,7 +6,7 @@ const router = Router();
 
 interface PeacefulSoundInput {
   title: string;
-  emoji?: string;
+  icon?: string;
   url: string;
   sortOrder?: number;
 }
@@ -14,13 +14,13 @@ interface PeacefulSoundInput {
 router.get("/peaceful-sounds", async (_req, res) => {
   try {
     const { rows } = await pool.query(
-      "SELECT id, title, emoji, url, sort_order FROM peaceful_sounds ORDER BY sort_order ASC, id ASC"
+      "SELECT id, title, icon, url, sort_order FROM peaceful_sounds ORDER BY sort_order ASC, id ASC"
     );
     res.json({
       sounds: rows.map((row) => ({
         id: row.id,
         title: row.title,
-        emoji: row.emoji,
+        icon: row.icon,
         url: row.url,
         sortOrder: row.sort_order,
       })),
@@ -32,7 +32,7 @@ router.get("/peaceful-sounds", async (_req, res) => {
 });
 
 router.post("/peaceful-sounds", requireAdmin, async (req, res) => {
-  const { title, emoji, url, sortOrder } = req.body as PeacefulSoundInput;
+  const { title, icon, url, sortOrder } = req.body as PeacefulSoundInput;
 
   if (!title || !url) {
     return res.status(400).json({ error: "Title and url are required" });
@@ -40,14 +40,14 @@ router.post("/peaceful-sounds", requireAdmin, async (req, res) => {
 
   try {
     const { rows } = await pool.query(
-      `INSERT INTO peaceful_sounds (title, emoji, url, sort_order)
+      `INSERT INTO peaceful_sounds (title, icon, url, sort_order)
        VALUES ($1, $2, $3, $4)
-       RETURNING id, title, emoji, url, sort_order`,
-      [title, emoji || "🎵", url, sortOrder ?? 0]
+       RETURNING id, title, icon, url, sort_order`,
+      [title, icon || "music", url, sortOrder ?? 0]
     );
     const row = rows[0];
     res.status(201).json({
-      sound: { id: row.id, title: row.title, emoji: row.emoji, url: row.url, sortOrder: row.sort_order },
+      sound: { id: row.id, title: row.title, icon: row.icon, url: row.url, sortOrder: row.sort_order },
     });
   } catch (err) {
     console.error("Create peaceful sound error:", err);

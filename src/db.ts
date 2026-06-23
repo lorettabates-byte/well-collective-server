@@ -183,10 +183,15 @@ export async function initDb(): Promise<void> {
     CREATE TABLE IF NOT EXISTS peaceful_sounds (
       id SERIAL PRIMARY KEY,
       title TEXT NOT NULL,
-      emoji TEXT NOT NULL DEFAULT '🎵',
+      icon TEXT NOT NULL DEFAULT 'music',
       url TEXT NOT NULL,
       sort_order INT NOT NULL DEFAULT 0,
       created_at TIMESTAMPTZ NOT NULL DEFAULT now()
     );
   `);
+
+  // Replaced free-text emoji with a curated outline-icon key — drop the old
+  // column if it's still hanging around from before this change shipped.
+  await pool.query(`ALTER TABLE peaceful_sounds ADD COLUMN IF NOT EXISTS icon TEXT NOT NULL DEFAULT 'music';`);
+  await pool.query(`ALTER TABLE peaceful_sounds DROP COLUMN IF EXISTS emoji;`);
 }
