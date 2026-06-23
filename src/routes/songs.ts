@@ -55,6 +55,23 @@ router.post("/songs", requireAdmin, async (req, res) => {
   }
 });
 
+// Must be registered before /songs/:id, otherwise Express would match
+// "reorder" as an :id value for that route instead.
+router.put("/songs/reorder", requireAdmin, async (req, res) => {
+  const { ids } = req.body as { ids: number[] };
+  if (!Array.isArray(ids) || ids.length === 0) {
+    return res.status(400).json({ error: "ids array required" });
+  }
+
+  try {
+    await Promise.all(ids.map((id, index) => pool.query("UPDATE songs SET sort_order = $1 WHERE id = $2", [index, id])));
+    res.json({ ok: true });
+  } catch (err) {
+    console.error("Reorder songs error:", err);
+    res.status(500).json({ error: "Failed to reorder songs" });
+  }
+});
+
 router.put("/songs/:id", requireAdmin, async (req, res) => {
   const { id } = req.params;
   const { title, artist, url, sortOrder } = req.body as SongInput;
