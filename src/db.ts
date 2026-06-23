@@ -160,4 +160,22 @@ export async function initDb(): Promise<void> {
       [id, name, description, icon, color, sortOrder]
     );
   }
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS members (
+      email TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      avatar TEXT,
+      birthday TEXT,
+      show_birthday_on_calendar BOOLEAN NOT NULL DEFAULT false,
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    );
+  `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS app_settings (
+      key TEXT PRIMARY KEY,
+      value TEXT
+    );
+  `);
 }

@@ -6,8 +6,10 @@ import authRouter from "./routes/auth";
 import contentRouter from "./routes/content";
 import couponsRouter from "./routes/coupons";
 import forumRouter from "./routes/forum";
+import membersRouter from "./routes/members";
 import membershipRouter from "./routes/membership";
 import messagesRouter from "./routes/messages";
+import settingsRouter from "./routes/settings";
 import songsRouter from "./routes/songs";
 import subscriptionsRouter from "./routes/subscriptions";
 import { startScheduler } from "./scheduler";
@@ -41,6 +43,8 @@ app.use("/api", subscriptionsRouter);
 app.use("/api", contentRouter);
 app.use("/api", membershipRouter);
 app.use("/api", songsRouter);
+app.use("/api", membersRouter);
+app.use("/api", settingsRouter);
 
 async function main() {
   await initDb();
