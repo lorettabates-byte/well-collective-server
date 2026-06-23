@@ -9,6 +9,7 @@ import forumRouter from "./routes/forum";
 import membersRouter from "./routes/members";
 import membershipRouter from "./routes/membership";
 import messagesRouter from "./routes/messages";
+import peacefulSoundsRouter from "./routes/peacefulSounds";
 import settingsRouter from "./routes/settings";
 import songsRouter from "./routes/songs";
 import subscriptionsRouter from "./routes/subscriptions";
@@ -45,6 +46,7 @@ app.use("/api", membershipRouter);
 app.use("/api", songsRouter);
 app.use("/api", membersRouter);
 app.use("/api", settingsRouter);
+app.use("/api", peacefulSoundsRouter);
 
 async function main() {
   await initDb();

@@ -178,4 +178,15 @@ export async function initDb(): Promise<void> {
       value TEXT
     );
   `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS peaceful_sounds (
+      id SERIAL PRIMARY KEY,
+      title TEXT NOT NULL,
+      emoji TEXT NOT NULL DEFAULT '🎵',
+      url TEXT NOT NULL,
+      sort_order INT NOT NULL DEFAULT 0,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    );
+  `);
 }
