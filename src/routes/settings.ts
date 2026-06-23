@@ -30,4 +30,33 @@ router.put("/settings/featured-event", requireAdmin, async (req, res) => {
   }
 });
 
+// The 10 built-in peaceful sounds are hardcoded in the app's code, not the
+// database, so "deleting" one just means hiding its id from members here.
+router.get("/settings/hidden-sounds", async (_req, res) => {
+  try {
+    const { rows } = await pool.query("SELECT value FROM app_settings WHERE key = 'hiddenBuiltinSounds'");
+    const hidden = rows[0]?.value ? JSON.parse(rows[0].value) : [];
+    res.json({ hidden });
+  } catch (err) {
+    console.error("Fetch hidden sounds error:", err);
+    res.status(500).json({ error: "Failed to fetch hidden sounds" });
+  }
+});
+
+router.put("/settings/hidden-sounds", requireAdmin, async (req, res) => {
+  const { hidden } = req.body as { hidden: string[] };
+
+  try {
+    await pool.query(
+      `INSERT INTO app_settings (key, value) VALUES ('hiddenBuiltinSounds', $1)
+       ON CONFLICT (key) DO UPDATE SET value = $1`,
+      [JSON.stringify(hidden || [])]
+    );
+    res.json({ ok: true });
+  } catch (err) {
+    console.error("Update hidden sounds error:", err);
+    res.status(500).json({ error: "Failed to update hidden sounds" });
+  }
+});
+
 export default router;
