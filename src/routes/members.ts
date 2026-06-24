@@ -15,10 +15,11 @@ function deriveMemberId(email: string): string {
 }
 
 router.post("/members/sync", async (req, res) => {
-  const { email, name, avatar, birthday, showBirthdayOnCalendar } = req.body as {
+  const { email, name, avatar, bio, birthday, showBirthdayOnCalendar } = req.body as {
     email?: string;
     name?: string;
     avatar?: string;
+    bio?: string;
     birthday?: string;
     showBirthdayOnCalendar?: boolean;
   };
@@ -28,25 +29,64 @@ router.post("/members/sync", async (req, res) => {
   }
 
   try {
-    // Use COALESCE so a blank/missing avatar or birthday from the client
-    // (e.g. a false-positive "new member" reset on the client, or a stale
-    // local profile) can never overwrite a value already saved for this
-    // member — it can only fill in a field that's still empty.
+    // Use COALESCE so a blank/missing avatar, bio, or birthday from the
+    // client (e.g. a false-positive "new member" reset on the client, or a
+    // stale/wiped local profile) can never overwrite a value already saved
+    // for this member — it can only fill in a field that's still empty.
     await pool.query(
-      `INSERT INTO members (email, name, avatar, birthday, show_birthday_on_calendar, updated_at)
-       VALUES ($1, $2, $3, $4, $5, now())
+      `INSERT INTO members (email, name, avatar, bio, birthday, show_birthday_on_calendar, updated_at)
+       VALUES ($1, $2, $3, $4, $5, $6, now())
        ON CONFLICT (email) DO UPDATE SET
          name = $2,
          avatar = COALESCE($3, members.avatar),
-         birthday = COALESCE($4, members.birthday),
-         show_birthday_on_calendar = $5,
+         bio = COALESCE($4, members.bio),
+         birthday = COALESCE($5, members.birthday),
+         show_birthday_on_calendar = $6,
          updated_at = now()`,
-      [email.toLowerCase(), name, avatar || null, birthday || null, !!showBirthdayOnCalendar]
+      [email.toLowerCase(), name, avatar || null, bio || null, birthday || null, !!showBirthdayOnCalendar]
     );
     res.json({ ok: true });
   } catch (err) {
     console.error("Sync member error:", err);
     res.status(500).json({ error: "Failed to sync member" });
+  }
+});
+
+// Restore a member's own saved profile from the server. Used by the client
+// to recover avatar/bio/birthday after local storage gets wiped (e.g. by
+// Safari's tracking-prevention purge, or a fresh re-login) — without this,
+// a wipe would permanently strand the member with a blank profile since
+// the client only ever pushes local data to the server, never pulls it back.
+router.get("/members/me", async (req, res) => {
+  const email = (req.query.email as string | undefined)?.toLowerCase();
+
+  if (!email) {
+    return res.status(400).json({ error: "email required" });
+  }
+
+  try {
+    const { rows } = await pool.query(
+      "SELECT name, avatar, bio, birthday, show_birthday_on_calendar FROM members WHERE email = $1",
+      [email]
+    );
+
+    if (rows.length === 0) {
+      return res.json({ member: null });
+    }
+
+    const row = rows[0];
+    res.json({
+      member: {
+        name: row.name,
+        avatar: row.avatar ?? undefined,
+        bio: row.bio ?? undefined,
+        birthday: row.birthday ?? undefined,
+        showBirthdayOnCalendar: row.show_birthday_on_calendar,
+      },
+    });
+  } catch (err) {
+    console.error("Fetch member error:", err);
+    res.status(500).json({ error: "Failed to fetch member" });
   }
 });
 

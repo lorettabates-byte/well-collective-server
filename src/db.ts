@@ -172,6 +172,8 @@ export async function initDb(): Promise<void> {
     );
   `);
 
+  await pool.query(`ALTER TABLE members ADD COLUMN IF NOT EXISTS bio TEXT;`);
+
   await pool.query(`
     CREATE TABLE IF NOT EXISTS app_settings (
       key TEXT PRIMARY KEY,
