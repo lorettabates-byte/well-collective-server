@@ -65,19 +65,36 @@ router.get("/", async (req, res) => {
   }
 
   try {
+    // The old version of this query mixed DISTINCT, GROUP BY, and a
+    // correlated subquery that referenced ungrouped columns — invalid SQL
+    // that Postgres rejected with a 500 on every call, so the inbox always
+    // silently fell back to the client's "No conversations yet" placeholder
+    // even when real conversations existed (they only showed up if you
+    // opened a specific person's thread directly).
     const { rows } = await pool.query(
-      `SELECT DISTINCT
-        CASE WHEN sender_id = $1 THEN recipient_id ELSE sender_id END as user_id,
-        MAX(created_at) as last_message_at,
-        (SELECT body FROM messages m2
-         WHERE (m2.sender_id = messages.sender_id AND m2.recipient_id = messages.recipient_id)
-         OR (m2.sender_id = messages.recipient_id AND m2.recipient_id = messages.sender_id)
-         ORDER BY m2.created_at DESC LIMIT 1) as last_body,
-        COUNT(CASE WHEN recipient_id = $1 AND read = false THEN 1 END) as unread_count
-       FROM messages
-       WHERE sender_id = $1 OR recipient_id = $1
-       GROUP BY user_id
-       ORDER BY last_message_at DESC`,
+      `WITH conv AS (
+         SELECT
+           CASE WHEN sender_id = $1 THEN recipient_id ELSE sender_id END AS user_id,
+           body,
+           created_at,
+           (recipient_id = $1 AND read = false) AS is_unread
+         FROM messages
+         WHERE sender_id = $1 OR recipient_id = $1
+       ),
+       ranked AS (
+         SELECT user_id, body, created_at,
+                ROW_NUMBER() OVER (PARTITION BY user_id ORDER BY created_at DESC) AS rn
+         FROM conv
+       )
+       SELECT
+         c.user_id,
+         r.created_at AS last_message_at,
+         r.body AS last_body,
+         COUNT(*) FILTER (WHERE c.is_unread) AS unread_count
+       FROM conv c
+       JOIN ranked r ON r.user_id = c.user_id AND r.rn = 1
+       GROUP BY c.user_id, r.created_at, r.body
+       ORDER BY r.created_at DESC`,
       [currentUserId]
     );
 
