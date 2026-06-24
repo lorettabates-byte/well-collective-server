@@ -85,4 +85,31 @@ router.put("/settings/livestream-cover", requireAdmin, async (req, res) => {
   }
 });
 
+router.get("/settings/content-restrictions", async (_req, res) => {
+  try {
+    const { rows } = await pool.query("SELECT value FROM app_settings WHERE key = 'contentRestrictions'");
+    const restrictions = rows[0]?.value ? JSON.parse(rows[0].value) : { lockedCategories: [], lockedSongIds: [] };
+    res.json(restrictions);
+  } catch (err) {
+    console.error("Fetch content restrictions error:", err);
+    res.status(500).json({ error: "Failed to fetch content restrictions" });
+  }
+});
+
+router.put("/settings/content-restrictions", requireAdmin, async (req, res) => {
+  const { lockedCategories, lockedSongIds } = req.body as { lockedCategories?: string[]; lockedSongIds?: number[] };
+
+  try {
+    await pool.query(
+      `INSERT INTO app_settings (key, value) VALUES ('contentRestrictions', $1)
+       ON CONFLICT (key) DO UPDATE SET value = $1`,
+      [JSON.stringify({ lockedCategories: lockedCategories || [], lockedSongIds: lockedSongIds || [] })]
+    );
+    res.json({ ok: true });
+  } catch (err) {
+    console.error("Update content restrictions error:", err);
+    res.status(500).json({ error: "Failed to update content restrictions" });
+  }
+});
+
 export default router;
