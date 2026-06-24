@@ -4,6 +4,27 @@ import { sendNotificationToUser } from "../push";
 
 const router = Router();
 
+// Mirrors deriveMemberId() in members.ts/AppContext.tsx. Message sender/
+// recipient ids are always derived member ids (e.g. "m_8vwxqg"), never raw
+// emails, so push notifications need this to resolve an id back to the
+// email that push_subscriptions are keyed on.
+function deriveMemberId(email: string): string {
+  let hash = 0;
+  for (let i = 0; i < email.length; i++) {
+    hash = (hash << 5) - hash + email.charCodeAt(i);
+    hash |= 0;
+  }
+  return `m_${Math.abs(hash).toString(36)}`;
+}
+
+async function findEmailByMemberId(memberId: string): Promise<string | null> {
+  const { rows } = await pool.query("SELECT email FROM members");
+  for (const row of rows) {
+    if (deriveMemberId(row.email) === memberId) return row.email;
+  }
+  return null;
+}
+
 // Get conversation with a user
 router.get("/:userId", async (req, res) => {
   const { userId } = req.params;
@@ -129,10 +150,12 @@ router.post("/", async (req, res) => {
       [senderId, recipientId, body]
     );
 
-    // Send push notification to recipient. Try to get their email from the
-    // recipient ID (which is typically the member email in this system).
-    // Recipient ID might be a user ID or email; if it looks like an email, use it.
-    const recipientEmail = recipientId.includes("@") ? recipientId : null;
+    // Send push notification to recipient. recipientId is always a derived
+    // member id (e.g. "m_8vwxqg"), never an email, so it must be resolved
+    // against the members table to find the email push_subscriptions is
+    // keyed on — checking recipientId.includes("@") here always failed,
+    // which is why DM push notifications never actually sent.
+    const recipientEmail = await findEmailByMemberId(recipientId);
     if (recipientEmail) {
       // Deep link to the specific message conversation with the sender
       const deepLinkUrl = `/messages/${encodeURIComponent(senderId)}`;
