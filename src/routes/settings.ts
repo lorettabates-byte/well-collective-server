@@ -59,4 +59,30 @@ router.put("/settings/hidden-sounds", requireAdmin, async (req, res) => {
   }
 });
 
+router.get("/settings/livestream-cover", async (_req, res) => {
+  try {
+    const { rows } = await pool.query("SELECT value FROM app_settings WHERE key = 'livestreamCoverUrl'");
+    res.json({ url: rows[0]?.value || null });
+  } catch (err) {
+    console.error("Fetch livestream cover error:", err);
+    res.status(500).json({ error: "Failed to fetch livestream cover" });
+  }
+});
+
+router.put("/settings/livestream-cover", requireAdmin, async (req, res) => {
+  const { url } = req.body as { url: string | null };
+
+  try {
+    await pool.query(
+      `INSERT INTO app_settings (key, value) VALUES ('livestreamCoverUrl', $1)
+       ON CONFLICT (key) DO UPDATE SET value = $1`,
+      [url || null]
+    );
+    res.json({ ok: true });
+  } catch (err) {
+    console.error("Update livestream cover error:", err);
+    res.status(500).json({ error: "Failed to update livestream cover" });
+  }
+});
+
 export default router;
