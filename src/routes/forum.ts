@@ -170,9 +170,13 @@ router.post("/threads/:threadId/messages", async (req, res) => {
   }
 
   try {
-    // Get thread title for notification
-    const { rows: threadRows } = await pool.query("SELECT title FROM forum_threads WHERE id = $1", [req.params.threadId]);
+    // Get thread title and category for notification deep link
+    const { rows: threadRows } = await pool.query(
+      "SELECT title, category_id FROM forum_threads WHERE id = $1",
+      [req.params.threadId]
+    );
     const threadTitle = threadRows[0]?.title || "New message";
+    const categoryId = threadRows[0]?.category_id;
 
     await pool.query(
       `INSERT INTO forum_messages (id, thread_id, author_id, author_name, author_avatar, text, reply_to_id)
@@ -181,11 +185,13 @@ router.post("/threads/:threadId/messages", async (req, res) => {
     );
 
     // Send push notification to all members about the new community message
+    // Deep link to the specific thread
+    const deepLinkUrl = categoryId ? `/community/${categoryId}/${req.params.threadId}` : "/community";
     broadcastNotification({
       title: `${authorName} posted in ${threadTitle}`,
       body: text.substring(0, 100),
       tag: "community",
-      url: "/community",
+      url: deepLinkUrl,
     }).catch((err) => console.error("Failed to send community notification:", err));
 
     res.status(201).json({ ok: true });

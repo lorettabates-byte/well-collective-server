@@ -250,7 +250,7 @@ async function sendLivestreamReminder(): Promise<void> {
     title: "WELL Collective Live Cardio Class",
     body: "Join us in 1 hour for a fun live cardio class! Get ready to move and connect with the community. 💪",
     tag: "livestream-reminder",
-    url: "https://lorettabates.com/videolibrary.lorettabates.com/wellcollective/livestream-with-loretta-2/",
+    url: "/videos",
   });
   await markSent(date, "livestreamReminder");
 }

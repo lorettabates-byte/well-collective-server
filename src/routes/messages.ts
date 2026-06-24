@@ -117,11 +117,13 @@ router.post("/", async (req, res) => {
     // Recipient ID might be a user ID or email; if it looks like an email, use it.
     const recipientEmail = recipientId.includes("@") ? recipientId : null;
     if (recipientEmail) {
+      // Deep link to the specific message conversation with the sender
+      const deepLinkUrl = `/messages/${encodeURIComponent(senderId)}`;
       sendNotificationToUser(recipientEmail, {
         title: senderName || "New message",
         body: body.substring(0, 100),
         tag: "message",
-        url: "/messages",
+        url: deepLinkUrl,
       }).catch((err) => console.error("Failed to send message notification:", err));
     }
 
