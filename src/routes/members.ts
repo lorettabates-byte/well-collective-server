@@ -1,5 +1,6 @@
 import { Router } from "express";
 import { pool } from "../db";
+import { requireAdmin } from "../middleware/adminAuth";
 
 const router = Router();
 
@@ -126,6 +127,18 @@ router.get("/members/birthdays", async (_req, res) => {
   } catch (err) {
     console.error("Fetch birthdays error:", err);
     res.status(500).json({ error: "Failed to fetch birthdays" });
+  }
+});
+
+// Remove a member from the shared directory (e.g. a stale test account) —
+// there was previously no way to do this at all.
+router.delete("/members/:email", requireAdmin, async (req, res) => {
+  try {
+    await pool.query("DELETE FROM members WHERE email = $1", [req.params.email.toLowerCase()]);
+    res.json({ ok: true });
+  } catch (err) {
+    console.error("Delete member error:", err);
+    res.status(500).json({ error: "Failed to delete member" });
   }
 });
 
