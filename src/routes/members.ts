@@ -28,11 +28,19 @@ router.post("/members/sync", async (req, res) => {
   }
 
   try {
+    // Use COALESCE so a blank/missing avatar or birthday from the client
+    // (e.g. a false-positive "new member" reset on the client, or a stale
+    // local profile) can never overwrite a value already saved for this
+    // member — it can only fill in a field that's still empty.
     await pool.query(
       `INSERT INTO members (email, name, avatar, birthday, show_birthday_on_calendar, updated_at)
        VALUES ($1, $2, $3, $4, $5, now())
        ON CONFLICT (email) DO UPDATE SET
-         name = $2, avatar = $3, birthday = $4, show_birthday_on_calendar = $5, updated_at = now()`,
+         name = $2,
+         avatar = COALESCE($3, members.avatar),
+         birthday = COALESCE($4, members.birthday),
+         show_birthday_on_calendar = $5,
+         updated_at = now()`,
       [email.toLowerCase(), name, avatar || null, birthday || null, !!showBirthdayOnCalendar]
     );
     res.json({ ok: true });
