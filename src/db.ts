@@ -198,4 +198,17 @@ export async function initDb(): Promise<void> {
   // column if it's still hanging around from before this change shipped.
   await pool.query(`ALTER TABLE peaceful_sounds ADD COLUMN IF NOT EXISTS icon TEXT NOT NULL DEFAULT 'music';`);
   await pool.query(`ALTER TABLE peaceful_sounds DROP COLUMN IF EXISTS emoji;`);
+
+  // Ad-hoc notes the admin sends as instant push notifications (distinct
+  // from the date-keyed content_schedule, since there can be any number of
+  // these per day) — persisted so they show up in the app's Inspirations
+  // feed under "Notes from Loretta", not just as an ephemeral push.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS loretta_notes (
+      id SERIAL PRIMARY KEY,
+      title TEXT NOT NULL,
+      body TEXT NOT NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    );
+  `);
 }

@@ -130,4 +130,61 @@ router.post("/send-test", requireAdmin, async (req, res) => {
   }
 });
 
+// Public: feed of the admin's instant/manual push notifications, surfaced in
+// the app under Inspirations > "Notes from Loretta".
+router.get("/notes", async (_req, res) => {
+  try {
+    const { rows } = await pool.query(
+      "SELECT id, title, body, created_at FROM loretta_notes ORDER BY created_at DESC LIMIT 50"
+    );
+    res.json({
+      notes: rows.map((row) => ({
+        id: String(row.id),
+        title: row.title,
+        body: row.body,
+        sentAt: row.created_at.toISOString(),
+      })),
+    });
+  } catch (err) {
+    console.error("Fetch notes error:", err);
+    res.status(500).json({ error: "Failed to fetch notes" });
+  }
+});
+
+// Admin: send an instant push notification and persist it as a note.
+router.post("/notes", requireAdmin, async (req, res) => {
+  try {
+    const { title, body } = req.body as { title?: string; body?: string };
+    if (!title?.trim() || !body?.trim()) {
+      return res.status(400).json({ error: "Title and body are required" });
+    }
+
+    const { rows } = await pool.query(
+      "INSERT INTO loretta_notes (title, body) VALUES ($1, $2) RETURNING id, title, body, created_at",
+      [title.trim(), body.trim()]
+    );
+    const note = rows[0];
+
+    const result = await broadcastNotification({
+      title: note.title,
+      body: note.body,
+      tag: "loretta-note",
+      url: "/inspirations",
+    });
+
+    res.status(201).json({
+      note: {
+        id: String(note.id),
+        title: note.title,
+        body: note.body,
+        sentAt: note.created_at.toISOString(),
+      },
+      push: result,
+    });
+  } catch (err) {
+    console.error("Create note error:", err);
+    res.status(500).json({ error: "Failed to send notification" });
+  }
+});
+
 export default router;
