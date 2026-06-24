@@ -138,6 +138,18 @@ router.post("/threads", async (req, res) => {
        VALUES ($1, $2, $3, $4, $5, $6)`,
       [messageId, id, authorId, authorName, authorAvatar || null, text]
     );
+
+    // Send push notification to all members about the new thread. Replies to
+    // existing threads already notify via the /messages route below — new
+    // threads need the same treatment, otherwise starting a post never
+    // notifies anyone.
+    broadcastNotification({
+      title: `${authorName} posted in ${title}`,
+      body: text.substring(0, 100),
+      tag: "community",
+      url: `/community/${categoryId}/${id}`,
+    }).catch((err) => console.error("Failed to send community notification:", err));
+
     res.status(201).json({ ok: true });
   } catch (err) {
     console.error("Create thread error:", err);
