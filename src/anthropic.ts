@@ -82,7 +82,15 @@ export interface GeneratedRecipe {
   description: string;
   ingredients: string[];
   steps: string[];
+  imageCategory: string;
 }
+
+const VALID_IMAGE_CATEGORIES = [
+  "salad", "grain_bowl", "smoothie", "soup", "pasta", "chicken",
+  "fish", "oatmeal", "toast", "wrap", "rice", "stir_fry",
+  "roasted_vegetables", "curry", "tacos", "sandwich", "fruit",
+  "baked", "dessert", "general_healthy",
+];
 
 export async function generateRecipe(weeklyThemeTitle: string | undefined): Promise<GeneratedRecipe> {
   const themeContext = weeklyThemeTitle
@@ -93,13 +101,21 @@ export async function generateRecipe(weeklyThemeTitle: string | undefined): Prom
 
 Write one recipe that ties into that theme (e.g. comforting, energizing, calming, restorative — whatever fits). Keep it realistic for a home cook: 5-8 ingredients, 4-6 short steps.
 
-Respond with ONLY a JSON object, no other text, in this exact shape:
-{"name": "recipe name", "description": "1 short sentence on why it fits this week", "ingredients": ["...", "..."], "steps": ["...", "..."]}`;
+You must also pick the ONE imageCategory that best matches the finished dish. Choose from EXACTLY one of these:
+salad, grain_bowl, smoothie, soup, pasta, chicken, fish, oatmeal, toast, wrap, rice, stir_fry, roasted_vegetables, curry, tacos, sandwich, fruit, baked, dessert, general_healthy
 
-  const text = await callClaude(prompt, 700);
+Pick the category that most closely matches what the final plated dish looks like. For example porridge/oatmeal recipes = "oatmeal", a veggie stir fry = "stir_fry", a salmon dish = "fish".
+
+Respond with ONLY a JSON object, no other text, in this exact shape:
+{"name": "recipe name", "description": "1 short sentence on why it fits this week", "ingredients": ["...", "..."], "steps": ["...", "..."], "imageCategory": "one_of_the_categories"}`;
+
+  const text = await callClaude(prompt, 800);
   const parsed = extractJson(text) as GeneratedRecipe;
   if (!parsed.name || !Array.isArray(parsed.ingredients) || !Array.isArray(parsed.steps)) {
     throw new Error("AI recipe response missing required fields");
+  }
+  if (!parsed.imageCategory || !VALID_IMAGE_CATEGORIES.includes(parsed.imageCategory)) {
+    parsed.imageCategory = "general_healthy";
   }
   return parsed;
 }
