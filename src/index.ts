@@ -30,7 +30,11 @@ app.use(
     origin: allowedOrigins.length > 0 ? allowedOrigins : true,
   })
 );
-app.use(express.json());
+// Default express.json() body limit is 100kb, which a real uploaded photo
+// (base64-encoded) blows past easily — members.sync and similar endpoints
+// would silently 413 with no visible error, while small built-in avatar
+// images stay under the limit and save fine.
+app.use(express.json({ limit: "15mb" }));
 
 app.get("/health", (_req, res) => {
   res.json({ ok: true });
