@@ -102,6 +102,8 @@ export async function initDb(): Promise<void> {
     );
   `);
 
+  await pool.query(`ALTER TABLE songs ADD COLUMN IF NOT EXISTS lyrics TEXT;`);
+
   await pool.query(`
     CREATE TABLE IF NOT EXISTS forum_categories (
       id TEXT PRIMARY KEY,
