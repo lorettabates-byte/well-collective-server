@@ -1,6 +1,7 @@
 import { Router } from "express";
 import { pool } from "../db";
 import { requireAdmin } from "../middleware/adminAuth";
+import { broadcastNotification } from "../push";
 
 const router = Router();
 
@@ -169,11 +170,24 @@ router.post("/threads/:threadId/messages", async (req, res) => {
   }
 
   try {
+    // Get thread title for notification
+    const { rows: threadRows } = await pool.query("SELECT title FROM forum_threads WHERE id = $1", [req.params.threadId]);
+    const threadTitle = threadRows[0]?.title || "New message";
+
     await pool.query(
       `INSERT INTO forum_messages (id, thread_id, author_id, author_name, author_avatar, text, reply_to_id)
        VALUES ($1, $2, $3, $4, $5, $6, $7)`,
       [id, req.params.threadId, authorId, authorName, authorAvatar || null, text, replyToId || null]
     );
+
+    // Send push notification to all members about the new community message
+    broadcastNotification({
+      title: `${authorName} posted in ${threadTitle}`,
+      body: text.substring(0, 100),
+      tag: "community",
+      url: "/community",
+    }).catch((err) => console.error("Failed to send community notification:", err));
+
     res.status(201).json({ ok: true });
   } catch (err) {
     console.error("Create message error:", err);

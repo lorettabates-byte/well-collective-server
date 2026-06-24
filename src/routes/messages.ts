@@ -1,5 +1,6 @@
 import { Router } from "express";
 import { pool } from "../db";
+import { sendNotificationToUser } from "../push";
 
 const router = Router();
 
@@ -89,10 +90,11 @@ router.get("/", async (req, res) => {
 
 // Send a message
 router.post("/", async (req, res) => {
-  const { senderId, recipientId, body } = req.body as {
+  const { senderId, recipientId, body, senderName } = req.body as {
     senderId?: string;
     recipientId?: string;
     body?: string;
+    senderName?: string;
   };
 
   if (!senderId || !recipientId || !body) {
@@ -109,6 +111,19 @@ router.post("/", async (req, res) => {
        RETURNING id, sender_id, recipient_id, body, read, created_at`,
       [senderId, recipientId, body]
     );
+
+    // Send push notification to recipient. Try to get their email from the
+    // recipient ID (which is typically the member email in this system).
+    // Recipient ID might be a user ID or email; if it looks like an email, use it.
+    const recipientEmail = recipientId.includes("@") ? recipientId : null;
+    if (recipientEmail) {
+      sendNotificationToUser(recipientEmail, {
+        title: senderName || "New message",
+        body: body.substring(0, 100),
+        tag: "message",
+        url: "/messages",
+      }).catch((err) => console.error("Failed to send message notification:", err));
+    }
 
     res.status(201).json({ message: rows[0] });
   } catch (err) {
