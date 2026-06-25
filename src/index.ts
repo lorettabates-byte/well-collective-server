@@ -7,6 +7,7 @@ import blogNotificationsRouter from "./routes/blog-notifications";
 import breathworkRouter from "./routes/breathwork";
 import contentRouter from "./routes/content";
 import couponsRouter from "./routes/coupons";
+import eventsRouter from "./routes/events";
 import forumRouter from "./routes/forum";
 import membersRouter from "./routes/members";
 import membershipRouter from "./routes/membership";
@@ -59,6 +60,7 @@ app.use("/api", membersRouter);
 app.use("/api", settingsRouter);
 app.use("/api", peacefulSoundsRouter);
 app.use("/api", tribeRouter);
+app.use("/api", eventsRouter);
 
 async function main() {
   await initDb();

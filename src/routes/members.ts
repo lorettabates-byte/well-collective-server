@@ -2,6 +2,7 @@ import { Router } from "express";
 import { pool } from "../db";
 import { requireAdmin } from "../middleware/adminAuth";
 import { computeBonusBadges, computeLevelBadge, SPECIAL_BADGE_IDS } from "../badges";
+import { ADMIN_NOTIFY_EMAIL, sendNotificationToUser } from "../push";
 
 const router = Router();
 
@@ -31,7 +32,12 @@ router.post("/members/sync", async (req, res) => {
     return res.status(400).json({ error: "email and name required" });
   }
 
+  const normalizedEmail = email.toLowerCase();
+
   try {
+    const { rows: existingRows } = await pool.query("SELECT 1 FROM members WHERE email = $1", [normalizedEmail]);
+    const isFirstTimeJoin = existingRows.length === 0;
+
     // Use COALESCE so a blank/missing avatar, bio, birthday, or workout log
     // from the client (e.g. a false-positive "new member" reset on the
     // client, or a stale/wiped local profile) can never overwrite a value
@@ -49,7 +55,7 @@ router.post("/members/sync", async (req, res) => {
          workout_log = COALESCE($7, members.workout_log),
          updated_at = now()`,
       [
-        email.toLowerCase(),
+        normalizedEmail,
         name,
         avatar || null,
         bio || null,
@@ -58,6 +64,16 @@ router.post("/members/sync", async (req, res) => {
         workoutLog && workoutLog.length > 0 ? workoutLog : null,
       ]
     );
+
+    if (isFirstTimeJoin && normalizedEmail !== ADMIN_NOTIFY_EMAIL) {
+      sendNotificationToUser(ADMIN_NOTIFY_EMAIL, {
+        title: "New WELL Collective signup",
+        body: `${name} (${normalizedEmail}) just joined as a paid member.`,
+        tag: "new-signup",
+        url: "/admin",
+      }).catch((err) => console.error("Admin signup notification failed:", err));
+    }
+
     res.json({ ok: true });
   } catch (err) {
     console.error("Sync member error:", err);

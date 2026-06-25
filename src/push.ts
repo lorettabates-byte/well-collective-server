@@ -6,6 +6,10 @@ const LOGO_URL = "https://app.lorettabates.com/icons/notification-icon.png";
 const BADGE_URL = "https://app.lorettabates.com/icons/notification-badge.png";
 const BRAND_COLOR = "#0191CE";
 
+// Matches the frontend's FOUNDER_EMAIL (AppContext.tsx) — the single account
+// that gets admin-only notifications like "a new user joined".
+export const ADMIN_NOTIFY_EMAIL = (process.env.ADMIN_NOTIFY_EMAIL || "loretta@lorettabates.com").toLowerCase();
+
 webpush.setVapidDetails(
   process.env.VAPID_SUBJECT || "mailto:loretta@lorettabates.com",
   process.env.VAPID_PUBLIC_KEY || "",
@@ -87,8 +91,16 @@ export async function sendNotificationToUser(
  * Sends a notification to every stored subscription belonging to a full
  * member or a member on an active free trial. Subscriptions that the push
  * service reports as gone (404/410) are removed.
+ *
+ * Pass `contentPublishedAt` for content-driven notifications (new blog post,
+ * class, or event) so members who joined AFTER that content already existed
+ * don't get a notification about something that predates them — only members
+ * who joined before/at that point in time are eligible.
  */
-export async function broadcastNotification(payload: NotificationPayload): Promise<{ sent: number; removed: number; blocked: number }> {
+export async function broadcastNotification(
+  payload: NotificationPayload,
+  options?: { contentPublishedAt?: Date }
+): Promise<{ sent: number; removed: number; blocked: number }> {
   console.log(`[PUSH] Broadcasting notification: "${payload.title}"`);
 
   const { rows } = await pool.query<{ endpoint: string; p256dh: string; auth: string; user_email: string | null }>(
@@ -106,6 +118,15 @@ export async function broadcastNotification(payload: NotificationPayload): Promi
   );
   const activeTrialEmails = new Set(trialRows.map((r) => r.email.toLowerCase()));
 
+  let joinedAfterContentEmails = new Set<string>();
+  if (options?.contentPublishedAt) {
+    const { rows: lateJoinerRows } = await pool.query<{ email: string }>(
+      "SELECT email FROM members WHERE created_at > $1",
+      [options.contentPublishedAt]
+    );
+    joinedAfterContentEmails = new Set(lateJoinerRows.map((r) => r.email.toLowerCase()));
+  }
+
   const body = buildPayload(payload);
   let sent = 0;
   let removed = 0;
@@ -116,6 +137,12 @@ export async function broadcastNotification(payload: NotificationPayload): Promi
       if (!row.user_email) {
         blocked += 1;
         console.log(`[PUSH] Blocked subscription with no email`);
+        return;
+      }
+
+      if (joinedAfterContentEmails.has(row.user_email.toLowerCase())) {
+        blocked += 1;
+        console.log(`[PUSH] Blocked subscription for ${row.user_email} - joined after this content was published`);
         return;
       }
 

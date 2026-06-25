@@ -55,12 +55,15 @@ async function checkAndNotifyNewVideos(): Promise<void> {
           [videoId, "video", title, video.link, publishedAt]
         );
 
-        await broadcastNotification({
-          title: `New Class: ${title}`,
-          body: description,
-          tag: "new-video",
-          url: "/classes",
-        });
+        await broadcastNotification(
+          {
+            title: `New Class: ${title}`,
+            body: description,
+            tag: "new-video",
+            url: "/classes",
+          },
+          { contentPublishedAt: publishedAt }
+        );
 
         console.log(`[VIDEO] Sent notification for new video: "${title}"`);
       } else if (!rows[0]?.notified_at) {
@@ -70,12 +73,15 @@ async function checkAndNotifyNewVideos(): Promise<void> {
 
         await pool.query("UPDATE published_content SET notified_at = now() WHERE id = $1", [videoId]);
 
-        await broadcastNotification({
-          title: `New Class: ${title}`,
-          body: description,
-          tag: "new-video",
-          url: "/classes",
-        });
+        await broadcastNotification(
+          {
+            title: `New Class: ${title}`,
+            body: description,
+            tag: "new-video",
+            url: "/classes",
+          },
+          { contentPublishedAt: publishedAt }
+        );
 
         console.log(`[VIDEO] Sent notification for video: "${title}"`);
       }

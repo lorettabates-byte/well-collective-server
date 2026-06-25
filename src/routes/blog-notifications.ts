@@ -55,12 +55,15 @@ async function checkAndNotifyNewBlogPosts(): Promise<void> {
           [postId, "blog", title, post.link, publishedAt]
         );
 
-        await broadcastNotification({
-          title: `New Blog Post: ${title}`,
-          body: description,
-          tag: "blog-post",
-          url: "/blog",
-        });
+        await broadcastNotification(
+          {
+            title: `New Blog Post: ${title}`,
+            body: description,
+            tag: "blog-post",
+            url: "/blog",
+          },
+          { contentPublishedAt: publishedAt }
+        );
 
         console.log(`[BLOG] Sent notification for new post: "${title}"`);
       } else if (!rows[0]?.notified_at) {
@@ -70,12 +73,15 @@ async function checkAndNotifyNewBlogPosts(): Promise<void> {
 
         await pool.query("UPDATE published_content SET notified_at = now() WHERE id = $1", [postId]);
 
-        await broadcastNotification({
-          title: `New Blog Post: ${title}`,
-          body: description,
-          tag: "blog-post",
-          url: "/blog",
-        });
+        await broadcastNotification(
+          {
+            title: `New Blog Post: ${title}`,
+            body: description,
+            tag: "blog-post",
+            url: "/blog",
+          },
+          { contentPublishedAt: publishedAt }
+        );
 
         console.log(`[BLOG] Sent notification for post: "${title}"`);
       }

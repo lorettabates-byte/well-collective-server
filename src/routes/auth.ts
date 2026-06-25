@@ -2,6 +2,7 @@ import bcrypt from "bcrypt";
 import { Router } from "express";
 import jwt from "jsonwebtoken";
 import { pool } from "../db";
+import { ADMIN_NOTIFY_EMAIL, sendNotificationToUser } from "../push";
 
 const router = Router();
 const JWT_SECRET = process.env.JWT_SECRET || "well-collective-secret-key-change-in-production";
@@ -115,6 +116,7 @@ router.post("/start-trial", async (req, res) => {
     if (rows.length > 0 && rows[0].trial_started_at) {
       return res.status(409).json({ error: "This email has already used its free trial. Please log in or subscribe." });
     }
+    const isFirstTimeJoin = rows.length === 0;
 
     const trialEnd = new Date();
     trialEnd.setDate(trialEnd.getDate() + 7);
@@ -129,6 +131,15 @@ router.post("/start-trial", async (req, res) => {
          name = COALESCE(members.name, $2)`,
       [normalizedEmail, name.trim(), trialEndsAt]
     );
+
+    if (isFirstTimeJoin && normalizedEmail !== ADMIN_NOTIFY_EMAIL) {
+      sendNotificationToUser(ADMIN_NOTIFY_EMAIL, {
+        title: "New WELL Collective signup",
+        body: `${name.trim()} (${normalizedEmail}) just joined as a Free Trial member.`,
+        tag: "new-signup",
+        url: "/admin",
+      }).catch((err) => console.error("Admin signup notification failed:", err));
+    }
 
     res.json({ trialEndsAt });
   } catch (err) {

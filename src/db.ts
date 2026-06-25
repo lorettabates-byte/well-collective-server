@@ -296,4 +296,25 @@ export async function initDb(): Promise<void> {
       created_at TIMESTAMPTZ NOT NULL DEFAULT now()
     );
   `);
+
+  // Admin-created community events. recurrence_group_id links every occurrence
+  // of a recurring event (e.g. "every Tuesday at 9am") so the whole series can
+  // be identified/deleted together, while each occurrence is still its own row
+  // with its own date and RSVPs.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS events (
+      id TEXT PRIMARY KEY,
+      title TEXT NOT NULL,
+      description TEXT,
+      date DATE NOT NULL,
+      time TEXT NOT NULL,
+      location TEXT,
+      color TEXT NOT NULL DEFAULT '#0191CE',
+      rsvps TEXT[] NOT NULL DEFAULT '{}',
+      recurrence_group_id TEXT,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    );
+  `);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_events_date ON events (date);`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_events_recurrence_group ON events (recurrence_group_id);`);
 }
