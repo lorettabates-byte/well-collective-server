@@ -175,6 +175,10 @@ export async function initDb(): Promise<void> {
   `);
 
   await pool.query(`ALTER TABLE members ADD COLUMN IF NOT EXISTS bio TEXT;`);
+  // Marks an email as having already claimed its one-time free trial, so the
+  // signup form can reject repeat attempts (e.g. after clearing local storage).
+  await pool.query(`ALTER TABLE members ADD COLUMN IF NOT EXISTS trial_started_at TIMESTAMPTZ;`);
+  await pool.query(`ALTER TABLE members ADD COLUMN IF NOT EXISTS trial_ends_at DATE;`);
 
   await pool.query(`
     CREATE TABLE IF NOT EXISTS app_settings (

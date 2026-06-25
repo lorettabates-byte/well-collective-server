@@ -91,6 +91,61 @@ router.get("/members/me", async (req, res) => {
   }
 });
 
+// Admin: full member directory (email included, unlike the public /members
+// list) so the admin panel can show who's a trial vs. who's a full member
+// and delete or add entries.
+router.get("/admin/members", requireAdmin, async (_req, res) => {
+  try {
+    const { rows } = await pool.query(
+      "SELECT email, name, avatar, trial_started_at, trial_ends_at, updated_at FROM members ORDER BY updated_at DESC"
+    );
+    res.json({
+      members: rows.map((row) => ({
+        email: row.email,
+        name: row.name,
+        avatar: row.avatar ?? undefined,
+        trialStartedAt: row.trial_started_at ?? undefined,
+        trialEndsAt: row.trial_ends_at ?? undefined,
+        updatedAt: row.updated_at,
+      })),
+    });
+  } catch (err) {
+    console.error("Fetch admin members error:", err);
+    res.status(500).json({ error: "Failed to fetch members" });
+  }
+});
+
+// Admin: manually add a member — either a full member (no trial dates) or a
+// trial grant (sets trial_started_at/trial_ends_at so they get trial access
+// immediately, same as a member who signed up for it themselves).
+router.post("/admin/members", requireAdmin, async (req, res) => {
+  const { email, name, grantTrial } = req.body as { email?: string; name?: string; grantTrial?: boolean };
+  if (!email?.trim() || !name?.trim()) {
+    return res.status(400).json({ error: "Name and email are required" });
+  }
+
+  const normalizedEmail = email.trim().toLowerCase();
+  let trialEndsAt: string | null = null;
+  if (grantTrial) {
+    const trialEnd = new Date();
+    trialEnd.setDate(trialEnd.getDate() + 7);
+    trialEndsAt = trialEnd.toISOString().slice(0, 10);
+  }
+
+  try {
+    await pool.query(
+      `INSERT INTO members (email, name, trial_started_at, trial_ends_at)
+       VALUES ($1, $2, ${grantTrial ? "now()" : "NULL"}, $3)
+       ON CONFLICT (email) DO UPDATE SET name = $2`,
+      [normalizedEmail, name.trim(), trialEndsAt]
+    );
+    res.status(201).json({ ok: true });
+  } catch (err) {
+    console.error("Add member error:", err);
+    res.status(500).json({ error: "Failed to add member" });
+  }
+});
+
 router.get("/members", async (req, res) => {
   const excludeEmail = (req.query.excludeEmail as string | undefined)?.toLowerCase();
 

@@ -99,6 +99,44 @@ router.post("/member-login", async (req, res) => {
   }
 });
 
+// One trial per email, enforced server-side — the client can't be trusted to
+// self-report this since clearing local storage previously let anyone restart
+// a "new" 7-day trial indefinitely.
+router.post("/start-trial", async (req, res) => {
+  const { email, name } = req.body as { email?: string; name?: string };
+  if (!email?.trim() || !name?.trim()) {
+    return res.status(400).json({ error: "Name and email are required" });
+  }
+
+  const normalizedEmail = email.trim().toLowerCase();
+
+  try {
+    const { rows } = await pool.query("SELECT trial_started_at FROM members WHERE email = $1", [normalizedEmail]);
+    if (rows.length > 0 && rows[0].trial_started_at) {
+      return res.status(409).json({ error: "This email has already used its free trial. Please log in or subscribe." });
+    }
+
+    const trialEnd = new Date();
+    trialEnd.setDate(trialEnd.getDate() + 7);
+    const trialEndsAt = trialEnd.toISOString().slice(0, 10);
+
+    await pool.query(
+      `INSERT INTO members (email, name, trial_started_at, trial_ends_at)
+       VALUES ($1, $2, now(), $3)
+       ON CONFLICT (email) DO UPDATE SET
+         trial_started_at = now(),
+         trial_ends_at = $3,
+         name = COALESCE(members.name, $2)`,
+      [normalizedEmail, name.trim(), trialEndsAt]
+    );
+
+    res.json({ trialEndsAt });
+  } catch (err) {
+    console.error("Start trial error:", err);
+    res.status(500).json({ error: "Failed to start trial" });
+  }
+});
+
 router.post("/register", async (req, res) => {
   const { email, password, name } = req.body as { email?: string; password?: string; name?: string };
 
