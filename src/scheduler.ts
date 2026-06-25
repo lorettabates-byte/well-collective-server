@@ -9,6 +9,7 @@ import {
   isAnthropicConfigured,
 } from "./anthropic";
 import { checkForNewBlogPosts } from "./routes/blog-notifications";
+import { checkForNewVideos } from "./routes/video-notifications";
 import { pool } from "./db";
 import { broadcastNotification } from "./push";
 
@@ -297,6 +298,11 @@ export function startScheduler(): void {
   // Check for new blog posts: every hour on the hour
   cron.schedule("0 * * * *", () => {
     checkForNewBlogPosts().catch((err) => console.error("Blog post check failed:", err));
+  });
+
+  // Check for new videos: every 30 minutes (more frequent since you upload classes often)
+  cron.schedule("*/30 * * * *", () => {
+    checkForNewVideos().catch((err) => console.error("Video check failed:", err));
   });
 
   console.log(`Scheduler started (timezone: ${TIMEZONE})`);

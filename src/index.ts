@@ -15,6 +15,7 @@ import settingsRouter from "./routes/settings";
 import songsRouter from "./routes/songs";
 import subscriptionsRouter from "./routes/subscriptions";
 import tribeRouter from "./routes/tribe";
+import videoNotificationsRouter from "./routes/video-notifications";
 import { startScheduler } from "./scheduler";
 
 dotenv.config();
@@ -44,6 +45,7 @@ app.get("/health", (_req, res) => {
 
 app.use("/api/auth", authRouter);
 app.use("/api/blog", blogNotificationsRouter);
+app.use("/api/video", videoNotificationsRouter);
 app.use("/api/coupons", couponsRouter);
 app.use("/api/messages", messagesRouter);
 app.use("/api/forum", forumRouter);
