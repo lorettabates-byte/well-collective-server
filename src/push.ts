@@ -2,8 +2,8 @@ import webpush from "web-push";
 import { pool } from "./db";
 import { verifyMembership } from "./membership";
 
-const LOGO_URL = "https://app.lorettabates.com/icons/notification-icon.png";
-const BADGE_URL = "https://app.lorettabates.com/icons/notification-badge.png";
+const LOGO_URL = "https://app.lorettabates.com/icons/notification-icon-v2.png";
+const BADGE_URL = "https://app.lorettabates.com/icons/notification-badge-v2.png";
 const BRAND_COLOR = "#0191CE";
 
 // Matches the frontend's FOUNDER_EMAIL (AppContext.tsx) — the single account
