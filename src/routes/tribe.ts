@@ -1,6 +1,7 @@
 import { Router } from "express";
 import { pool } from "../db";
 import { sendNotificationToUser } from "../push";
+import { computeLevelBadge } from "../badges";
 
 const router = Router();
 
@@ -41,7 +42,7 @@ router.get("/tribe", async (req, res) => {
 
   try {
     const { rows } = await pool.query(
-      `SELECT m.email, m.name, m.avatar, m.workout_log,
+      `SELECT m.email, m.name, m.avatar, m.workout_log, m.featured_badge,
               CASE WHEN m.show_birthday_on_calendar THEN m.birthday ELSE NULL END AS birthday
        FROM tribe_members t
        JOIN members m ON m.email = t.member_email
@@ -50,14 +51,39 @@ router.get("/tribe", async (req, res) => {
       [email]
     );
 
+    const emails = rows.map((row) => row.email);
+    const ids = emails.map(deriveMemberId);
+
+    const { rows: msgCountRows } = await pool.query(
+      "SELECT author_id, COUNT(*) FROM forum_messages WHERE author_id = ANY($1) GROUP BY author_id",
+      [ids]
+    );
+    const msgCountByAuthorId = new Map(msgCountRows.map((r) => [r.author_id, Number(r.count)]));
+
+    const { rows: badgeRows } = await pool.query(
+      "SELECT member_email, badge_id FROM member_badges WHERE member_email = ANY($1)",
+      [emails]
+    );
+    const badgesByEmail = new Map<string, string[]>();
+    for (const b of badgeRows) {
+      badgesByEmail.set(b.member_email, [...(badgesByEmail.get(b.member_email) ?? []), b.badge_id]);
+    }
+
     res.json({
-      tribe: rows.map((row) => ({
-        id: deriveMemberId(row.email),
-        name: row.name,
-        avatar: row.avatar ?? undefined,
-        birthday: row.birthday ?? undefined,
-        workoutLog: row.workout_log ?? [],
-      })),
+      tribe: rows.map((row) => {
+        const id = deriveMemberId(row.email);
+        const workoutLog = row.workout_log ?? [];
+        return {
+          id,
+          name: row.name,
+          avatar: row.avatar ?? undefined,
+          birthday: row.birthday ?? undefined,
+          workoutLog,
+          levelBadge: computeLevelBadge(msgCountByAuthorId.get(id) ?? 0, workoutLog.length),
+          grantedBadges: badgesByEmail.get(row.email) ?? [],
+          featuredBadge: row.featured_badge ?? undefined,
+        };
+      }),
     });
   } catch (err) {
     console.error("Fetch WELL Tribe error:", err);

@@ -1,6 +1,7 @@
 import { Router } from "express";
 import { pool } from "../db";
 import { requireAdmin } from "../middleware/adminAuth";
+import { computeLevelBadge, SPECIAL_BADGE_IDS } from "../badges";
 
 const router = Router();
 
@@ -78,7 +79,8 @@ router.get("/members/me", async (req, res) => {
 
   try {
     const { rows } = await pool.query(
-      "SELECT name, avatar, bio, birthday, show_birthday_on_calendar FROM members WHERE email = $1",
+      `SELECT name, avatar, bio, birthday, show_birthday_on_calendar, workout_log, featured_badge
+       FROM members WHERE email = $1`,
       [email]
     );
 
@@ -87,6 +89,15 @@ router.get("/members/me", async (req, res) => {
     }
 
     const row = rows[0];
+    const { rows: msgRows } = await pool.query(
+      "SELECT COUNT(*) FROM forum_messages WHERE author_id = $1",
+      [deriveMemberId(email)]
+    );
+    const { rows: badgeRows } = await pool.query(
+      "SELECT badge_id FROM member_badges WHERE member_email = $1",
+      [email]
+    );
+
     res.json({
       member: {
         name: row.name,
@@ -94,11 +105,89 @@ router.get("/members/me", async (req, res) => {
         bio: row.bio ?? undefined,
         birthday: row.birthday ?? undefined,
         showBirthdayOnCalendar: row.show_birthday_on_calendar,
+        levelBadge: computeLevelBadge(Number(msgRows[0].count), (row.workout_log ?? []).length),
+        grantedBadges: badgeRows.map((b) => b.badge_id),
+        featuredBadge: row.featured_badge ?? undefined,
       },
     });
   } catch (err) {
     console.error("Fetch member error:", err);
     res.status(500).json({ error: "Failed to fetch member" });
+  }
+});
+
+// Set or clear which single earned badge a member wants shown on their
+// avatar. badgeId is validated against what they've actually earned so a
+// client can't feature a badge it hasn't unlocked.
+router.post("/members/featured-badge", async (req, res) => {
+  const { email, badgeId } = req.body as { email?: string; badgeId?: string | null };
+  if (!email) {
+    return res.status(400).json({ error: "email required" });
+  }
+
+  const normalizedEmail = email.toLowerCase();
+
+  try {
+    if (badgeId) {
+      const { rows } = await pool.query(
+        "SELECT workout_log FROM members WHERE email = $1",
+        [normalizedEmail]
+      );
+      if (rows.length === 0) {
+        return res.status(404).json({ error: "Member not found" });
+      }
+      const { rows: msgRows } = await pool.query(
+        "SELECT COUNT(*) FROM forum_messages WHERE author_id = $1",
+        [deriveMemberId(normalizedEmail)]
+      );
+      const levelBadge = computeLevelBadge(Number(msgRows[0].count), (rows[0].workout_log ?? []).length);
+      const { rows: badgeRows } = await pool.query(
+        "SELECT badge_id FROM member_badges WHERE member_email = $1",
+        [normalizedEmail]
+      );
+      const earned = new Set([levelBadge, ...badgeRows.map((b) => b.badge_id)]);
+      if (!earned.has(badgeId)) {
+        return res.status(400).json({ error: "You haven't earned that badge yet" });
+      }
+    }
+
+    await pool.query("UPDATE members SET featured_badge = $1 WHERE email = $2", [
+      badgeId || null,
+      normalizedEmail,
+    ]);
+    res.json({ ok: true });
+  } catch (err) {
+    console.error("Set featured badge error:", err);
+    res.status(500).json({ error: "Failed to set featured badge" });
+  }
+});
+
+// Admin: grant or revoke a special badge (e.g. "well-escape") that can't be
+// earned automatically from in-app activity.
+router.post("/admin/members/:email/badges", requireAdmin, async (req, res) => {
+  const { badgeId, grant } = req.body as { badgeId?: string; grant?: boolean };
+  if (!badgeId || !SPECIAL_BADGE_IDS.includes(badgeId)) {
+    return res.status(400).json({ error: "Invalid badgeId" });
+  }
+
+  const memberEmail = req.params.email.toLowerCase();
+
+  try {
+    if (grant) {
+      await pool.query(
+        "INSERT INTO member_badges (member_email, badge_id) VALUES ($1, $2) ON CONFLICT DO NOTHING",
+        [memberEmail, badgeId]
+      );
+    } else {
+      await pool.query("DELETE FROM member_badges WHERE member_email = $1 AND badge_id = $2", [
+        memberEmail,
+        badgeId,
+      ]);
+    }
+    res.json({ ok: true });
+  } catch (err) {
+    console.error("Grant badge error:", err);
+    res.status(500).json({ error: "Failed to update badge" });
   }
 });
 
@@ -110,6 +199,11 @@ router.get("/admin/members", requireAdmin, async (_req, res) => {
     const { rows } = await pool.query(
       "SELECT email, name, avatar, trial_started_at, trial_ends_at, updated_at FROM members ORDER BY updated_at DESC"
     );
+    const { rows: badgeRows } = await pool.query("SELECT member_email, badge_id FROM member_badges");
+    const badgesByEmail = new Map<string, string[]>();
+    for (const b of badgeRows) {
+      badgesByEmail.set(b.member_email, [...(badgesByEmail.get(b.member_email) ?? []), b.badge_id]);
+    }
     res.json({
       members: rows.map((row) => ({
         email: row.email,
@@ -118,6 +212,7 @@ router.get("/admin/members", requireAdmin, async (_req, res) => {
         trialStartedAt: row.trial_started_at ?? undefined,
         trialEndsAt: row.trial_ends_at ?? undefined,
         updatedAt: row.updated_at,
+        grantedBadges: badgesByEmail.get(row.email) ?? [],
       })),
     });
   } catch (err) {

@@ -219,6 +219,23 @@ export async function initDb(): Promise<void> {
   // alongside their birthday — synced the same way avatar/bio/birthday are.
   await pool.query(`ALTER TABLE members ADD COLUMN IF NOT EXISTS workout_log TEXT[];`);
 
+  // Which single earned badge a member has chosen to show on their avatar.
+  // Null means "no preference yet" — the client falls back to their current
+  // level badge.
+  await pool.query(`ALTER TABLE members ADD COLUMN IF NOT EXISTS featured_badge TEXT;`);
+
+  // Special badges that can't be computed from in-app activity (e.g. "WELL
+  // Escape Attendee") — granted manually by an admin rather than earned
+  // automatically, so they need their own table instead of a derived stat.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS member_badges (
+      member_email TEXT NOT NULL REFERENCES members(email) ON DELETE CASCADE,
+      badge_id TEXT NOT NULL,
+      granted_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      PRIMARY KEY (member_email, badge_id)
+    );
+  `);
+
   // One of the 3 fixed cheers (see TRIBE_CHEERS) a member sent to someone in
   // their WELL Tribe. Kept as a log rather than a toggle since cheers are a
   // repeatable encouragement, not a single like.
