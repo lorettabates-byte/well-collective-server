@@ -317,4 +317,5 @@ export async function initDb(): Promise<void> {
   `);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_events_date ON events (date);`);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_events_recurrence_group ON events (recurrence_group_id);`);
+  await pool.query(`ALTER TABLE events ADD COLUMN IF NOT EXISTS image TEXT;`);
 }

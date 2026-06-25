@@ -9,6 +9,7 @@ import contentRouter from "./routes/content";
 import couponsRouter from "./routes/coupons";
 import eventsRouter from "./routes/events";
 import forumRouter from "./routes/forum";
+import liveEventNotificationsRouter from "./routes/live-event-notifications";
 import membersRouter from "./routes/members";
 import membershipRouter from "./routes/membership";
 import messagesRouter from "./routes/messages";
@@ -47,6 +48,7 @@ app.get("/health", (_req, res) => {
 
 app.use("/api/auth", authRouter);
 app.use("/api/blog", blogNotificationsRouter);
+app.use("/api/live-events", liveEventNotificationsRouter);
 app.use("/api/video", videoNotificationsRouter);
 app.use("/api/breathwork", breathworkRouter);
 app.use("/api/coupons", couponsRouter);
