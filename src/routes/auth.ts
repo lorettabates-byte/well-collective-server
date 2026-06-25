@@ -102,7 +102,9 @@ router.post("/member-login", async (req, res) => {
 
 // One trial per email, enforced server-side — the client can't be trusted to
 // self-report this since clearing local storage previously let anyone restart
-// a "new" 7-day trial indefinitely.
+// a "new" 7-day trial indefinitely. A returning trial member who re-enters
+// their name/email here is logged back into their existing trial (same
+// trialEndsAt) instead of being rejected or having the clock reset.
 router.post("/start-trial", async (req, res) => {
   const { email, name } = req.body as { email?: string; name?: string };
   if (!email?.trim() || !name?.trim()) {
@@ -112,10 +114,24 @@ router.post("/start-trial", async (req, res) => {
   const normalizedEmail = email.trim().toLowerCase();
 
   try {
-    const { rows } = await pool.query("SELECT trial_started_at FROM members WHERE email = $1", [normalizedEmail]);
+    const { rows } = await pool.query(
+      "SELECT trial_started_at, trial_ends_at, name FROM members WHERE email = $1",
+      [normalizedEmail]
+    );
+
     if (rows.length > 0 && rows[0].trial_started_at) {
-      return res.status(409).json({ error: "This email has already used its free trial. Please log in or subscribe." });
+      const trialEndsAt = rows[0].trial_ends_at
+        ? new Date(rows[0].trial_ends_at).toISOString().slice(0, 10)
+        : undefined;
+      const today = new Date().toISOString().slice(0, 10);
+
+      if (!trialEndsAt || trialEndsAt < today) {
+        return res.status(409).json({ error: "Your free trial has ended. Please log in or subscribe to continue." });
+      }
+
+      return res.json({ trialEndsAt, name: rows[0].name, resumed: true });
     }
+
     const isFirstTimeJoin = rows.length === 0;
 
     const trialEnd = new Date();
