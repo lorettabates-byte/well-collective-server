@@ -107,8 +107,8 @@ router.post("/member-login", async (req, res) => {
 // trialEndsAt) instead of being rejected or having the clock reset.
 router.post("/start-trial", async (req, res) => {
   const { email, name } = req.body as { email?: string; name?: string };
-  if (!email?.trim() || !name?.trim()) {
-    return res.status(400).json({ error: "Name and email are required" });
+  if (!email?.trim()) {
+    return res.status(400).json({ error: "Email is required" });
   }
 
   const normalizedEmail = email.trim().toLowerCase();
@@ -130,6 +130,12 @@ router.post("/start-trial", async (req, res) => {
       }
 
       return res.json({ trialEndsAt, name: rows[0].name, resumed: true });
+    }
+
+    // No existing trial for this email -- a name is required to create one,
+    // but not to log back into an existing trial above.
+    if (!name?.trim()) {
+      return res.status(400).json({ error: "Please enter your name to start a trial." });
     }
 
     const isFirstTimeJoin = rows.length === 0;
