@@ -215,6 +215,23 @@ export async function initDb(): Promise<void> {
     );
   `);
 
+  // Lets the Home page show a tribe member's current workout streak
+  // alongside their birthday — synced the same way avatar/bio/birthday are.
+  await pool.query(`ALTER TABLE members ADD COLUMN IF NOT EXISTS workout_log TEXT[];`);
+
+  // One of the 3 fixed cheers (see TRIBE_CHEERS) a member sent to someone in
+  // their WELL Tribe. Kept as a log rather than a toggle since cheers are a
+  // repeatable encouragement, not a single like.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS tribe_cheers (
+      id SERIAL PRIMARY KEY,
+      sender_email TEXT NOT NULL REFERENCES members(email) ON DELETE CASCADE,
+      recipient_email TEXT NOT NULL REFERENCES members(email) ON DELETE CASCADE,
+      cheer_id TEXT NOT NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    );
+  `);
+
   // Ad-hoc notes the admin sends as instant push notifications (distinct
   // from the date-keyed content_schedule, since there can be any number of
   // these per day) — persisted so they show up in the app's Inspirations

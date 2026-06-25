@@ -16,13 +16,14 @@ function deriveMemberId(email: string): string {
 }
 
 router.post("/members/sync", async (req, res) => {
-  const { email, name, avatar, bio, birthday, showBirthdayOnCalendar } = req.body as {
+  const { email, name, avatar, bio, birthday, showBirthdayOnCalendar, workoutLog } = req.body as {
     email?: string;
     name?: string;
     avatar?: string;
     bio?: string;
     birthday?: string;
     showBirthdayOnCalendar?: boolean;
+    workoutLog?: string[];
   };
 
   if (!email || !name) {
@@ -30,21 +31,31 @@ router.post("/members/sync", async (req, res) => {
   }
 
   try {
-    // Use COALESCE so a blank/missing avatar, bio, or birthday from the
-    // client (e.g. a false-positive "new member" reset on the client, or a
-    // stale/wiped local profile) can never overwrite a value already saved
-    // for this member — it can only fill in a field that's still empty.
+    // Use COALESCE so a blank/missing avatar, bio, birthday, or workout log
+    // from the client (e.g. a false-positive "new member" reset on the
+    // client, or a stale/wiped local profile) can never overwrite a value
+    // already saved for this member — it can only fill in a field that's
+    // still empty.
     await pool.query(
-      `INSERT INTO members (email, name, avatar, bio, birthday, show_birthday_on_calendar, updated_at)
-       VALUES ($1, $2, $3, $4, $5, $6, now())
+      `INSERT INTO members (email, name, avatar, bio, birthday, show_birthday_on_calendar, workout_log, updated_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, now())
        ON CONFLICT (email) DO UPDATE SET
          name = $2,
          avatar = COALESCE($3, members.avatar),
          bio = COALESCE($4, members.bio),
          birthday = COALESCE($5, members.birthday),
          show_birthday_on_calendar = $6,
+         workout_log = COALESCE($7, members.workout_log),
          updated_at = now()`,
-      [email.toLowerCase(), name, avatar || null, bio || null, birthday || null, !!showBirthdayOnCalendar]
+      [
+        email.toLowerCase(),
+        name,
+        avatar || null,
+        bio || null,
+        birthday || null,
+        !!showBirthdayOnCalendar,
+        workoutLog && workoutLog.length > 0 ? workoutLog : null,
+      ]
     );
     res.json({ ok: true });
   } catch (err) {

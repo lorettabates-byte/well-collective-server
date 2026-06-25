@@ -4,6 +4,15 @@ import { sendNotificationToUser } from "../push";
 
 const router = Router();
 
+// Mirrors TRIBE_CHEERS in the client's src/data/cheers.ts — kept as a server
+// whitelist so the notification text can't be spoofed by an arbitrary
+// client-supplied string.
+const TRIBE_CHEER_LABELS: Record<string, string> = {
+  "crushing-it": "🔥 Crushing It!",
+  "proud-of-you": "🎉 Proud of You!",
+  "keep-going": "💪 Keep Going!",
+};
+
 // Mirrors deriveMemberId() in members.ts/messages.ts/AppContext.tsx — tribe
 // members are referenced by id on the client, never raw email.
 function deriveMemberId(email: string): string {
@@ -32,7 +41,8 @@ router.get("/tribe", async (req, res) => {
 
   try {
     const { rows } = await pool.query(
-      `SELECT m.email, m.name, m.avatar
+      `SELECT m.email, m.name, m.avatar, m.workout_log,
+              CASE WHEN m.show_birthday_on_calendar THEN m.birthday ELSE NULL END AS birthday
        FROM tribe_members t
        JOIN members m ON m.email = t.member_email
        WHERE t.owner_email = $1
@@ -45,6 +55,8 @@ router.get("/tribe", async (req, res) => {
         id: deriveMemberId(row.email),
         name: row.name,
         avatar: row.avatar ?? undefined,
+        birthday: row.birthday ?? undefined,
+        workoutLog: row.workout_log ?? [],
       })),
     });
   } catch (err) {
@@ -116,6 +128,45 @@ router.delete("/tribe/:memberId", async (req, res) => {
   } catch (err) {
     console.error("Remove from WELL Tribe error:", err);
     res.status(500).json({ error: "Failed to remove from WELL Tribe" });
+  }
+});
+
+// Send one of the 3 fixed WELL Tribe cheers to a tribe member.
+router.post("/tribe/:memberId/cheer", async (req, res) => {
+  const { email, cheerId } = req.body as { email?: string; cheerId?: string };
+  const cheerLabel = cheerId ? TRIBE_CHEER_LABELS[cheerId] : undefined;
+
+  if (!email || !cheerLabel) {
+    return res.status(400).json({ error: "email and a valid cheerId required" });
+  }
+
+  const senderEmail = email.toLowerCase();
+
+  try {
+    const targetEmail = await findEmailByMemberId(req.params.memberId);
+    if (!targetEmail) {
+      return res.status(404).json({ error: "Member not found" });
+    }
+
+    await pool.query(
+      "INSERT INTO tribe_cheers (sender_email, recipient_email, cheer_id) VALUES ($1, $2, $3)",
+      [senderEmail, targetEmail.toLowerCase(), cheerId]
+    );
+
+    const { rows: senderRows } = await pool.query("SELECT name FROM members WHERE email = $1", [senderEmail]);
+    const senderName = senderRows[0]?.name || "Someone";
+
+    sendNotificationToUser(targetEmail, {
+      title: "WELL Tribe Cheer",
+      body: `${senderName} sent you a cheer: ${cheerLabel}`,
+      tag: "tribe-cheer",
+      url: "/tribe",
+    }).catch((err) => console.error("Failed to send WELL Tribe cheer notification:", err));
+
+    res.status(201).json({ ok: true });
+  } catch (err) {
+    console.error("Send WELL Tribe cheer error:", err);
+    res.status(500).json({ error: "Failed to send cheer" });
   }
 });
 
