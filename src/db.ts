@@ -269,4 +269,18 @@ export async function initDb(): Promise<void> {
       created_at TIMESTAMPTZ NOT NULL DEFAULT now()
     );
   `);
+
+  // Track published blog posts and videos to detect new ones for notifications
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS published_content (
+      id TEXT PRIMARY KEY,
+      type TEXT NOT NULL,
+      title TEXT NOT NULL,
+      link TEXT NOT NULL,
+      published_at TIMESTAMPTZ NOT NULL,
+      notified_at TIMESTAMPTZ,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    );
+  `);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_published_content_type_notified ON published_content (type, notified_at);`);
 }

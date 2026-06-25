@@ -8,6 +8,7 @@ import {
   generateWellActivity,
   isAnthropicConfigured,
 } from "./anthropic";
+import { checkForNewBlogPosts } from "./routes/blog-notifications";
 import { pool } from "./db";
 import { broadcastNotification } from "./push";
 
@@ -292,6 +293,11 @@ export function startScheduler(): void {
   cron.schedule("0 8 * * 2", () => {
     sendLivestreamReminder().catch((err) => console.error("Livestream reminder send failed:", err));
   }, { timezone: TIMEZONE });
+
+  // Check for new blog posts: every hour on the hour
+  cron.schedule("0 * * * *", () => {
+    checkForNewBlogPosts().catch((err) => console.error("Blog post check failed:", err));
+  });
 
   console.log(`Scheduler started (timezone: ${TIMEZONE})`);
 }

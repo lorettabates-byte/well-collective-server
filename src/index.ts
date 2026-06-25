@@ -3,6 +3,7 @@ import dotenv from "dotenv";
 import express from "express";
 import { initDb } from "./db";
 import authRouter from "./routes/auth";
+import blogNotificationsRouter from "./routes/blog-notifications";
 import contentRouter from "./routes/content";
 import couponsRouter from "./routes/coupons";
 import forumRouter from "./routes/forum";
@@ -42,6 +43,7 @@ app.get("/health", (_req, res) => {
 });
 
 app.use("/api/auth", authRouter);
+app.use("/api/blog", blogNotificationsRouter);
 app.use("/api/coupons", couponsRouter);
 app.use("/api/messages", messagesRouter);
 app.use("/api/forum", forumRouter);
