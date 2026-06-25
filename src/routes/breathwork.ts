@@ -124,10 +124,17 @@ router.get("/audio/daily", async (req, res): Promise<any> => {
       return res.redirect(bgSound.url);
     }
 
-    const audioBuffer = await generateDailyTTS();
-    res.setHeader("Content-Type", "audio/mpeg");
-    res.setHeader("Cache-Control", "public, max-age=86400"); // Cache for 24 hours
-    res.send(audioBuffer);
+    try {
+      const audioBuffer = await generateDailyTTS();
+      res.setHeader("Content-Type", "audio/mpeg");
+      res.setHeader("Cache-Control", "public, max-age=86400"); // Cache for 24 hours
+      res.send(audioBuffer);
+    } catch (ttsErr) {
+      console.error("[BREATHWORK] TTS generation failed, falling back to background sound:", ttsErr);
+      const dayOfWeek = new Date().getDay();
+      const bgSound = BACKGROUND_SOUNDS[dayOfWeek];
+      res.redirect(bgSound.url);
+    }
   } catch (err) {
     console.error("[BREATHWORK] Error getting daily audio:", err);
     res.status(500).json({ error: "Failed to generate audio" });
@@ -138,7 +145,7 @@ router.get("/audio/daily", async (req, res): Promise<any> => {
 router.get("/sessions", async (req, res) => {
   try {
     const { rows } = await pool.query(
-      "SELECT id, duration_minutes, title, description FROM guided_breathwork ORDER BY duration_minutes, sort_order"
+      "SELECT id, duration_minutes, title, description, audio_url FROM guided_breathwork ORDER BY duration_minutes, sort_order"
     );
     res.json({ sessions: rows });
   } catch (err) {
