@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { pool } from "../db";
 import { sendNotificationToUser } from "../push";
-import { computeLevelBadge } from "../badges";
+import { computeBonusBadges, computeLevelBadge } from "../badges";
 
 const router = Router();
 
@@ -42,7 +42,7 @@ router.get("/tribe", async (req, res) => {
 
   try {
     const { rows } = await pool.query(
-      `SELECT m.email, m.name, m.avatar, m.workout_log, m.featured_badge,
+      `SELECT m.email, m.name, m.avatar, m.workout_log, m.featured_badge, m.created_at,
               CASE WHEN m.show_birthday_on_calendar THEN m.birthday ELSE NULL END AS birthday
        FROM tribe_members t
        JOIN members m ON m.email = t.member_email
@@ -60,6 +60,12 @@ router.get("/tribe", async (req, res) => {
     );
     const msgCountByAuthorId = new Map(msgCountRows.map((r) => [r.author_id, Number(r.count)]));
 
+    const { rows: cheerCountRows } = await pool.query(
+      "SELECT sender_email, COUNT(*) FROM tribe_cheers WHERE sender_email = ANY($1) GROUP BY sender_email",
+      [emails]
+    );
+    const cheerCountByEmail = new Map(cheerCountRows.map((r) => [r.sender_email, Number(r.count)]));
+
     const { rows: badgeRows } = await pool.query(
       "SELECT member_email, badge_id FROM member_badges WHERE member_email = ANY($1)",
       [emails]
@@ -73,13 +79,15 @@ router.get("/tribe", async (req, res) => {
       tribe: rows.map((row) => {
         const id = deriveMemberId(row.email);
         const workoutLog = row.workout_log ?? [];
+        const messageCount = msgCountByAuthorId.get(id) ?? 0;
         return {
           id,
           name: row.name,
           avatar: row.avatar ?? undefined,
           birthday: row.birthday ?? undefined,
           workoutLog,
-          levelBadge: computeLevelBadge(msgCountByAuthorId.get(id) ?? 0, workoutLog.length),
+          levelBadge: computeLevelBadge(messageCount, workoutLog.length),
+          bonusBadges: computeBonusBadges(row.created_at, messageCount, cheerCountByEmail.get(row.email) ?? 0),
           grantedBadges: badgesByEmail.get(row.email) ?? [],
           featuredBadge: row.featured_badge ?? undefined,
         };

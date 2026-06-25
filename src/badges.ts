@@ -10,4 +10,23 @@ export function computeLevelBadge(messageCount: number, workoutCount: number): s
   return "new-member";
 }
 
-export const SPECIAL_BADGE_IDS = ["well-escape"];
+export const SPECIAL_BADGE_IDS = ["well-escape", "made-magnificent", "made-to-be-different", "founding-member"];
+
+// Earned automatically alongside the level badge. Legacy Builder needs a
+// real join date — created_at is backfilled from trial_started_at where we
+// have it, otherwise defaults to "now" for older rows with no historical
+// signup record, so it only starts counting tenure from today for those.
+export function computeBonusBadges(
+  createdAt: Date | string | null | undefined,
+  messageCount: number,
+  cheersSent: number
+): string[] {
+  const bonus: string[] = [];
+  if (createdAt) {
+    const oneYearAgo = new Date();
+    oneYearAgo.setFullYear(oneYearAgo.getFullYear() - 1);
+    if (new Date(createdAt) <= oneYearAgo) bonus.push("legacy-builder");
+  }
+  if (messageCount >= 10 && cheersSent >= 5) bonus.push("well-ambassador");
+  return bonus;
+}

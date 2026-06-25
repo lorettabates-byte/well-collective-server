@@ -224,6 +224,14 @@ export async function initDb(): Promise<void> {
   // level badge.
   await pool.query(`ALTER TABLE members ADD COLUMN IF NOT EXISTS featured_badge TEXT;`);
 
+  // First-seen date for this member, used to compute the "Legacy Builder"
+  // auto-badge (active for over a year). Backfilled from trial_started_at
+  // where available since that's the earliest accurate signup signal we had
+  // before this column existed; rows with no trial record default to "now",
+  // so existing non-trial members start their tenure clock from today.
+  await pool.query(`ALTER TABLE members ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ NOT NULL DEFAULT now();`);
+  await pool.query(`UPDATE members SET created_at = trial_started_at WHERE trial_started_at IS NOT NULL AND trial_started_at < created_at;`);
+
   // Special badges that can't be computed from in-app activity (e.g. "WELL
   // Escape Attendee") — granted manually by an admin rather than earned
   // automatically, so they need their own table instead of a derived stat.

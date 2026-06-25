@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { pool } from "../db";
 import { requireAdmin } from "../middleware/adminAuth";
-import { computeLevelBadge, SPECIAL_BADGE_IDS } from "../badges";
+import { computeBonusBadges, computeLevelBadge, SPECIAL_BADGE_IDS } from "../badges";
 
 const router = Router();
 
@@ -79,7 +79,7 @@ router.get("/members/me", async (req, res) => {
 
   try {
     const { rows } = await pool.query(
-      `SELECT name, avatar, bio, birthday, show_birthday_on_calendar, workout_log, featured_badge
+      `SELECT name, avatar, bio, birthday, show_birthday_on_calendar, workout_log, featured_badge, created_at
        FROM members WHERE email = $1`,
       [email]
     );
@@ -93,10 +93,16 @@ router.get("/members/me", async (req, res) => {
       "SELECT COUNT(*) FROM forum_messages WHERE author_id = $1",
       [deriveMemberId(email)]
     );
+    const { rows: cheerRows } = await pool.query(
+      "SELECT COUNT(*) FROM tribe_cheers WHERE sender_email = $1",
+      [email]
+    );
     const { rows: badgeRows } = await pool.query(
       "SELECT badge_id FROM member_badges WHERE member_email = $1",
       [email]
     );
+
+    const messageCount = Number(msgRows[0].count);
 
     res.json({
       member: {
@@ -105,7 +111,8 @@ router.get("/members/me", async (req, res) => {
         bio: row.bio ?? undefined,
         birthday: row.birthday ?? undefined,
         showBirthdayOnCalendar: row.show_birthday_on_calendar,
-        levelBadge: computeLevelBadge(Number(msgRows[0].count), (row.workout_log ?? []).length),
+        levelBadge: computeLevelBadge(messageCount, (row.workout_log ?? []).length),
+        bonusBadges: computeBonusBadges(row.created_at, messageCount, Number(cheerRows[0].count)),
         grantedBadges: badgeRows.map((b) => b.badge_id),
         featuredBadge: row.featured_badge ?? undefined,
       },
@@ -130,7 +137,7 @@ router.post("/members/featured-badge", async (req, res) => {
   try {
     if (badgeId) {
       const { rows } = await pool.query(
-        "SELECT workout_log FROM members WHERE email = $1",
+        "SELECT workout_log, created_at FROM members WHERE email = $1",
         [normalizedEmail]
       );
       if (rows.length === 0) {
@@ -140,12 +147,18 @@ router.post("/members/featured-badge", async (req, res) => {
         "SELECT COUNT(*) FROM forum_messages WHERE author_id = $1",
         [deriveMemberId(normalizedEmail)]
       );
-      const levelBadge = computeLevelBadge(Number(msgRows[0].count), (rows[0].workout_log ?? []).length);
+      const { rows: cheerRows } = await pool.query(
+        "SELECT COUNT(*) FROM tribe_cheers WHERE sender_email = $1",
+        [normalizedEmail]
+      );
+      const messageCount = Number(msgRows[0].count);
+      const levelBadge = computeLevelBadge(messageCount, (rows[0].workout_log ?? []).length);
+      const bonusBadges = computeBonusBadges(rows[0].created_at, messageCount, Number(cheerRows[0].count));
       const { rows: badgeRows } = await pool.query(
         "SELECT badge_id FROM member_badges WHERE member_email = $1",
         [normalizedEmail]
       );
-      const earned = new Set([levelBadge, ...badgeRows.map((b) => b.badge_id)]);
+      const earned = new Set([levelBadge, ...bonusBadges, ...badgeRows.map((b) => b.badge_id)]);
       if (!earned.has(badgeId)) {
         return res.status(400).json({ error: "You haven't earned that badge yet" });
       }
