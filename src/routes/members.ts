@@ -265,20 +265,56 @@ router.post("/admin/members", requireAdmin, async (req, res) => {
   }
 });
 
+// Includes badge fields so any page rendering another member's avatar
+// (DMs, the new-message picker, forum posts/messages via deriveMemberId)
+// can show their badge, not just the WELL Tribe pages.
 router.get("/members", async (req, res) => {
   const excludeEmail = (req.query.excludeEmail as string | undefined)?.toLowerCase();
 
   try {
     const { rows } = await pool.query(
-      "SELECT email, name, avatar FROM members WHERE email != $1 ORDER BY name ASC",
+      "SELECT email, name, avatar, workout_log, featured_badge, created_at FROM members WHERE email != $1 ORDER BY name ASC",
       [excludeEmail || ""]
     );
+
+    const emails = rows.map((row) => row.email);
+    const ids = emails.map(deriveMemberId);
+
+    const { rows: msgCountRows } = await pool.query(
+      "SELECT author_id, COUNT(*) FROM forum_messages WHERE author_id = ANY($1) GROUP BY author_id",
+      [ids]
+    );
+    const msgCountByAuthorId = new Map(msgCountRows.map((r) => [r.author_id, Number(r.count)]));
+
+    const { rows: cheerCountRows } = await pool.query(
+      "SELECT sender_email, COUNT(*) FROM tribe_cheers WHERE sender_email = ANY($1) GROUP BY sender_email",
+      [emails]
+    );
+    const cheerCountByEmail = new Map(cheerCountRows.map((r) => [r.sender_email, Number(r.count)]));
+
+    const { rows: badgeRows } = await pool.query(
+      "SELECT member_email, badge_id FROM member_badges WHERE member_email = ANY($1)",
+      [emails]
+    );
+    const badgesByEmail = new Map<string, string[]>();
+    for (const b of badgeRows) {
+      badgesByEmail.set(b.member_email, [...(badgesByEmail.get(b.member_email) ?? []), b.badge_id]);
+    }
+
     res.json({
-      members: rows.map((row) => ({
-        id: deriveMemberId(row.email),
-        name: row.name,
-        avatar: row.avatar ?? undefined,
-      })),
+      members: rows.map((row) => {
+        const id = deriveMemberId(row.email);
+        const messageCount = msgCountByAuthorId.get(id) ?? 0;
+        return {
+          id,
+          name: row.name,
+          avatar: row.avatar ?? undefined,
+          levelBadge: computeLevelBadge(messageCount, (row.workout_log ?? []).length),
+          bonusBadges: computeBonusBadges(row.created_at, messageCount, cheerCountByEmail.get(row.email) ?? 0),
+          grantedBadges: badgesByEmail.get(row.email) ?? [],
+          featuredBadge: row.featured_badge ?? undefined,
+        };
+      }),
     });
   } catch (err) {
     console.error("Fetch members error:", err);
