@@ -4,6 +4,7 @@ import express from "express";
 import { initDb } from "./db";
 import authRouter from "./routes/auth";
 import blogNotificationsRouter from "./routes/blog-notifications";
+import breathworkRouter from "./routes/breathwork";
 import contentRouter from "./routes/content";
 import couponsRouter from "./routes/coupons";
 import forumRouter from "./routes/forum";
@@ -46,6 +47,7 @@ app.get("/health", (_req, res) => {
 app.use("/api/auth", authRouter);
 app.use("/api/blog", blogNotificationsRouter);
 app.use("/api/video", videoNotificationsRouter);
+app.use("/api/breathwork", breathworkRouter);
 app.use("/api/coupons", couponsRouter);
 app.use("/api/messages", messagesRouter);
 app.use("/api/forum", forumRouter);

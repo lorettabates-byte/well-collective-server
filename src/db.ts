@@ -283,4 +283,17 @@ export async function initDb(): Promise<void> {
     );
   `);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_published_content_type_notified ON published_content (type, notified_at);`);
+
+  // Guided breathwork sessions (longer pre-recorded ones: 10, 15, 30 minutes)
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS guided_breathwork (
+      id SERIAL PRIMARY KEY,
+      duration_minutes INT NOT NULL,
+      title TEXT NOT NULL,
+      description TEXT,
+      audio_url TEXT NOT NULL,
+      sort_order INT NOT NULL DEFAULT 0,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    );
+  `);
 }
