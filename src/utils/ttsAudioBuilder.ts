@@ -1,14 +1,12 @@
 import ffmpegPath from "ffmpeg-static";
-import ffmpeg from "fluent-ffmpeg";
+import { execFile } from "child_process";
 import fs from "fs";
 import os from "os";
 import path from "path";
-import { randomUUID } from "crypto";
 import OpenAI from "openai";
 
-ffmpeg.setFfmpegPath(ffmpegPath as unknown as string);
-
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+const FFMPEG = ffmpegPath as unknown as string;
 
 export type ScriptSegment =
   | { type: "speech"; text: string }
@@ -17,13 +15,16 @@ export type ScriptSegment =
 
 const tmpDir = () => fs.mkdtempSync(path.join(os.tmpdir(), "ttsbuild-"));
 
-function runFfmpeg(build: (cmd: ffmpeg.FfmpegCommand) => ffmpeg.FfmpegCommand, outputPath: string): Promise<void> {
+// Spawns the ffmpeg-static binary directly with an explicit argv, bypassing
+// fluent-ffmpeg's automatic capability check (`ffmpeg -formats` parsing),
+// which misreports the lavfi demuxer as unavailable on Railway's Linux binary
+// even though the binary itself supports it.
+function runFfmpeg(args: string[]): Promise<void> {
   return new Promise((resolve, reject) => {
-    const cmd = build(ffmpeg());
-    cmd
-      .on("error", reject)
-      .on("end", () => resolve())
-      .save(outputPath);
+    execFile(FFMPEG, args, { maxBuffer: 1024 * 1024 * 64 }, (err) => {
+      if (err) return reject(err);
+      resolve();
+    });
   });
 }
 
@@ -44,16 +45,12 @@ async function warmAndClean(buffer: Buffer): Promise<Buffer> {
   const inPath = path.join(dir, "in.mp3");
   const outPath = path.join(dir, "out.mp3");
   fs.writeFileSync(inPath, buffer);
-  await runFfmpeg(
-    (cmd) =>
-      cmd.input(inPath).audioFilters([
-        "highpass=f=90",
-        "lowpass=f=9000",
-        "acompressor=threshold=-20dB:ratio=2.5:attack=8:release=120",
-        "volume=1.15",
-      ]),
-    outPath
-  );
+  await runFfmpeg([
+    "-y",
+    "-i", inPath,
+    "-af", "highpass=f=90,lowpass=f=9000,acompressor=threshold=-20dB:ratio=2.5:attack=8:release=120,volume=1.15",
+    outPath,
+  ]);
   const result = fs.readFileSync(outPath);
   fs.rmSync(dir, { recursive: true, force: true });
   return result;
@@ -65,13 +62,12 @@ async function padOrTrimToExactly(buffer: Buffer, ms: number): Promise<Buffer> {
   const outPath = path.join(dir, "out.mp3");
   fs.writeFileSync(inPath, buffer);
   const seconds = (ms / 1000).toFixed(3);
-  await runFfmpeg(
-    (cmd) =>
-      cmd
-        .input(inPath)
-        .audioFilters([`apad=whole_dur=${seconds}`, `atrim=0:${seconds}`]),
-    outPath
-  );
+  await runFfmpeg([
+    "-y",
+    "-i", inPath,
+    "-af", `apad=whole_dur=${seconds},atrim=0:${seconds}`,
+    outPath,
+  ]);
   const result = fs.readFileSync(outPath);
   fs.rmSync(dir, { recursive: true, force: true });
   return result;
@@ -81,14 +77,13 @@ async function generateSilence(ms: number): Promise<Buffer> {
   const dir = tmpDir();
   const outPath = path.join(dir, "silence.mp3");
   const seconds = (ms / 1000).toFixed(3);
-  await runFfmpeg(
-    (cmd) =>
-      cmd
-        .input("anullsrc=channel_layout=mono:sample_rate=24000")
-        .inputFormat("lavfi")
-        .duration(seconds),
-    outPath
-  );
+  await runFfmpeg([
+    "-y",
+    "-f", "lavfi",
+    "-i", "anullsrc=channel_layout=mono:sample_rate=24000",
+    "-t", seconds,
+    outPath,
+  ]);
   const result = fs.readFileSync(outPath);
   fs.rmSync(dir, { recursive: true, force: true });
   return result;
@@ -107,10 +102,14 @@ async function concatBuffers(buffers: Buffer[]): Promise<Buffer> {
   });
   fs.writeFileSync(listPath, lines.join("\n"));
 
-  await runFfmpeg(
-    (cmd) => cmd.input(listPath).inputOptions(["-f", "concat", "-safe", "0"]).audioCodec("libmp3lame"),
-    outPath
-  );
+  await runFfmpeg([
+    "-y",
+    "-f", "concat",
+    "-safe", "0",
+    "-i", listPath,
+    "-c:a", "libmp3lame",
+    outPath,
+  ]);
 
   const result = fs.readFileSync(outPath);
   fs.rmSync(dir, { recursive: true, force: true });
