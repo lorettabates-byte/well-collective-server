@@ -1,58 +1,371 @@
-import { Router, Response } from "express";
+import { Router } from "express";
 import { pool } from "../db";
-import OpenAI from "openai";
-import fs from "fs";
-import path from "path";
-
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-});
-
-// Cache for generated TTS audio (day -> buffer)
-const ttsCache = new Map<string, Buffer>();
+import { buildScriptAudio, type ScriptSegment } from "../utils/ttsAudioBuilder";
 
 const router = Router();
 
-const BREATHWORK_TYPES = [
+// Cache for generated TTS audio (key -> buffer)
+const ttsCache = new Map<string, Buffer>();
+
+const s = (text: string): ScriptSegment => ({ type: "speech", text });
+const c = (from: number, to: number): ScriptSegment => ({ type: "count", from, to });
+
+// Standardized short cues so the in-memory speech cache (see ttsAudioBuilder)
+// reuses the same rendered clip across every script instead of re-synthesizing
+// "Inhale." dozens of times.
+const INHALE = s("Inhale.");
+const HOLD = s("Hold.");
+const EXHALE = s("Exhale.");
+
+function segmentsToDisplayText(segments: ScriptSegment[]): string {
+  return segments
+    .map((seg) => {
+      if (seg.type === "speech") return seg.text;
+      if (seg.type === "count") return Array.from({ length: seg.to - seg.from + 1 }, (_, i) => seg.from + i).join(", ");
+      return "";
+    })
+    .filter(Boolean)
+    .join(" ");
+}
+
+const BREATHWORK_TYPES: { name: string; description: string; segments: ScriptSegment[] }[] = [
   {
     name: "Box Breathing",
     description: "Inhale for 4 counts, hold for 4 counts, exhale for 4 counts, hold for 4 counts. Repeat 5 times.",
-    script: "Welcome... to today's guided box breathing exercise. Box breathing helps calm your nervous system... and improve focus. Let's begin. First, find a comfortable position... and close your eyes if you'd like. Take a moment to settle in... Now, we'll start with a normal breath. Then, inhale slowly through your nose. One... Two... Three... Four... Hold that breath. One... Two... Three... Four... Now exhale slowly through your mouth. One... Two... Three... Four... Hold, empty. One... Two... Three... Four... Good. Let's continue. Inhale. One... Two... Three... Four... Hold. One... Two... Three... Four... Exhale. One... Two... Three... Four... Hold. One... Two... Three... Four... Continue at your own pace with this rhythm. Inhale. One... Two... Three... Four... Hold. One... Two... Three... Four... Exhale. One... Two... Three... Four... Hold. One... Two... Three... Four... Beautiful. Keep breathing this way... Each breath bringing you deeper into calm. When you're ready... take three natural breaths... and gently open your eyes. You've completed your box breathing exercise.",
+    segments: [
+      s("Welcome to today's guided box breathing exercise."),
+      s("Box breathing helps calm your nervous system and improve focus."),
+      s("Find a comfortable position and close your eyes if you'd like."),
+      s("Take a moment to settle in."),
+      INHALE, c(1, 4),
+      HOLD, c(1, 4),
+      EXHALE, c(1, 4),
+      HOLD, c(1, 4),
+      s("Good, let's continue."),
+      INHALE, c(1, 4),
+      HOLD, c(1, 4),
+      EXHALE, c(1, 4),
+      HOLD, c(1, 4),
+      s("Continue at your own pace with this rhythm."),
+      INHALE, c(1, 4),
+      HOLD, c(1, 4),
+      EXHALE, c(1, 4),
+      HOLD, c(1, 4),
+      s("Beautiful. Each breath is bringing you deeper into calm."),
+      s("When you're ready, take three natural breaths and gently open your eyes."),
+      s("You've completed your box breathing exercise."),
+    ],
   },
   {
     name: "Diaphragmatic Breathing",
     description: "Deep belly breathing to activate your parasympathetic nervous system. Breathe in for 4 counts, out for 6 counts.",
-    script: "Welcome... to diaphragmatic breathing. This technique helps reduce stress... and promotes deep relaxation. Find a comfortable seated or lying position. You can place one hand on your chest... and one on your belly. Let's begin. Breathe normally for a moment... Now, as you inhale through your nose, imagine the breath traveling all the way down into your belly, causing it to expand. One... Two... Three... Four... Pause briefly... Now exhale slowly through your mouth, longer this time. One... Two... Three... Four... Five... Six... Feel your belly fall as you release the breath. Again, inhale through your nose. One... Two... Three... Four... And exhale. One... Two... Three... Four... Five... Six... The exhale is longer than the inhale, which signals your body to relax. Continue this pattern. Inhale. One... Two... Three... Four... Exhale. One... Two... Three... Four... Five... Six... Feel yourself becoming more and more relaxed with each breath. Inhale deeply. One... Two... Three... Four... Exhale slowly. One... Two... Three... Four... Five... Six... You're doing beautifully. Continue breathing this way, allowing your body to sink deeper into calm with each cycle. When you're ready, take a few natural breaths... and gently return to your day.",
+    segments: [
+      s("Welcome to diaphragmatic breathing."),
+      s("This technique helps reduce stress and promotes deep relaxation."),
+      s("Find a comfortable seated or lying position."),
+      s("You can place one hand on your chest and one on your belly."),
+      s("As you inhale through your nose, let the breath travel down into your belly, allowing it to expand."),
+      c(1, 4),
+      EXHALE, c(1, 6),
+      s("Feel your belly fall as you release the breath."),
+      INHALE, c(1, 4),
+      EXHALE, c(1, 6),
+      s("The exhale is longer than the inhale, which signals your body to relax."),
+      INHALE, c(1, 4),
+      EXHALE, c(1, 6),
+      s("Feel yourself becoming more and more relaxed with each breath."),
+      INHALE, c(1, 4),
+      EXHALE, c(1, 6),
+      s("You're doing beautifully."),
+      s("When you're ready, take a few natural breaths and gently return to your day."),
+    ],
   },
   {
     name: "4-7-8 Breathing",
     description: "A calming technique: inhale for 4, hold for 7, exhale for 8. Perfect before sleep.",
-    script: "Welcome... to the 4-7-8 breathing technique, designed to calm your mind... and prepare your body for rest. Find a comfortable position, seated or lying down. Let's begin. Start by exhaling completely through your mouth, slow and soft... Now, close your mouth and inhale quietly through your nose. One... Two... Three... Four... Hold that breath. One... Two... Three... Four... Five... Six... Seven... Now exhale completely through your mouth. One... Two... Three... Four... Five... Six... Seven... Eight... This completes one cycle. Let's do it again. Inhale through your nose. One... Two... Three... Four... Hold. One... Two... Three... Four... Five... Six... Seven... Exhale. One... Two... Three... Four... Five... Six... Seven... Eight... Wonderful. Continue with this rhythm. Inhale. One... Two... Three... Four... Hold. One... Two... Three... Four... Five... Six... Seven... Exhale. One... Two... Three... Four... Five... Six... Seven... Eight... Feel the calm washing over you. Continue several more times at your own pace. This technique is wonderful before bedtime. When you're complete, take normal breaths... and allow yourself to rest peacefully.",
+    segments: [
+      s("Welcome to the 4, 7, 8 breathing technique, designed to calm your mind and prepare your body for rest."),
+      s("Find a comfortable position, seated or lying down."),
+      s("Start by exhaling completely through your mouth, slow and soft."),
+      s("Now, close your mouth and inhale quietly through your nose."),
+      c(1, 4),
+      HOLD, c(1, 7),
+      EXHALE, c(1, 8),
+      s("Let's do that again."),
+      INHALE, c(1, 4),
+      HOLD, c(1, 7),
+      EXHALE, c(1, 8),
+      s("Continue with this rhythm."),
+      INHALE, c(1, 4),
+      HOLD, c(1, 7),
+      EXHALE, c(1, 8),
+      s("Feel the calm washing over you."),
+      s("This technique is wonderful before bedtime."),
+      s("When you're complete, take normal breaths and allow yourself to rest peacefully."),
+    ],
   },
   {
     name: "Alternate Nostril Breathing",
     description: "Balance your energy: alternate between breathing through left and right nostrils.",
-    script: "Welcome... to alternate nostril breathing, a balancing technique that harmonizes your body... and mind. Sit comfortably with your spine straight. We'll use a hand position called Vishnu mudra. Fold your index and middle fingers down, leaving your thumb and ring finger extended. Let's begin. Close your right nostril with your thumb... and inhale through your left nostril. One... Two... Three... Four... Now release your thumb... and close your left nostril with your ring finger. Exhale through your right nostril. One... Two... Three... Four... Inhale through the right nostril. One... Two... Three... Four... Switch again. Close your right nostril... and exhale through the left. One... Two... Three... Four... This is one complete cycle. Continue, slowly... Inhale left. One... Two... Three... Four... Switch, exhale right. One... Two... Three... Four... Inhale right. One... Two... Three... Four... Switch, exhale left. One... Two... Three... Four... Wonderful. You're balancing your energy with each breath. Keep this rhythm flowing smoothly... Feel yourself becoming more centered and calm. When you're ready, return to normal breathing with both nostrils. You've completed your alternate nostril breathing.",
+    segments: [
+      s("Welcome to alternate nostril breathing, a balancing technique that harmonizes your body and mind."),
+      s("Sit comfortably with your spine straight."),
+      s("Fold your index and middle fingers down, leaving your thumb and ring finger extended."),
+      s("Close your right nostril with your thumb and inhale through your left nostril."),
+      c(1, 4),
+      s("Release your thumb, close your left nostril with your ring finger, and exhale through your right nostril."),
+      c(1, 4),
+      s("Inhale through the right nostril."),
+      c(1, 4),
+      s("Switch, close your right nostril, and exhale through the left."),
+      c(1, 4),
+      s("That's one complete cycle. Let's continue."),
+      s("Inhale left."),
+      c(1, 4),
+      s("Switch, exhale right."),
+      c(1, 4),
+      s("Inhale right."),
+      c(1, 4),
+      s("Switch, exhale left."),
+      c(1, 4),
+      s("Wonderful. Feel yourself becoming more centered and calm."),
+      s("When you're ready, return to normal breathing with both nostrils."),
+      s("You've completed your alternate nostril breathing."),
+    ],
   },
   {
     name: "Coherent Breathing",
     description: "5-second inhale, 5-second exhale. Synchronizes heart rate variability.",
-    script: "Welcome... to coherent breathing, a gentle technique that brings your body into a state of balance... and ease. Find a comfortable position. Let's begin with a few normal breaths to settle in... Now, we'll inhale through your nose. One... Two... Three... Four... Five... Then exhale through your mouth. One... Two... Three... Four... Five... The breath is equal in and out, creating a beautiful rhythm. Inhale. One... Two... Three... Four... Five... Exhale. One... Two... Three... Four... Five... This simple pattern has profound effects on your nervous system. Inhale. One... Two... Three... Four... Five... Exhale. One... Two... Three... Four... Five... Continue at this peaceful pace... Each breath bringing you more into the present moment. Inhale. One... Two... Three... Four... Five... Exhale. One... Two... Three... Four... Five... Feel your heart rate synchronizing with your breath. You're in perfect coherence. Continue this rhythm for as long as you'd like. This is your anchor, your place of calm. When you're ready, let your breath return to normal... and rest in this peaceful state.",
+    segments: [
+      s("Welcome to coherent breathing, a gentle technique that brings your body into a state of balance and ease."),
+      s("Find a comfortable position."),
+      s("Let's begin with a few normal breaths to settle in."),
+      INHALE, c(1, 5),
+      EXHALE, c(1, 5),
+      s("The breath is equal in and out, creating a beautiful rhythm."),
+      INHALE, c(1, 5),
+      EXHALE, c(1, 5),
+      s("This simple pattern has profound effects on your nervous system."),
+      INHALE, c(1, 5),
+      EXHALE, c(1, 5),
+      s("Feel your heart rate synchronizing with your breath. You're in perfect coherence."),
+      INHALE, c(1, 5),
+      EXHALE, c(1, 5),
+      s("This is your anchor, your place of calm."),
+      s("When you're ready, let your breath return to normal and rest in this peaceful state."),
+    ],
   },
   {
     name: "Lion's Breath",
     description: "Energizing exhale with open mouth and tongue out. Great for releasing tension.",
-    script: "Welcome... to Lion's Breath, a gentle yet invigorating technique that helps release tension. Find a comfortable seated position... Let's begin. Take a slow breath in through your nose... As you prepare for the exhale, open your mouth softly... Now, as you exhale, let the breath flow out gently through your mouth, releasing any tension in your jaw. Exhale completely... Take another slow breath in through your nose... Prepare yourself... Open your mouth, and let the breath release, soft and unhurried. Breathe in again, slowly... This time, as you exhale, imagine you're releasing tension... releasing stress... releasing worry. Let it go, gently. Inhale once more, slowly... Exhale fully, with calm intention. Feel the tension melting away. One more time. Breathe in deeply... Exhale slowly, releasing everything you need to let go of. Wonderful. After this practice, take some gentle, normal breaths. Feel the calm settling into your body. You've completed your Lion's Breath session.",
+    segments: [
+      s("Welcome to Lion's Breath, a gentle yet invigorating technique that helps release tension."),
+      s("Find a comfortable seated position."),
+      s("Take a slow breath in through your nose."),
+      s("As you exhale, let the breath flow out gently through your mouth, releasing any tension in your jaw."),
+      s("Take another slow breath in through your nose."),
+      s("Open your mouth and let the breath release, soft and unhurried."),
+      s("Breathe in again, slowly."),
+      s("As you exhale, imagine you're releasing tension, releasing stress, releasing worry."),
+      s("Inhale once more, slowly."),
+      s("Exhale fully, with calm intention. Feel the tension melting away."),
+      s("One more time. Breathe in deeply."),
+      s("Exhale slowly, releasing everything you need to let go of."),
+      s("Wonderful. After this practice, take some gentle, normal breaths."),
+      s("Feel the calm settling into your body."),
+      s("You've completed your Lion's Breath session."),
+    ],
   },
   {
     name: "Extended Exhale",
     description: "Longer exhales activate the parasympathetic nervous system for deep relaxation.",
-    script: "Welcome... to extended exhale breathing, a deeply relaxing technique. Find a comfortable position, sitting or lying down. This practice uses a longer exhale than inhale, which naturally calms your nervous system. Let's begin. Inhale through your nose. One... Two... Three... Now exhale through your mouth, slowly. One... Two... Three... Four... Five... Six... Feel your body relax as you extend the exhale. Inhale. One... Two... Three... Exhale. One... Two... Three... Four... Five... Six... Continue this beautiful rhythm. As you exhale, let your shoulders drop... let your jaw relax. Inhale. One... Two... Three... Exhale. One... Two... Three... Four... Five... Six... Each exhale deepens your relaxation. Inhale. One... Two... Three... Exhale. One... Two... Three... Four... Five... Six... You're doing beautifully. Keep breathing this way... Feel yourself sinking deeper into calm with each breath. When you're ready, take normal breaths... and rest in this peaceful state.",
+    segments: [
+      s("Welcome to extended exhale breathing, a deeply relaxing technique."),
+      s("Find a comfortable position, sitting or lying down."),
+      s("This practice uses a longer exhale than inhale, which naturally calms your nervous system."),
+      INHALE, c(1, 3),
+      EXHALE, c(1, 6),
+      s("Feel your body relax as you extend the exhale."),
+      INHALE, c(1, 3),
+      EXHALE, c(1, 6),
+      s("As you exhale, let your shoulders drop and let your jaw relax."),
+      INHALE, c(1, 3),
+      EXHALE, c(1, 6),
+      s("Each exhale deepens your relaxation."),
+      INHALE, c(1, 3),
+      EXHALE, c(1, 6),
+      s("You're doing beautifully."),
+      s("When you're ready, take normal breaths and rest in this peaceful state."),
+    ],
   },
 ];
 
-const DEEPER_SESSION_GUIDE_SCRIPT =
-  "Welcome to this guided breathing meditation... Find a comfortable position, seated or lying down, wherever feels supportive to you right now... Gently close your eyes, if that feels right... and take a moment to arrive fully in this space... Let's begin with a slow, natural breath in... and a slow release out... Nothing to force, just allowing your body to settle... Now, breathe in gently through your nose... One... Two... Three... Four... And hold, softly... One... Two... Three... Four... Now release the breath slowly through your mouth... One... Two... Three... Four... Five... Six... Feel your shoulders soften with each exhale... Let's continue this rhythm together... Inhale... One... Two... Three... Four... Hold... One... Two... Three... Four... Exhale, slowly... One... Two... Three... Four... Five... Six... With each breath, allow yourself to sink a little deeper into calm... There is nowhere else you need to be... nothing else you need to do... just this breath... Inhale, gently... One... Two... Three... Four... Hold... One... Two... Three... Four... Exhale, releasing fully... One... Two... Three... Four... Five... Six... Notice the quiet between each breath... that small, peaceful pause... Continue at your own pace now... breathing in deeply... and releasing slowly... letting each exhale carry away any tension you're holding... Inhale... One... Two... Three... Four... Exhale, long and slow... One... Two... Three... Four... Five... Six... You're doing beautifully... Allow your whole body to soften... your jaw, your shoulders, your hands... Continue breathing this way, at whatever pace feels good for you... There's no rush here... only this moment, and the gentle rhythm of your breath... When thoughts arise, simply notice them... and let them pass, like clouds... returning your attention to your breath... Inhale, slowly... Exhale, even more slowly... Continue resting in this peaceful rhythm for as long as you'd like... breathing in calm... and breathing out anything you no longer need... You are safe... You are supported... You are exactly where you need to be...";
+// Nine distinct Deeper Session guide-voice scripts, one per stored session, so
+// every session has its own track instead of all nine sharing the same recording.
+const DEEPER_SESSION_GUIDES: ScriptSegment[][] = [
+  // 1
+  [
+    s("Welcome to this guided breathing meditation."),
+    s("Find a comfortable position, seated or lying down, wherever feels supportive right now."),
+    s("Gently close your eyes, if that feels right, and take a moment to arrive in this space."),
+    INHALE, c(1, 4),
+    HOLD, c(1, 4),
+    EXHALE, c(1, 6),
+    s("Feel your shoulders soften with each exhale."),
+    INHALE, c(1, 4),
+    HOLD, c(1, 4),
+    EXHALE, c(1, 6),
+    s("With each breath, allow yourself to sink a little deeper into calm."),
+    INHALE, c(1, 4),
+    HOLD, c(1, 4),
+    EXHALE, c(1, 6),
+    s("There is nowhere else you need to be, nothing else you need to do, just this breath."),
+    INHALE, c(1, 4),
+    HOLD, c(1, 4),
+    EXHALE, c(1, 6),
+    s("Continue resting in this peaceful rhythm for as long as you'd like."),
+    s("You are safe. You are supported. You are exactly where you need to be."),
+  ],
+  // 2
+  [
+    s("Welcome back to your practice."),
+    s("Settle into a position that feels easy for your body, and let your eyes soften or close."),
+    s("We'll begin with a slow breath in through the nose."),
+    INHALE, c(1, 5),
+    EXHALE, c(1, 5),
+    s("Notice the quiet pause between each breath."),
+    INHALE, c(1, 5),
+    EXHALE, c(1, 5),
+    s("Let your jaw unclench, let your hands rest open."),
+    INHALE, c(1, 5),
+    EXHALE, c(1, 5),
+    s("Each breath is an invitation to release a little more."),
+    INHALE, c(1, 5),
+    EXHALE, c(1, 5),
+    s("There's nothing to fix here, only this rhythm, breath after breath."),
+    s("Stay here as long as feels good, returning to this pace whenever your mind wanders."),
+  ],
+  // 3
+  [
+    s("Welcome. Let's spend this time together, slowing down."),
+    s("Find stillness in your body, and let your breath lead the way."),
+    INHALE, c(1, 4),
+    HOLD, c(1, 5),
+    EXHALE, c(1, 7),
+    s("Feel the natural pause after each release."),
+    INHALE, c(1, 4),
+    HOLD, c(1, 5),
+    EXHALE, c(1, 7),
+    s("Let go of anything you've been holding onto today."),
+    INHALE, c(1, 4),
+    HOLD, c(1, 5),
+    EXHALE, c(1, 7),
+    s("Your body already knows how to do this. Just let it happen."),
+    s("Continue at this gentle pace, allowing the quiet to settle in around you."),
+  ],
+  // 4
+  [
+    s("Welcome to this space of rest."),
+    s("Let your body be heavy, supported by whatever is beneath you."),
+    INHALE, c(1, 4),
+    EXHALE, c(1, 4),
+    s("A simple, even breath, in and out."),
+    INHALE, c(1, 4),
+    EXHALE, c(1, 4),
+    s("With every exhale, let a little more tension melt away."),
+    INHALE, c(1, 4),
+    EXHALE, c(1, 4),
+    s("Nothing to achieve here, only presence."),
+    INHALE, c(1, 4),
+    EXHALE, c(1, 4),
+    s("Let this rhythm carry you, breath by breath, for as long as you need."),
+  ],
+  // 5
+  [
+    s("Welcome. Take a moment to notice how you're feeling right now, without judgment."),
+    s("When you're ready, let's begin to slow the breath together."),
+    INHALE, c(1, 5),
+    HOLD, c(1, 3),
+    EXHALE, c(1, 6),
+    s("Feel your chest and belly rise and fall naturally."),
+    INHALE, c(1, 5),
+    HOLD, c(1, 3),
+    EXHALE, c(1, 6),
+    s("Each cycle brings you further into stillness."),
+    INHALE, c(1, 5),
+    HOLD, c(1, 3),
+    EXHALE, c(1, 6),
+    s("You don't have to do anything else right now. Just breathe."),
+    s("Stay with this rhythm, resting in the calm it creates."),
+  ],
+  // 6
+  [
+    s("Welcome to this quiet moment."),
+    s("Let your shoulders drop away from your ears, and soften your face."),
+    INHALE, c(1, 4),
+    EXHALE, c(1, 8),
+    s("Notice how much longer the exhale is. That's intentional. It tells your body it's safe to relax."),
+    INHALE, c(1, 4),
+    EXHALE, c(1, 8),
+    s("Let each breath wash a little more calm through your body."),
+    INHALE, c(1, 4),
+    EXHALE, c(1, 8),
+    s("There's no rush here, only this slow unwinding."),
+    s("Continue breathing this way for as long as feels good."),
+  ],
+  // 7
+  [
+    s("Welcome. Let's take this time to simply be."),
+    s("Find a position where your body feels supported and at ease."),
+    INHALE, c(1, 4),
+    HOLD, c(1, 4),
+    EXHALE, c(1, 4),
+    HOLD, c(1, 4),
+    s("This even, steady rhythm helps settle a busy mind."),
+    INHALE, c(1, 4),
+    HOLD, c(1, 4),
+    EXHALE, c(1, 4),
+    HOLD, c(1, 4),
+    s("Each pause is a small rest within the breath itself."),
+    INHALE, c(1, 4),
+    HOLD, c(1, 4),
+    EXHALE, c(1, 4),
+    HOLD, c(1, 4),
+    s("Continue this gentle square of breath, in your own time."),
+  ],
+  // 8
+  [
+    s("Welcome to your practice today."),
+    s("Let your attention come fully into your body, right here, right now."),
+    INHALE, c(1, 6),
+    EXHALE, c(1, 6),
+    s("An easy, balanced breath, equal in and equal out."),
+    INHALE, c(1, 6),
+    EXHALE, c(1, 6),
+    s("Let your thoughts drift by like clouds, without needing to follow them."),
+    INHALE, c(1, 6),
+    EXHALE, c(1, 6),
+    s("Simply return to the breath, again and again."),
+    s("Rest here in this steady, peaceful rhythm."),
+  ],
+  // 9
+  [
+    s("Welcome. This is your time to slow down completely."),
+    s("Let your whole body soften into stillness."),
+    INHALE, c(1, 4),
+    HOLD, c(1, 6),
+    EXHALE, c(1, 8),
+    s("Feel the calm that builds with every cycle."),
+    INHALE, c(1, 4),
+    HOLD, c(1, 6),
+    EXHALE, c(1, 8),
+    s("There's nowhere to be but here."),
+    INHALE, c(1, 4),
+    HOLD, c(1, 6),
+    EXHALE, c(1, 8),
+    s("Let this rhythm hold you, breath after breath, for as long as you'd like."),
+  ],
+];
 
 const BACKGROUND_SOUNDS = [
   { day: 0, name: "Soothing Tones", url: "https://WELLCOLLECTIVESOUNDTRACK.b-cdn.net/Peaceful%20Sounds/mp3/main%20track.mp3" },
@@ -75,7 +388,7 @@ router.get("/today", async (req, res) => {
     res.json({
       title: todayBreathwork.name,
       description: todayBreathwork.description,
-      script: todayBreathwork.script,
+      script: segmentsToDisplayText(todayBreathwork.segments),
       duration: 5,
       backgroundSound: bgSound.name,
       backgroundSoundUrl: bgSound.url,
@@ -91,7 +404,6 @@ async function generateDailyTTS(): Promise<Buffer> {
   const dayOfWeek = new Date().getDay();
   const cacheKey = `day-${dayOfWeek}`;
 
-  // Return cached audio if available
   if (ttsCache.has(cacheKey)) {
     return ttsCache.get(cacheKey)!;
   }
@@ -99,23 +411,11 @@ async function generateDailyTTS(): Promise<Buffer> {
   const breathworkIndex = dayOfWeek % BREATHWORK_TYPES.length;
   const todayBreathwork = BREATHWORK_TYPES[breathworkIndex];
 
-  try {
-    console.log(`[BREATHWORK] Generating TTS for ${todayBreathwork.name}...`);
-    const mp3 = await openai.audio.speech.create({
-      model: "tts-1",
-      voice: "shimmer",
-      input: todayBreathwork.script,
-      speed: 0.78, // Slow, soothing pace so counted breaths land closer to real seconds
-    });
-
-    const buffer = Buffer.from(await mp3.arrayBuffer());
-    ttsCache.set(cacheKey, buffer);
-    console.log(`[BREATHWORK] Generated ${buffer.length} bytes of TTS audio`);
-    return buffer;
-  } catch (err) {
-    console.error("[BREATHWORK] TTS generation failed:", err);
-    throw err;
-  }
+  console.log(`[BREATHWORK] Building TTS for ${todayBreathwork.name}...`);
+  const buffer = await buildScriptAudio(todayBreathwork.segments);
+  ttsCache.set(cacheKey, buffer);
+  console.log(`[BREATHWORK] Built ${buffer.length} bytes of TTS audio`);
+  return buffer;
 }
 
 // Get daily breathwork audio (female voice guiding through today's breathing)
@@ -145,33 +445,29 @@ router.get("/audio/daily", async (req, res): Promise<any> => {
   }
 });
 
-// Generate (and cache) the generic guide-voice track layered over Deeper Session background music
-let sessionGuideCache: Buffer | null = null;
+// Generate (and cache) the guide-voice track for a specific Deeper Session
+const sessionGuideCache = new Map<number, Buffer>();
 
-async function generateSessionGuideTTS(): Promise<Buffer> {
-  if (sessionGuideCache) return sessionGuideCache;
+async function generateSessionGuideTTS(guideIndex: number): Promise<Buffer> {
+  if (sessionGuideCache.has(guideIndex)) return sessionGuideCache.get(guideIndex)!;
 
-  console.log("[BREATHWORK] Generating Deeper Session guide voice TTS...");
-  const mp3 = await openai.audio.speech.create({
-    model: "tts-1",
-    voice: "shimmer",
-    input: DEEPER_SESSION_GUIDE_SCRIPT,
-    speed: 0.78,
-  });
-
-  const buffer = Buffer.from(await mp3.arrayBuffer());
-  sessionGuideCache = buffer;
-  console.log(`[BREATHWORK] Generated ${buffer.length} bytes of session guide TTS`);
+  console.log(`[BREATHWORK] Building Deeper Session guide voice #${guideIndex}...`);
+  const buffer = await buildScriptAudio(DEEPER_SESSION_GUIDES[guideIndex]);
+  sessionGuideCache.set(guideIndex, buffer);
+  console.log(`[BREATHWORK] Built ${buffer.length} bytes for guide #${guideIndex}`);
   return buffer;
 }
 
-// Get the guide-voice track to layer over a Deeper Session's looping background music
-router.get("/audio/session-guide", async (req, res): Promise<any> => {
+// Get the guide-voice track to layer over a Deeper Session's looping background music.
+// :id is the stored session's database id; each session maps to its own unique script.
+router.get("/audio/session-guide/:id", async (req, res): Promise<any> => {
   try {
     if (!process.env.OPENAI_API_KEY) {
       return res.status(404).json({ error: "Voice guidance unavailable" });
     }
-    const audioBuffer = await generateSessionGuideTTS();
+    const sessionId = parseInt(req.params.id, 10) || 0;
+    const guideIndex = sessionId % DEEPER_SESSION_GUIDES.length;
+    const audioBuffer = await generateSessionGuideTTS(guideIndex);
     res.setHeader("Content-Type", "audio/mpeg");
     res.setHeader("Cache-Control", "public, max-age=86400");
     res.send(audioBuffer);
