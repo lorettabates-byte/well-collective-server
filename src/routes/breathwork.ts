@@ -1,5 +1,15 @@
-import { Router } from "express";
+import { Router, Response } from "express";
 import { pool } from "../db";
+import OpenAI from "openai";
+import fs from "fs";
+import path from "path";
+
+const openai = new OpenAI({
+  apiKey: process.env.OPENAI_API_KEY,
+});
+
+// Cache for generated TTS audio (day -> buffer)
+const ttsCache = new Map<string, Buffer>();
 
 const router = Router();
 
@@ -72,18 +82,55 @@ router.get("/today", async (req, res) => {
   }
 });
 
-// Get daily breathwork audio (guides user through today's breathing with background sound)
-router.get("/audio/daily", async (req, res) => {
-  try {
-    const dayOfWeek = new Date().getDay();
-    const bgSound = BACKGROUND_SOUNDS[dayOfWeek];
+// Generate TTS audio for daily breathwork
+async function generateDailyTTS(): Promise<Buffer> {
+  const dayOfWeek = new Date().getDay();
+  const cacheKey = `day-${dayOfWeek}`;
 
-    // For now, redirect to the background sound URL
-    // In production, this could generate guided audio with TTS and mix with background
-    res.redirect(bgSound.url);
+  // Return cached audio if available
+  if (ttsCache.has(cacheKey)) {
+    return ttsCache.get(cacheKey)!;
+  }
+
+  const breathworkIndex = dayOfWeek % BREATHWORK_TYPES.length;
+  const todayBreathwork = BREATHWORK_TYPES[breathworkIndex];
+
+  try {
+    console.log(`[BREATHWORK] Generating TTS for ${todayBreathwork.name}...`);
+    const mp3 = await openai.audio.speech.create({
+      model: "tts-1",
+      voice: "nova",
+      input: todayBreathwork.script,
+      speed: 0.95, // Slightly slower for calming effect
+    });
+
+    const buffer = Buffer.from(await mp3.arrayBuffer());
+    ttsCache.set(cacheKey, buffer);
+    console.log(`[BREATHWORK] Generated ${buffer.length} bytes of TTS audio`);
+    return buffer;
+  } catch (err) {
+    console.error("[BREATHWORK] TTS generation failed:", err);
+    throw err;
+  }
+}
+
+// Get daily breathwork audio (female voice guiding through today's breathing)
+router.get("/audio/daily", async (req, res): Promise<any> => {
+  try {
+    if (!process.env.OPENAI_API_KEY) {
+      console.warn("[BREATHWORK] No OpenAI API key configured, returning background sound only");
+      const dayOfWeek = new Date().getDay();
+      const bgSound = BACKGROUND_SOUNDS[dayOfWeek];
+      return res.redirect(bgSound.url);
+    }
+
+    const audioBuffer = await generateDailyTTS();
+    res.setHeader("Content-Type", "audio/mpeg");
+    res.setHeader("Cache-Control", "public, max-age=86400"); // Cache for 24 hours
+    res.send(audioBuffer);
   } catch (err) {
     console.error("[BREATHWORK] Error getting daily audio:", err);
-    res.status(500).json({ error: "Failed to get audio" });
+    res.status(500).json({ error: "Failed to generate audio" });
   }
 });
 
