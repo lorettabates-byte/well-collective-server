@@ -41,24 +41,49 @@ const BREATHWORK_TYPES = [
   },
 ];
 
-// Get today's breathwork script (same as the daily well activity)
+const BACKGROUND_SOUNDS = [
+  { day: 0, name: "Soothing Tones", url: "https://WELLCOLLECTIVESOUNDTRACK.b-cdn.net/Peaceful%20Sounds/mp3/main%20track.mp3" },
+  { day: 1, name: "Dreamers", url: "https://WELLCOLLECTIVESOUNDTRACK.b-cdn.net/Peaceful%20Sounds/Dreamers%20(MP3).mp3" },
+  { day: 2, name: "Peaceful Singing Bowls", url: "https://WELLCOLLECTIVESOUNDTRACK.b-cdn.net/Peaceful%20Sounds/Singing%20Bowl%20Meditation.mp3" },
+  { day: 3, name: "Meditation", url: "https://WELLCOLLECTIVESOUNDTRACK.b-cdn.net/Peaceful%20Sounds/Meditation.mp3" },
+  { day: 4, name: "Sleep Tones", url: "https://WELLCOLLECTIVESOUNDTRACK.b-cdn.net/Peaceful%20Sounds/Soothing%20Sleep%20Music.wav" },
+  { day: 5, name: "Forest Breeze", url: "https://WELLCOLLECTIVESOUNDTRACK.b-cdn.net/Peaceful%20Sounds/LDj_Audio_ForestLightBreezeAmbience_V1.wav" },
+  { day: 6, name: "Soothing Tones", url: "https://WELLCOLLECTIVESOUNDTRACK.b-cdn.net/Peaceful%20Sounds/mp3/main%20track.mp3" },
+];
+
+// Get today's breathwork script
 router.get("/today", async (req, res) => {
   try {
-    // Get today's well activity to determine which breathwork script to use
-    // For now, we'll just return one based on the day of the week
     const dayOfWeek = new Date().getDay();
     const breathworkIndex = dayOfWeek % BREATHWORK_TYPES.length;
     const todayBreathwork = BREATHWORK_TYPES[breathworkIndex];
+    const bgSound = BACKGROUND_SOUNDS[dayOfWeek];
 
     res.json({
       title: todayBreathwork.name,
       description: todayBreathwork.description,
       script: todayBreathwork.script,
       duration: 5,
+      backgroundSound: bgSound.name,
     });
   } catch (err) {
     console.error("[BREATHWORK] Error getting today's breathwork:", err);
     res.status(500).json({ error: "Failed to get breathwork" });
+  }
+});
+
+// Get daily breathwork audio (guides user through today's breathing with background sound)
+router.get("/audio/daily", async (req, res) => {
+  try {
+    const dayOfWeek = new Date().getDay();
+    const bgSound = BACKGROUND_SOUNDS[dayOfWeek];
+
+    // For now, redirect to the background sound URL
+    // In production, this could generate guided audio with TTS and mix with background
+    res.redirect(bgSound.url);
+  } catch (err) {
+    console.error("[BREATHWORK] Error getting daily audio:", err);
+    res.status(500).json({ error: "Failed to get audio" });
   }
 });
 
