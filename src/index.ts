@@ -13,6 +13,7 @@ import peacefulSoundsRouter from "./routes/peacefulSounds";
 import settingsRouter from "./routes/settings";
 import songsRouter from "./routes/songs";
 import subscriptionsRouter from "./routes/subscriptions";
+import tribeRouter from "./routes/tribe";
 import { startScheduler } from "./scheduler";
 
 dotenv.config();
@@ -51,6 +52,7 @@ app.use("/api", songsRouter);
 app.use("/api", membersRouter);
 app.use("/api", settingsRouter);
 app.use("/api", peacefulSoundsRouter);
+app.use("/api", tribeRouter);
 
 async function main() {
   await initDb();

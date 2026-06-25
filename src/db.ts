@@ -203,6 +203,18 @@ export async function initDb(): Promise<void> {
   await pool.query(`ALTER TABLE peaceful_sounds ADD COLUMN IF NOT EXISTS icon TEXT NOT NULL DEFAULT 'music';`);
   await pool.query(`ALTER TABLE peaceful_sounds DROP COLUMN IF EXISTS emoji;`);
 
+  // A member's WELL Tribe — the people they've chosen to add to their own
+  // page. One-directional (adding someone doesn't require them to accept),
+  // matching the simplicity of likes/RSVPs elsewhere in the app.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS tribe_members (
+      owner_email TEXT NOT NULL REFERENCES members(email) ON DELETE CASCADE,
+      member_email TEXT NOT NULL REFERENCES members(email) ON DELETE CASCADE,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      PRIMARY KEY (owner_email, member_email)
+    );
+  `);
+
   // Ad-hoc notes the admin sends as instant push notifications (distinct
   // from the date-keyed content_schedule, since there can be any number of
   // these per day) — persisted so they show up in the app's Inspirations
