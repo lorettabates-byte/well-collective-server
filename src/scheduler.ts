@@ -74,6 +74,22 @@ export async function generateAIContent(): Promise<void> {
       }
     | undefined;
 
+  // Yesterday's content, used so the AI prompts can be told not to repeat
+  // themselves — without this, a multi-day weekly theme made it common for
+  // the daily inspiration/recipe/well activity to land on near-identical
+  // titles on consecutive days.
+  const { rows: yesterdayRows } = await pool.query(
+    "SELECT daily_inspiration, recipe, well_activity FROM content_schedule WHERE date = $1",
+    [addDays(date, -1)]
+  );
+  const yesterdayRow = yesterdayRows[0] as
+    | {
+        daily_inspiration?: { title?: string };
+        recipe?: { name?: string };
+        well_activity?: { title?: string };
+      }
+    | undefined;
+
   let weeklyThemeTitle = await findCurrentWeeklyThemeTitle(date);
 
   if (!weeklyThemeTitle) {
@@ -94,7 +110,7 @@ export async function generateAIContent(): Promise<void> {
 
   if (!row?.daily_inspiration) {
     try {
-      const inspiration = await generateDailyInspiration(weeklyThemeTitle);
+      const inspiration = await generateDailyInspiration(weeklyThemeTitle, yesterdayRow?.daily_inspiration?.title);
       await pool.query(
         `INSERT INTO content_schedule (date, daily_inspiration) VALUES ($1, $2)
          ON CONFLICT (date) DO UPDATE SET daily_inspiration = COALESCE(content_schedule.daily_inspiration, $2)`,
@@ -122,7 +138,7 @@ export async function generateAIContent(): Promise<void> {
 
   if (!row?.recipe) {
     try {
-      const recipe = await generateRecipe(weeklyThemeTitle);
+      const recipe = await generateRecipe(weeklyThemeTitle, yesterdayRow?.recipe?.name);
       await pool.query(
         `INSERT INTO content_schedule (date, recipe) VALUES ($1, $2)
          ON CONFLICT (date) DO UPDATE SET recipe = COALESCE(content_schedule.recipe, $2)`,
@@ -150,7 +166,7 @@ export async function generateAIContent(): Promise<void> {
 
   if (!row?.well_activity) {
     try {
-      const activity = await generateWellActivity(weeklyThemeTitle);
+      const activity = await generateWellActivity(weeklyThemeTitle, yesterdayRow?.well_activity?.title);
       await pool.query(
         `INSERT INTO content_schedule (date, well_activity) VALUES ($1, $2)
          ON CONFLICT (date) DO UPDATE SET well_activity = COALESCE(content_schedule.well_activity, $2)`,

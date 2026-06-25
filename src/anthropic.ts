@@ -92,12 +92,18 @@ const VALID_IMAGE_CATEGORIES = [
   "baked", "dessert", "general_healthy",
 ];
 
-export async function generateRecipe(weeklyThemeTitle: string | undefined): Promise<GeneratedRecipe> {
+export async function generateRecipe(
+  weeklyThemeTitle: string | undefined,
+  avoidName?: string
+): Promise<GeneratedRecipe> {
   const themeContext = weeklyThemeTitle
     ? `This week's wellness theme is "${weeklyThemeTitle}".`
     : "There's no specific weekly theme right now, so keep it generally nourishing and approachable.";
+  const avoidContext = avoidName
+    ? ` Do not repeat yesterday's recipe, "${avoidName}" — pick something clearly different.`
+    : "";
 
-  const prompt = `You are writing a simple, healthy recipe for the WELL Collective, a women's wellness community app. ${themeContext}
+  const prompt = `You are writing a simple, healthy recipe for the WELL Collective, a women's wellness community app. ${themeContext}${avoidContext}
 
 Write one recipe that ties into that theme (e.g. comforting, energizing, calming, restorative — whatever fits). Keep it realistic for a home cook: 5-8 ingredients, 4-6 short steps.
 
@@ -126,13 +132,17 @@ export interface GeneratedDailyInspiration {
 }
 
 export async function generateDailyInspiration(
-  weeklyThemeTitle: string | undefined
+  weeklyThemeTitle: string | undefined,
+  avoidTitle?: string
 ): Promise<GeneratedDailyInspiration> {
   const themeContext = weeklyThemeTitle
     ? `This week's theme for the WELL Collective wellness community is "${weeklyThemeTitle}".`
     : "There's no specific weekly theme set right now, so keep it generally uplifting.";
+  const avoidContext = avoidTitle
+    ? ` Do not repeat or closely resemble yesterday's daily inspiration, titled "${avoidTitle}" — write something distinct.`
+    : "";
 
-  const prompt = `You are writing today's "Daily Inspiration" message for the WELL Collective, a women's wellness community app run by Loretta Bates. ${themeContext}
+  const prompt = `You are writing today's "Daily Inspiration" message for the WELL Collective, a women's wellness community app run by Loretta Bates. ${themeContext}${avoidContext}
 
 Write one short daily inspiration message that ties into that theme. Warm, grounded, and specific — not a generic quote.
 
@@ -171,12 +181,18 @@ export interface GeneratedWellActivity {
   description: string;
 }
 
-export async function generateWellActivity(weeklyThemeTitle: string | undefined): Promise<GeneratedWellActivity> {
+export async function generateWellActivity(
+  weeklyThemeTitle: string | undefined,
+  avoidTitle?: string
+): Promise<GeneratedWellActivity> {
   const themeContext = weeklyThemeTitle
     ? `This week's theme for the WELL Collective wellness community is "${weeklyThemeTitle}".`
     : "There's no specific weekly theme right now, so keep it generally restorative.";
+  const avoidContext = avoidTitle
+    ? ` Do not repeat yesterday's activity, "${avoidTitle}" — suggest something clearly different.`
+    : "";
 
-  const prompt = `You are suggesting today's "WELL Activity" — a short mental-health or self-care activity — for the WELL Collective, a women's wellness community app run by Loretta Bates. ${themeContext}
+  const prompt = `You are suggesting today's "WELL Activity" — a short mental-health or self-care activity — for the WELL Collective, a women's wellness community app run by Loretta Bates. ${themeContext}${avoidContext}
 
 Suggest one simple, doable-today activity that ties into that theme (e.g. take a bath, call a friend, write three things you're grateful for, take a 10-minute walk without your phone). Keep it concrete and achievable in one sitting.
 
