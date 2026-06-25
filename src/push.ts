@@ -84,9 +84,9 @@ export async function sendNotificationToUser(
 }
 
 /**
- * Sends a notification to every stored subscription where the user has an active membership.
- * Subscriptions that the push service reports as gone (404/410) are removed.
- * NOTE: This includes trial users (subscriptions exist even during trial).
+ * Sends a notification to every stored subscription where the user is a full
+ * (non-trial) active member. Subscriptions that the push service reports as
+ * gone (404/410) are removed.
  */
 export async function broadcastNotification(payload: NotificationPayload): Promise<{ sent: number; removed: number; blocked: number }> {
   console.log(`[PUSH] Broadcasting notification: "${payload.title}"`);
@@ -97,6 +97,15 @@ export async function broadcastNotification(payload: NotificationPayload): Promi
 
   console.log(`[PUSH] Found ${rows.length} total subscriptions`);
 
+  // Trial status lives in our own members table, not WordPress, so it's the
+  // authoritative source for "still on an active trial" — WP's membership
+  // check has no record of trial-only signups at all and can't be relied on
+  // to exclude them.
+  const { rows: trialRows } = await pool.query<{ email: string }>(
+    "SELECT email FROM members WHERE trial_ends_at IS NOT NULL AND trial_ends_at >= CURRENT_DATE"
+  );
+  const activeTrialEmails = new Set(trialRows.map((r) => r.email.toLowerCase()));
+
   const body = buildPayload(payload);
   let sent = 0;
   let removed = 0;
@@ -104,18 +113,27 @@ export async function broadcastNotification(payload: NotificationPayload): Promi
 
   await Promise.all(
     rows.map(async (row) => {
-      // Verify membership if email is available. Allow if not found to support
-      // trial users or users without explicit membership records.
-      if (row.user_email) {
-        const isMember = await verifyMembership(row.user_email);
-        console.log(`[PUSH] Email: ${row.user_email}, Is Member: ${isMember}`);
-        if (!isMember) {
-          blocked += 1;
-          console.log(`[PUSH] Blocked subscription for ${row.user_email} - not a member`);
-          return; // Skip this subscription
-        }
-      } else {
-        console.log(`[PUSH] No email for subscription, allowing notification`);
+      // No email on the subscription means we can't verify membership at
+      // all — exclude rather than risk sending to a trial user whose
+      // subscription was registered before their email was attached.
+      if (!row.user_email) {
+        blocked += 1;
+        console.log(`[PUSH] Blocked subscription with no email`);
+        return;
+      }
+
+      if (activeTrialEmails.has(row.user_email.toLowerCase())) {
+        blocked += 1;
+        console.log(`[PUSH] Blocked subscription for ${row.user_email} - active trial member`);
+        return;
+      }
+
+      const isMember = await verifyMembership(row.user_email);
+      console.log(`[PUSH] Email: ${row.user_email}, Is Member: ${isMember}`);
+      if (!isMember) {
+        blocked += 1;
+        console.log(`[PUSH] Blocked subscription for ${row.user_email} - not a member`);
+        return; // Skip this subscription
       }
 
       const subscription = {
