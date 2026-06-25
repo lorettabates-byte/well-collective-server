@@ -435,6 +435,9 @@ router.get("/audio/daily", async (req, res): Promise<any> => {
       res.send(audioBuffer);
     } catch (ttsErr) {
       console.error("[BREATHWORK] TTS generation failed, falling back to background sound:", ttsErr);
+      if (req.query.debug) {
+        return res.status(500).json({ error: String((ttsErr as Error)?.message || ttsErr), stack: (ttsErr as Error)?.stack });
+      }
       const dayOfWeek = new Date().getDay();
       const bgSound = BACKGROUND_SOUNDS[dayOfWeek];
       res.redirect(bgSound.url);
