@@ -164,4 +164,80 @@ router.delete("/sessions/:id", async (req, res) => {
   }
 });
 
+// Admin: Initialize default breathwork sessions (call once to seed the database)
+router.post("/init-defaults", async (req, res) => {
+  try {
+    const peacefulSounds = [
+      "https://WELLCOLLECTIVESOUNDTRACK.b-cdn.net/Peaceful%20Sounds/Dreamers%20(MP3).mp3",
+      "https://WELLCOLLECTIVESOUNDTRACK.b-cdn.net/Peaceful%20Sounds/Singing%20Bowl%20Meditation.mp3",
+      "https://WELLCOLLECTIVESOUNDTRACK.b-cdn.net/Peaceful%20Sounds/Meditation.mp3",
+      "https://WELLCOLLECTIVESOUNDTRACK.b-cdn.net/Peaceful%20Sounds/Soothing%20Sleep%20Music.wav",
+      "https://WELLCOLLECTIVESOUNDTRACK.b-cdn.net/Peaceful%20Sounds/LDj_Audio_ForestLightBreezeAmbience_V1.wav",
+      "https://WELLCOLLECTIVESOUNDTRACK.b-cdn.net/Peaceful%20Sounds/mp3/main%20track.mp3",
+    ];
+
+    const soundNames = [
+      "Dreamers",
+      "Peaceful Singing Bowls",
+      "Meditation",
+      "Sleep Tones",
+      "Forest Breeze",
+      "Soothing Tones",
+    ];
+
+    // Clear existing sessions
+    await pool.query("DELETE FROM guided_breathwork");
+
+    // Create 3 x 10-minute sessions
+    for (let i = 0; i < 3; i++) {
+      const soundIdx = i % soundNames.length;
+      await pool.query(
+        "INSERT INTO guided_breathwork (duration_minutes, title, description, audio_url, sort_order) VALUES ($1, $2, $3, $4, $5)",
+        [
+          10,
+          `Breathwork with ${soundNames[soundIdx]}`,
+          `10-minute guided breathing with ${soundNames[soundIdx]} in the background`,
+          peacefulSounds[soundIdx],
+          i,
+        ]
+      );
+    }
+
+    // Create 3 x 15-minute sessions
+    for (let i = 0; i < 3; i++) {
+      const soundIdx = (i + 1) % soundNames.length;
+      await pool.query(
+        "INSERT INTO guided_breathwork (duration_minutes, title, description, audio_url, sort_order) VALUES ($1, $2, $3, $4, $5)",
+        [
+          15,
+          `Deep Breathwork with ${soundNames[soundIdx]}`,
+          `15-minute deep breathing practice with ${soundNames[soundIdx]} in the background`,
+          peacefulSounds[soundIdx],
+          i,
+        ]
+      );
+    }
+
+    // Create 3 x 30-minute sessions
+    for (let i = 0; i < 3; i++) {
+      const soundIdx = (i + 2) % soundNames.length;
+      await pool.query(
+        "INSERT INTO guided_breathwork (duration_minutes, title, description, audio_url, sort_order) VALUES ($1, $2, $3, $4, $5)",
+        [
+          30,
+          `Extended Breathwork with ${soundNames[soundIdx]}`,
+          `30-minute extended breathing meditation with ${soundNames[soundIdx]} in the background`,
+          peacefulSounds[soundIdx],
+          i,
+        ]
+      );
+    }
+
+    res.json({ ok: true, message: "Initialized 9 default breathwork sessions" });
+  } catch (err) {
+    console.error("[BREATHWORK] Error initializing defaults:", err);
+    res.status(500).json({ error: "Failed to initialize sessions" });
+  }
+});
+
 export default router;
