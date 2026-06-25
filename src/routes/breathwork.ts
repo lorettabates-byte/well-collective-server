@@ -114,31 +114,6 @@ async function generateDailyTTS(): Promise<Buffer> {
   }
 }
 
-// Temporary diagnostic endpoint to surface the raw OpenAI TTS error
-router.get("/debug-tts", async (req, res): Promise<any> => {
-  try {
-    if (!process.env.OPENAI_API_KEY) {
-      return res.json({ ok: false, reason: "no_api_key" });
-    }
-    const mp3 = await openai.audio.speech.create({
-      model: "tts-1",
-      voice: "nova",
-      input: "This is a test.",
-      speed: 0.95,
-    });
-    const buffer = Buffer.from(await mp3.arrayBuffer());
-    res.json({ ok: true, bytes: buffer.length });
-  } catch (err: any) {
-    res.json({
-      ok: false,
-      message: err?.message,
-      status: err?.status,
-      code: err?.code,
-      type: err?.type,
-    });
-  }
-});
-
 // Get daily breathwork audio (female voice guiding through today's breathing)
 router.get("/audio/daily", async (req, res): Promise<any> => {
   try {
