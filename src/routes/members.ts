@@ -17,6 +17,18 @@ function deriveMemberId(email: string): string {
   return `m_${Math.abs(hash).toString(36)}`;
 }
 
+// Member ids in URLs (DMs, forum authorship, etc.) are always the derived
+// hash, never a raw email, so any route taking a memberId has to reverse it
+// back to an email by scanning the directory -- mirrors findEmailByMemberId
+// in messages.ts.
+async function findEmailByMemberId(memberId: string): Promise<string | null> {
+  const { rows } = await pool.query("SELECT email FROM members");
+  for (const row of rows) {
+    if (deriveMemberId(row.email) === memberId) return row.email;
+  }
+  return null;
+}
+
 router.post("/members/sync", async (req, res) => {
   const { email, name, avatar, bio, birthday, showBirthdayOnCalendar, workoutLog } = req.body as {
     email?: string;
@@ -335,6 +347,71 @@ router.get("/members", async (req, res) => {
   } catch (err) {
     console.error("Fetch members error:", err);
     res.status(500).json({ error: "Failed to fetch members" });
+  }
+});
+
+// Public profile for any single member, looked up by their derived id (the
+// same id used for DM/forum authorship) rather than email, since that's all
+// the client has when someone taps another member's avatar. Birthday is only
+// included if they've opted in to showing it on the calendar -- same rule
+// the calendar sync already enforces.
+router.get("/members/:memberId/profile", async (req, res) => {
+  const { memberId } = req.params;
+
+  try {
+    const email = await findEmailByMemberId(memberId);
+    if (!email) {
+      return res.status(404).json({ error: "Member not found" });
+    }
+
+    const { rows } = await pool.query(
+      `SELECT name, avatar, bio, birthday, show_birthday_on_calendar, workout_log, featured_badge, created_at
+       FROM members WHERE email = $1`,
+      [email]
+    );
+    if (rows.length === 0) {
+      return res.status(404).json({ error: "Member not found" });
+    }
+    const row = rows[0];
+
+    const { rows: msgRows } = await pool.query(
+      "SELECT COUNT(*) FROM forum_messages WHERE author_id = $1",
+      [memberId]
+    );
+    const { rows: cheerRows } = await pool.query(
+      "SELECT COUNT(*) FROM tribe_cheers WHERE sender_email = $1",
+      [email]
+    );
+    const { rows: badgeRows } = await pool.query(
+      "SELECT badge_id FROM member_badges WHERE member_email = $1",
+      [email]
+    );
+    const { rows: tribeCountRows } = await pool.query(
+      "SELECT COUNT(*) FROM tribe_members WHERE owner_email = $1",
+      [email]
+    );
+
+    const messageCount = Number(msgRows[0].count);
+    const workoutLog: string[] = row.workout_log ?? [];
+
+    res.json({
+      member: {
+        id: memberId,
+        name: row.name,
+        avatar: row.avatar ?? undefined,
+        bio: row.bio ?? undefined,
+        birthday: row.show_birthday_on_calendar ? row.birthday ?? undefined : undefined,
+        workoutLog,
+        levelBadge: computeLevelBadge(messageCount, workoutLog.length),
+        bonusBadges: computeBonusBadges(row.created_at, messageCount, Number(cheerRows[0].count)),
+        grantedBadges: badgeRows.map((b) => b.badge_id),
+        featuredBadge: row.featured_badge ?? undefined,
+        tribeConnections: Number(tribeCountRows[0].count),
+      },
+    });
+  } catch (err) {
+    console.error("Fetch member profile error:", err);
+    res.status(500).json({ error: "Failed to fetch member profile" });
   }
 });
 
