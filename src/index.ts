@@ -33,7 +33,12 @@ const allowedOrigins = (process.env.ALLOWED_ORIGINS || "")
 
 app.use(
   cors({
-    origin: allowedOrigins.length > 0 ? allowedOrigins : true,
+    // iOS standalone/home-screen PWAs sometimes send `Origin: null` for
+    // cross-origin fetches (a known WebKit quirk in sandboxed contexts) --
+    // without allowing it, those requests get silently blocked client-side
+    // with a generic "Load failed" before they ever reach this server.
+    // Safe to allow here since this API never relies on cookies/credentials.
+    origin: allowedOrigins.length > 0 ? [...allowedOrigins, "null"] : true,
   })
 );
 // Default express.json() body limit is 100kb, which a real uploaded photo
