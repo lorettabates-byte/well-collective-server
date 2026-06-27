@@ -144,6 +144,11 @@ export async function initDb(): Promise<void> {
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_forum_threads_category ON forum_threads (category_id);`);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_forum_messages_thread ON forum_messages (thread_id);`);
 
+  // Add edited_at columns for edit functionality
+  await pool.query(`ALTER TABLE forum_messages ADD COLUMN IF NOT EXISTS edited_at TIMESTAMPTZ;`);
+  await pool.query(`ALTER TABLE forum_threads ADD COLUMN IF NOT EXISTS edited_at TIMESTAMPTZ;`);
+  await pool.query(`ALTER TABLE messages ADD COLUMN IF NOT EXISTS edited_at TIMESTAMPTZ;`);
+
   // One-time seed of the original built-in categories so the move to a shared
   // backend doesn't drop them. Uses ON CONFLICT DO NOTHING so admin edits made
   // afterward are never overwritten by this.
