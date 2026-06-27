@@ -149,6 +149,9 @@ export async function initDb(): Promise<void> {
   await pool.query(`ALTER TABLE forum_threads ADD COLUMN IF NOT EXISTS edited_at TIMESTAMPTZ;`);
   await pool.query(`ALTER TABLE messages ADD COLUMN IF NOT EXISTS edited_at TIMESTAMPTZ;`);
 
+  // Add pinned_at column for admin-pinned trending posts (null = not pinned)
+  await pool.query(`ALTER TABLE forum_threads ADD COLUMN IF NOT EXISTS pinned_at TIMESTAMPTZ;`);
+
   // One-time seed of the original built-in categories so the move to a shared
   // backend doesn't drop them. Uses ON CONFLICT DO NOTHING so admin edits made
   // afterward are never overwritten by this.

@@ -78,8 +78,8 @@ router.delete("/categories/:id", requireAdmin, async (req, res) => {
 router.get("/threads", async (_req, res) => {
   try {
     const { rows: threadRows } = await pool.query(
-      `SELECT id, category_id, title, author_id, author_name, author_avatar, created_at
-       FROM forum_threads ORDER BY created_at DESC`
+      `SELECT id, category_id, title, author_id, author_name, author_avatar, created_at, pinned_at
+       FROM forum_threads ORDER BY (pinned_at IS NOT NULL) DESC, pinned_at DESC, created_at DESC`
     );
     const { rows: messageRows } = await pool.query(
       `SELECT id, thread_id, author_id, author_name, author_avatar, text, created_at, likes, reply_to_id
@@ -101,6 +101,7 @@ router.get("/threads", async (_req, res) => {
       authorName: row.author_name,
       authorAvatar: row.author_avatar ?? "",
       createdAt: row.created_at.toISOString(),
+      pinnedAt: row.pinned_at?.toISOString() ?? undefined,
       messages: messagesByThread.get(row.id) ?? [],
     }));
 
@@ -280,6 +281,39 @@ router.put("/threads/:threadId", async (req, res) => {
   } catch (err) {
     console.error("Edit thread error:", err);
     res.status(500).json({ error: "Failed to edit thread" });
+  }
+});
+
+router.post("/threads/:threadId/pin", requireAdmin, async (req, res) => {
+  try {
+    const categoryId = req.query.categoryId as string;
+    if (!categoryId) return res.status(400).json({ error: "categoryId required" });
+
+    // Check how many posts are already pinned in this category (max 3)
+    const { rows: pinnedRows } = await pool.query(
+      `SELECT COUNT(*) as count FROM forum_threads WHERE category_id = $1 AND pinned_at IS NOT NULL`,
+      [categoryId]
+    );
+
+    if (parseInt(pinnedRows[0].count) >= 3) {
+      return res.status(400).json({ error: "Maximum 3 pinned posts per category" });
+    }
+
+    await pool.query("UPDATE forum_threads SET pinned_at = now() WHERE id = $1", [req.params.threadId]);
+    res.json({ ok: true });
+  } catch (err) {
+    console.error("Pin thread error:", err);
+    res.status(500).json({ error: "Failed to pin thread" });
+  }
+});
+
+router.post("/threads/:threadId/unpin", requireAdmin, async (req, res) => {
+  try {
+    await pool.query("UPDATE forum_threads SET pinned_at = NULL WHERE id = $1", [req.params.threadId]);
+    res.json({ ok: true });
+  } catch (err) {
+    console.error("Unpin thread error:", err);
+    res.status(500).json({ error: "Failed to unpin thread" });
   }
 });
 
