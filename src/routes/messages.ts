@@ -36,7 +36,7 @@ router.get("/:userId", async (req, res) => {
 
   try {
     const { rows } = await pool.query(
-      `SELECT id, sender_id, recipient_id, body, read, created_at
+      `SELECT id, sender_id, recipient_id, body, read, created_at, edited_at
        FROM messages
        WHERE (sender_id = $1 AND recipient_id = $2) OR (sender_id = $2 AND recipient_id = $1)
        ORDER BY created_at ASC`,
@@ -171,6 +171,26 @@ router.post("/", async (req, res) => {
   } catch (err) {
     console.error("Send message error:", err);
     res.status(500).json({ error: "Failed to send message" });
+  }
+});
+
+// Edit a message
+router.put("/:messageId", async (req, res) => {
+  const { body, senderId } = req.body as { body?: string; senderId?: string };
+  if (!body || !senderId) {
+    return res.status(400).json({ error: "body and senderId required" });
+  }
+
+  try {
+    const { rows } = await pool.query("SELECT sender_id FROM messages WHERE id = $1", [req.params.messageId]);
+    if (rows.length === 0) return res.status(404).json({ error: "Message not found" });
+    if (rows[0].sender_id !== senderId) return res.status(403).json({ error: "Can only edit your own messages" });
+
+    await pool.query("UPDATE messages SET body = $1, edited_at = now() WHERE id = $2", [body, req.params.messageId]);
+    res.json({ ok: true });
+  } catch (err) {
+    console.error("Edit message error:", err);
+    res.status(500).json({ error: "Failed to edit message" });
   }
 });
 

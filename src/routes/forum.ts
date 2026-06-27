@@ -243,4 +243,44 @@ router.post("/threads/:threadId/messages/:messageId/like", async (req, res) => {
   }
 });
 
+router.put("/threads/:threadId/messages/:messageId", async (req, res) => {
+  const { text, userId } = req.body as { text?: string; userId?: string };
+  if (!text || !userId) return res.status(400).json({ error: "text and userId required" });
+
+  try {
+    const { rows } = await pool.query("SELECT author_id FROM forum_messages WHERE id = $1", [req.params.messageId]);
+    if (rows.length === 0) return res.status(404).json({ error: "Message not found" });
+    if (rows[0].author_id !== userId) return res.status(403).json({ error: "Can only edit your own messages" });
+
+    await pool.query(
+      "UPDATE forum_messages SET text = $1, edited_at = now() WHERE id = $2",
+      [text, req.params.messageId]
+    );
+    res.json({ ok: true });
+  } catch (err) {
+    console.error("Edit message error:", err);
+    res.status(500).json({ error: "Failed to edit message" });
+  }
+});
+
+router.put("/threads/:threadId", async (req, res) => {
+  const { title, userId } = req.body as { title?: string; userId?: string };
+  if (!title || !userId) return res.status(400).json({ error: "title and userId required" });
+
+  try {
+    const { rows } = await pool.query("SELECT author_id FROM forum_threads WHERE id = $1", [req.params.threadId]);
+    if (rows.length === 0) return res.status(404).json({ error: "Thread not found" });
+    if (rows[0].author_id !== userId) return res.status(403).json({ error: "Can only edit your own threads" });
+
+    await pool.query(
+      "UPDATE forum_threads SET title = $1, edited_at = now() WHERE id = $2",
+      [title, req.params.threadId]
+    );
+    res.json({ ok: true });
+  } catch (err) {
+    console.error("Edit thread error:", err);
+    res.status(500).json({ error: "Failed to edit thread" });
+  }
+});
+
 export default router;
