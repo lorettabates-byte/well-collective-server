@@ -100,6 +100,36 @@ router.post("/members/sync", async (req, res) => {
   }
 });
 
+// Per-category push preferences are synced separately (not via /members/sync)
+// so a toggle change takes effect immediately, without waiting for the next
+// full profile sync — and so broadcastNotification/sendNotificationToUser in
+// push.ts can actually filter sends by what each member has opted into.
+router.put("/members/notification-settings", async (req, res) => {
+  const { email, notificationSettings } = req.body as {
+    email?: string;
+    notificationSettings?: Record<string, boolean>;
+  };
+
+  if (!email || !notificationSettings) {
+    return res.status(400).json({ error: "email and notificationSettings required" });
+  }
+
+  const normalizedEmail = email.toLowerCase();
+
+  try {
+    await pool.query(
+      `INSERT INTO members (email, name, notification_settings, updated_at)
+       VALUES ($1, $1, $2, now())
+       ON CONFLICT (email) DO UPDATE SET notification_settings = $2, updated_at = now()`,
+      [normalizedEmail, JSON.stringify(notificationSettings)]
+    );
+    res.json({ ok: true });
+  } catch (err) {
+    console.error("Update notification settings error:", err);
+    res.status(500).json({ error: "Failed to update notification settings" });
+  }
+});
+
 // Restore a member's own saved profile from the server. Used by the client
 // to recover avatar/bio/birthday after local storage gets wiped (e.g. by
 // Safari's tracking-prevention purge, or a fresh re-login) — without this,

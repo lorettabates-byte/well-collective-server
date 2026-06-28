@@ -191,6 +191,11 @@ export async function initDb(): Promise<void> {
   // signup form can reject repeat attempts (e.g. after clearing local storage).
   await pool.query(`ALTER TABLE members ADD COLUMN IF NOT EXISTS trial_started_at TIMESTAMPTZ;`);
   await pool.query(`ALTER TABLE members ADD COLUMN IF NOT EXISTS trial_ends_at DATE;`);
+  // Per-category push notification preferences, synced from the client's
+  // NotificationSettings toggles — without this, the server has no way to
+  // know a member turned a category off and broadcastNotification/
+  // sendNotificationToUser would send to them regardless.
+  await pool.query(`ALTER TABLE members ADD COLUMN IF NOT EXISTS notification_settings JSONB;`);
 
   await pool.query(`
     CREATE TABLE IF NOT EXISTS app_settings (

@@ -23,6 +23,43 @@ export interface NotificationPayload {
   url?: string;
 }
 
+// Maps each payload `tag` to the NotificationSettings category (types.ts on
+// the client) that gates it. Tags not listed here (e.g. "test", "new-signup")
+// are admin/diagnostic notifications and are never filtered.
+const TAG_TO_CATEGORY: Record<string, string> = {
+  "blog-post": "newBlogs",
+  "loretta-note": "general",
+  "weekly-theme": "weeklyTheme",
+  "daily-inspiration": "dailyInspiration",
+  "livestream-reminder": "general",
+  community: "community",
+  "new-event": "newEvents",
+  "new-video": "general",
+  message: "replies",
+  tribe: "mentions",
+};
+
+const DEFAULT_NOTIFICATION_SETTINGS: Record<string, boolean> = {
+  community: true,
+  replies: true,
+  mentions: true,
+  general: true,
+  weeklyTheme: true,
+  dailyInspiration: true,
+  newEvents: true,
+  newBlogs: true,
+};
+
+// A member with no saved preferences yet (never opened Notification Settings,
+// or synced before this feature existed) gets the same defaults as a brand
+// new client install, so behavior doesn't change for them.
+function isCategoryEnabled(payload: NotificationPayload, settings: Record<string, boolean> | null): boolean {
+  const category = payload.tag ? TAG_TO_CATEGORY[payload.tag] : undefined;
+  if (!category) return true;
+  const resolved = settings ?? DEFAULT_NOTIFICATION_SETTINGS;
+  return resolved[category] !== false;
+}
+
 function buildPayload(payload: NotificationPayload): string {
   return JSON.stringify({
     title: payload.title,
@@ -45,6 +82,17 @@ export async function sendNotificationToUser(
   payload: NotificationPayload
 ): Promise<{ sent: number; removed: number; blocked: number }> {
   console.log(`[PUSH] Sending notification to ${email}: "${payload.title}"`);
+
+  if (email.toLowerCase() !== ADMIN_NOTIFY_EMAIL) {
+    const { rows: memberRows } = await pool.query<{ notification_settings: Record<string, boolean> | null }>(
+      "SELECT notification_settings FROM members WHERE email = $1",
+      [email.toLowerCase()]
+    );
+    if (!isCategoryEnabled(payload, memberRows[0]?.notification_settings ?? null)) {
+      console.log(`[PUSH] Blocked notification to ${email} - category disabled in their settings`);
+      return { sent: 0, removed: 0, blocked: 1 };
+    }
+  }
 
   const { rows } = await pool.query<{ endpoint: string; p256dh: string; auth: string; user_email: string | null }>(
     "SELECT endpoint, p256dh, auth, user_email FROM push_subscriptions WHERE user_email = $1",
@@ -118,6 +166,11 @@ export async function broadcastNotification(
   );
   const activeTrialEmails = new Set(trialRows.map((r) => r.email.toLowerCase()));
 
+  const { rows: settingsRows } = await pool.query<{ email: string; notification_settings: Record<string, boolean> | null }>(
+    "SELECT email, notification_settings FROM members"
+  );
+  const settingsByEmail = new Map(settingsRows.map((r) => [r.email.toLowerCase(), r.notification_settings]));
+
   let joinedAfterContentEmails = new Set<string>();
   if (options?.contentPublishedAt) {
     const { rows: lateJoinerRows } = await pool.query<{ email: string }>(
@@ -143,6 +196,12 @@ export async function broadcastNotification(
       if (joinedAfterContentEmails.has(row.user_email.toLowerCase())) {
         blocked += 1;
         console.log(`[PUSH] Blocked subscription for ${row.user_email} - joined after this content was published`);
+        return;
+      }
+
+      if (!isCategoryEnabled(payload, settingsByEmail.get(row.user_email.toLowerCase()) ?? null)) {
+        blocked += 1;
+        console.log(`[PUSH] Blocked subscription for ${row.user_email} - category disabled in their settings`);
         return;
       }
 
