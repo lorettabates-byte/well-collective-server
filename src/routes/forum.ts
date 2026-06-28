@@ -14,6 +14,7 @@ interface MessageRow {
   created_at: Date;
   likes: string[];
   reply_to_id: string | null;
+  image: string | null;
 }
 
 function formatMessage(row: MessageRow) {
@@ -26,6 +27,7 @@ function formatMessage(row: MessageRow) {
     createdAt: row.created_at.toISOString(),
     likes: row.likes,
     replyToId: row.reply_to_id ?? undefined,
+    image: row.image ?? undefined,
   };
 }
 
@@ -82,7 +84,7 @@ router.get("/threads", async (_req, res) => {
        FROM forum_threads ORDER BY (pinned_at IS NOT NULL) DESC, pinned_at DESC, created_at DESC`
     );
     const { rows: messageRows } = await pool.query(
-      `SELECT id, thread_id, author_id, author_name, author_avatar, text, created_at, likes, reply_to_id
+      `SELECT id, thread_id, author_id, author_name, author_avatar, text, created_at, likes, reply_to_id, image
        FROM forum_messages ORDER BY created_at ASC`
     );
 
@@ -113,7 +115,7 @@ router.get("/threads", async (_req, res) => {
 });
 
 router.post("/threads", async (req, res) => {
-  const { id, categoryId, title, authorId, authorName, authorAvatar, text, messageId } = req.body as {
+  const { id, categoryId, title, authorId, authorName, authorAvatar, text, messageId, image } = req.body as {
     id: string;
     categoryId: string;
     title: string;
@@ -122,6 +124,7 @@ router.post("/threads", async (req, res) => {
     authorAvatar?: string;
     text: string;
     messageId: string;
+    image?: string;
   };
 
   if (!id || !categoryId || !title || !authorId || !text || !messageId) {
@@ -135,9 +138,9 @@ router.post("/threads", async (req, res) => {
       [id, categoryId, title, authorId, authorName, authorAvatar || null]
     );
     await pool.query(
-      `INSERT INTO forum_messages (id, thread_id, author_id, author_name, author_avatar, text)
-       VALUES ($1, $2, $3, $4, $5, $6)`,
-      [messageId, id, authorId, authorName, authorAvatar || null, text]
+      `INSERT INTO forum_messages (id, thread_id, author_id, author_name, author_avatar, text, image)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+      [messageId, id, authorId, authorName, authorAvatar || null, text, image || null]
     );
 
     // Send push notification to all members about the new thread. Replies to
@@ -169,16 +172,17 @@ router.delete("/threads/:id", requireAdmin, async (req, res) => {
 });
 
 router.post("/threads/:threadId/messages", async (req, res) => {
-  const { id, authorId, authorName, authorAvatar, text, replyToId } = req.body as {
+  const { id, authorId, authorName, authorAvatar, text, replyToId, image } = req.body as {
     id: string;
     authorId: string;
     authorName: string;
     authorAvatar?: string;
     text: string;
     replyToId?: string;
+    image?: string;
   };
 
-  if (!id || !authorId || !text) {
+  if (!id || !authorId || (!text && !image)) {
     return res.status(400).json({ error: "Missing required fields" });
   }
 
@@ -192,9 +196,9 @@ router.post("/threads/:threadId/messages", async (req, res) => {
     const categoryId = threadRows[0]?.category_id;
 
     await pool.query(
-      `INSERT INTO forum_messages (id, thread_id, author_id, author_name, author_avatar, text, reply_to_id)
-       VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-      [id, req.params.threadId, authorId, authorName, authorAvatar || null, text, replyToId || null]
+      `INSERT INTO forum_messages (id, thread_id, author_id, author_name, author_avatar, text, reply_to_id, image)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+      [id, req.params.threadId, authorId, authorName, authorAvatar || null, text || "", replyToId || null, image || null]
     );
 
     // Send push notification to all members about the new community message
@@ -202,7 +206,7 @@ router.post("/threads/:threadId/messages", async (req, res) => {
     const deepLinkUrl = categoryId ? `/community/${categoryId}/${req.params.threadId}` : "/community";
     broadcastNotification({
       title: `${authorName} posted in ${threadTitle}`,
-      body: text.substring(0, 100),
+      body: text ? text.substring(0, 100) : "📷 Shared a photo",
       tag: "community",
       url: deepLinkUrl,
     }).catch((err) => console.error("Failed to send community notification:", err));

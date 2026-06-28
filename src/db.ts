@@ -144,6 +144,12 @@ export async function initDb(): Promise<void> {
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_forum_threads_category ON forum_threads (category_id);`);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_forum_messages_thread ON forum_messages (thread_id);`);
 
+  // Optional photo attached to a post/reply, stored as a compressed base64
+  // JPEG data URL the same way event images and avatars are (no object
+  // storage in this app). Kept small client-side (~640px/0.6) since this
+  // table grows continuously, unlike avatars/events.
+  await pool.query(`ALTER TABLE forum_messages ADD COLUMN IF NOT EXISTS image TEXT;`);
+
   // Add edited_at columns for edit functionality
   await pool.query(`ALTER TABLE forum_messages ADD COLUMN IF NOT EXISTS edited_at TIMESTAMPTZ;`);
   await pool.query(`ALTER TABLE forum_threads ADD COLUMN IF NOT EXISTS edited_at TIMESTAMPTZ;`);
