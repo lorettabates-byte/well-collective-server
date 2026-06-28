@@ -120,10 +120,12 @@ export async function generateRecipe(
 
 Write one recipe that ties into that theme (e.g. comforting, energizing, calming, restorative — whatever fits). Keep it realistic for a home cook: 5-8 ingredients, 4-6 short steps. Favor whole foods (vegetables, whole grains, legumes, lean protein, fruit) over the same handful of breakfast staples — across a week, recipes should span breakfast, lunch, dinner, and snacks, not cluster around one meal type.
 
-You must also pick the ONE imageCategory that best matches the finished dish, and provide a rough nutrition estimate per serving. Choose imageCategory from EXACTLY one of these:
+You must also pick the ONE imageCategory that best matches the finished dish. Choose from EXACTLY one of these:
 ${VALID_IMAGE_CATEGORIES.join(", ")}
 
 Pick the category that most closely matches what the final plated dish looks like — be as specific as possible (e.g. a salmon dish = "salmon" not "fish", overnight oats = "overnight_oats" not "oatmeal", a Greek/Mediterranean dish = "mediterranean").
+
+For nutrition, do not guess a plausible-sounding total. Work it out ingredient by ingredient: for each ingredient in your list, recall its standard USDA nutrition value for the exact quantity you specified (e.g. "1 cup cooked quinoa" ≈ 222 kcal / 8g protein / 39g carbs / 4g fat), then add them all up for the per-serving totals. Show this reasoning to yourself before answering, but only output the final JSON.
 
 Respond with ONLY a JSON object, no other text, in this exact shape:
 {"name": "recipe name", "description": "1 short sentence on why it fits this week", "ingredients": ["...", "..."], "steps": ["...", "..."], "imageCategory": "one_of_the_categories", "nutrition": {"calories": 350, "protein": "20g", "carbs": "30g", "fat": "12g"}}`;
