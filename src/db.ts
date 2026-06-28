@@ -293,6 +293,11 @@ export async function initDb(): Promise<void> {
     );
   `);
 
+  // Optional base64 JPEG, same storage pattern as avatars/event photos/forum
+  // images — fine here since notes are admin-only and infrequent, unlike the
+  // continuously-growing forum_messages table.
+  await pool.query(`ALTER TABLE loretta_notes ADD COLUMN IF NOT EXISTS image TEXT;`);
+
   // Track published blog posts and videos to detect new ones for notifications
   await pool.query(`
     CREATE TABLE IF NOT EXISTS published_content (

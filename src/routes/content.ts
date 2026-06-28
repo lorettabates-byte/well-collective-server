@@ -163,13 +163,14 @@ router.post("/send-test", requireAdmin, async (req, res) => {
 router.get("/notes", async (_req, res) => {
   try {
     const { rows } = await pool.query(
-      "SELECT id, title, body, created_at FROM loretta_notes ORDER BY created_at DESC LIMIT 50"
+      "SELECT id, title, body, image, created_at FROM loretta_notes ORDER BY created_at DESC LIMIT 50"
     );
     res.json({
       notes: rows.map((row) => ({
         id: String(row.id),
         title: row.title,
         body: row.body,
+        image: row.image ?? undefined,
         sentAt: row.created_at.toISOString(),
       })),
     });
@@ -182,14 +183,14 @@ router.get("/notes", async (_req, res) => {
 // Admin: send an instant push notification and persist it as a note.
 router.post("/notes", requireAdmin, async (req, res) => {
   try {
-    const { title, body } = req.body as { title?: string; body?: string };
+    const { title, body, image } = req.body as { title?: string; body?: string; image?: string };
     if (!title?.trim() || !body?.trim()) {
       return res.status(400).json({ error: "Title and body are required" });
     }
 
     const { rows } = await pool.query(
-      "INSERT INTO loretta_notes (title, body) VALUES ($1, $2) RETURNING id, title, body, created_at",
-      [title.trim(), body.trim()]
+      "INSERT INTO loretta_notes (title, body, image) VALUES ($1, $2, $3) RETURNING id, title, body, image, created_at",
+      [title.trim(), body.trim(), image || null]
     );
     const note = rows[0];
 
@@ -205,6 +206,7 @@ router.post("/notes", requireAdmin, async (req, res) => {
         id: String(note.id),
         title: note.title,
         body: note.body,
+        image: note.image ?? undefined,
         sentAt: note.created_at.toISOString(),
       },
       push: result,
