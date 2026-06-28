@@ -155,6 +155,33 @@ Respond with ONLY a JSON object, no other text, in this exact shape:
   return parsed;
 }
 
+// For recipes generated before nutritionLookup existed — breaks an existing
+// ingredient list into the same {foodQuery, grams} shape so old recipes can
+// be backfilled with real USDA nutrition instead of staying on whatever
+// guess (or nothing) they were originally stored with.
+export async function parseIngredientsForNutritionLookup(
+  ingredients: string[]
+): Promise<{ foodQuery: string; grams: number }[]> {
+  const prompt = `For each of these recipe ingredients, give a clean USDA FoodData Central search query (plain food name, e.g. "1 cup cooked quinoa, fluffed" -> "cooked quinoa") and your best estimate of its weight in grams for the quantity given.
+
+Ingredients:
+${ingredients.map((i, idx) => `${idx + 1}. ${i}`).join("\n")}
+
+Respond with ONLY a JSON array, no other text, one entry per ingredient in the same order, in this exact shape:
+[{"foodQuery": "cooked quinoa", "grams": 185}, {"foodQuery": "tahini", "grams": 30}]`;
+
+  const text = await callClaude(prompt, 600);
+  const match = text.match(/\[[\s\S]*\]/);
+  if (!match) {
+    throw new Error("No JSON array found in ingredient parsing response");
+  }
+  const parsed = JSON.parse(match[0]) as { foodQuery: string; grams: number }[];
+  if (!Array.isArray(parsed)) {
+    throw new Error("Ingredient parsing response was not an array");
+  }
+  return parsed;
+}
+
 export interface GeneratedDailyInspiration {
   title: string;
   body: string;

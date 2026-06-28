@@ -3,6 +3,8 @@ import { pool } from "../db";
 import { requireAdmin } from "../middleware/adminAuth";
 import { broadcastNotification } from "../push";
 import type { ContentBatchEntry } from "../types";
+import { parseIngredientsForNutritionLookup } from "../anthropic";
+import { computeNutritionFromIngredients } from "../usda";
 
 const router = Router();
 
@@ -99,6 +101,50 @@ router.get("/recipes/history", async (req, res) => {
   } catch (err) {
     console.error("Fetch recipe history error:", err);
     res.status(500).json({ error: "Failed to fetch recipe history" });
+  }
+});
+
+// One-time admin tool: recipes generated before nutritionLookup existed
+// have no way to get USDA-verified nutrition retroactively unless we parse
+// their existing ingredient list into the lookup format after the fact.
+// Safe to run repeatedly — skips any recipe that's already nutritionVerified.
+router.post("/recipes/backfill-nutrition", requireAdmin, async (_req, res) => {
+  try {
+    const { rows } = await pool.query(
+      `SELECT date, recipe FROM content_schedule
+       WHERE recipe IS NOT NULL AND COALESCE((recipe->>'nutritionVerified')::boolean, false) = false
+       ORDER BY date DESC`
+    );
+
+    const results: { date: string; name: string; verified: boolean }[] = [];
+
+    for (const row of rows) {
+      const date = row.date.toISOString().slice(0, 10);
+      const recipe = row.recipe as { name: string; ingredients: string[] };
+      try {
+        const lookup = await parseIngredientsForNutritionLookup(recipe.ingredients);
+        const usdaNutrition = await computeNutritionFromIngredients(lookup);
+        if (!usdaNutrition) {
+          results.push({ date, name: recipe.name, verified: false });
+          continue;
+        }
+        const { verified, ...nutrition } = usdaNutrition;
+        const updatedRecipe = { ...recipe, nutrition, nutritionVerified: verified, nutritionLookup: lookup };
+        await pool.query(`UPDATE content_schedule SET recipe = $1 WHERE date = $2`, [
+          JSON.stringify(updatedRecipe),
+          date,
+        ]);
+        results.push({ date, name: recipe.name, verified });
+      } catch (err) {
+        console.error(`Backfill failed for ${date} (${recipe.name}):`, err);
+        results.push({ date, name: recipe.name, verified: false });
+      }
+    }
+
+    res.json({ processed: results.length, results });
+  } catch (err) {
+    console.error("Recipe nutrition backfill error:", err);
+    res.status(500).json({ error: "Failed to backfill recipe nutrition" });
   }
 });
 
