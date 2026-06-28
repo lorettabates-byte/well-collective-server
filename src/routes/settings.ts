@@ -30,6 +30,37 @@ router.put("/settings/featured-event", requireAdmin, async (req, res) => {
   }
 });
 
+// Live events come from the lorettabates.com WordPress feed and have no row
+// in our own `events` table, so "sold out" for them can't be a column —
+// instead we keep a flat list of sold-out event ids (mixing local event ids
+// and "live-<wpId>" ids) under one settings key.
+router.get("/settings/sold-out-events", async (_req, res) => {
+  try {
+    const { rows } = await pool.query("SELECT value FROM app_settings WHERE key = 'soldOutEventIds'");
+    const ids = rows[0]?.value ? JSON.parse(rows[0].value) : [];
+    res.json({ ids });
+  } catch (err) {
+    console.error("Fetch sold-out events error:", err);
+    res.status(500).json({ error: "Failed to fetch sold-out events" });
+  }
+});
+
+router.put("/settings/sold-out-events", requireAdmin, async (req, res) => {
+  const { ids } = req.body as { ids?: string[] };
+
+  try {
+    await pool.query(
+      `INSERT INTO app_settings (key, value) VALUES ('soldOutEventIds', $1)
+       ON CONFLICT (key) DO UPDATE SET value = $1`,
+      [JSON.stringify(ids || [])]
+    );
+    res.json({ ok: true });
+  } catch (err) {
+    console.error("Update sold-out events error:", err);
+    res.status(500).json({ error: "Failed to update sold-out events" });
+  }
+});
+
 // The 10 built-in peaceful sounds are hardcoded in the app's code, not the
 // database, so "deleting" one just means hiding its id from members here.
 router.get("/settings/hidden-sounds", async (_req, res) => {
