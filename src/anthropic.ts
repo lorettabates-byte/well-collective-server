@@ -83,37 +83,50 @@ export interface GeneratedRecipe {
   ingredients: string[];
   steps: string[];
   imageCategory: string;
+  nutrition: {
+    calories: number;
+    protein: string;
+    carbs: string;
+    fat: string;
+  };
 }
 
 const VALID_IMAGE_CATEGORIES = [
-  "salad", "grain_bowl", "smoothie", "soup", "pasta", "chicken",
-  "fish", "oatmeal", "toast", "wrap", "rice", "stir_fry",
-  "roasted_vegetables", "curry", "tacos", "sandwich", "fruit",
-  "baked", "dessert", "general_healthy",
+  "salad", "grain_bowl", "smoothie", "smoothie_bowl", "soup", "soup_asian",
+  "soup_creamy", "soup_brothy", "pasta", "noodles_asian", "chicken", "fish",
+  "salmon", "shrimp", "sushi", "oatmeal", "chia_pudding", "overnight_oats",
+  "toast", "avocado_toast", "wrap", "rice", "stir_fry", "roasted_vegetables",
+  "curry", "tacos", "burrito_bowl", "sandwich", "fruit", "baked", "dessert",
+  "flatbread", "energy_balls", "stuffed_vegetables", "lentil", "mediterranean",
+  "general_healthy",
 ];
 
 export async function generateRecipe(
   weeklyThemeTitle: string | undefined,
-  avoidName?: string
+  recentRecipes: { name: string; imageCategory?: string }[]
 ): Promise<GeneratedRecipe> {
   const themeContext = weeklyThemeTitle
     ? `This week's wellness theme is "${weeklyThemeTitle}".`
     : "There's no specific weekly theme right now, so keep it generally nourishing and approachable.";
-  const avoidContext = avoidName
-    ? ` Do not repeat yesterday's recipe, "${avoidName}" — pick something clearly different.`
+
+  const recentList = recentRecipes
+    .map((r) => `"${r.name}"${r.imageCategory ? ` (${r.imageCategory})` : ""}`)
+    .join(", ");
+  const avoidContext = recentList
+    ? ` Recently served, in order from most recent: ${recentList}. Pick something clearly different from ALL of these — a different dish category, different main ingredient, and a different meal type (don't default to another breakfast/oatmeal/porridge dish or another soup just because recent ones used those).`
     : "";
 
   const prompt = `You are writing a simple, healthy recipe for the WELL Collective, a women's wellness community app. ${themeContext}${avoidContext}
 
-Write one recipe that ties into that theme (e.g. comforting, energizing, calming, restorative — whatever fits). Keep it realistic for a home cook: 5-8 ingredients, 4-6 short steps.
+Write one recipe that ties into that theme (e.g. comforting, energizing, calming, restorative — whatever fits). Keep it realistic for a home cook: 5-8 ingredients, 4-6 short steps. Favor whole foods (vegetables, whole grains, legumes, lean protein, fruit) over the same handful of breakfast staples — across a week, recipes should span breakfast, lunch, dinner, and snacks, not cluster around one meal type.
 
-You must also pick the ONE imageCategory that best matches the finished dish. Choose from EXACTLY one of these:
-salad, grain_bowl, smoothie, soup, pasta, chicken, fish, oatmeal, toast, wrap, rice, stir_fry, roasted_vegetables, curry, tacos, sandwich, fruit, baked, dessert, general_healthy
+You must also pick the ONE imageCategory that best matches the finished dish, and provide a rough nutrition estimate per serving. Choose imageCategory from EXACTLY one of these:
+${VALID_IMAGE_CATEGORIES.join(", ")}
 
-Pick the category that most closely matches what the final plated dish looks like. For example porridge/oatmeal recipes = "oatmeal", a veggie stir fry = "stir_fry", a salmon dish = "fish".
+Pick the category that most closely matches what the final plated dish looks like — be as specific as possible (e.g. a salmon dish = "salmon" not "fish", overnight oats = "overnight_oats" not "oatmeal", a Greek/Mediterranean dish = "mediterranean").
 
 Respond with ONLY a JSON object, no other text, in this exact shape:
-{"name": "recipe name", "description": "1 short sentence on why it fits this week", "ingredients": ["...", "..."], "steps": ["...", "..."], "imageCategory": "one_of_the_categories"}`;
+{"name": "recipe name", "description": "1 short sentence on why it fits this week", "ingredients": ["...", "..."], "steps": ["...", "..."], "imageCategory": "one_of_the_categories", "nutrition": {"calories": 350, "protein": "20g", "carbs": "30g", "fat": "12g"}}`;
 
   const text = await callClaude(prompt, 800);
   const parsed = extractJson(text) as GeneratedRecipe;
@@ -122,6 +135,9 @@ Respond with ONLY a JSON object, no other text, in this exact shape:
   }
   if (!parsed.imageCategory || !VALID_IMAGE_CATEGORIES.includes(parsed.imageCategory)) {
     parsed.imageCategory = "general_healthy";
+  }
+  if (!parsed.nutrition || typeof parsed.nutrition.calories !== "number") {
+    parsed.nutrition = { calories: 0, protein: "—", carbs: "—", fat: "—" };
   }
   return parsed;
 }

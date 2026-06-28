@@ -93,6 +93,21 @@ export async function generateAIContent(): Promise<void> {
       }
     | undefined;
 
+  // A week's worth of recent recipes, not just yesterday's — a single
+  // "don't repeat yesterday" check still let near-identical oatmeal/porridge
+  // dishes recur every other day. Passing the whole week's worth lets the
+  // prompt actively steer toward different meal types and ingredients.
+  const { rows: recentRecipeRows } = await pool.query(
+    `SELECT recipe FROM content_schedule
+     WHERE date < $1 AND date >= $2 AND recipe IS NOT NULL
+     ORDER BY date DESC`,
+    [date, addDays(date, -7)]
+  );
+  const recentRecipes = recentRecipeRows
+    .map((r) => r.recipe as { name?: string; imageCategory?: string })
+    .filter((r) => r.name)
+    .map((r) => ({ name: r.name as string, imageCategory: r.imageCategory }));
+
   let weeklyThemeTitle = await findCurrentWeeklyThemeTitle(date);
 
   if (!weeklyThemeTitle) {
@@ -141,7 +156,7 @@ export async function generateAIContent(): Promise<void> {
 
   if (!row?.recipe) {
     try {
-      const recipe = await generateRecipe(weeklyThemeTitle, yesterdayRow?.recipe?.name);
+      const recipe = await generateRecipe(weeklyThemeTitle, recentRecipes);
       await pool.query(
         `INSERT INTO content_schedule (date, recipe) VALUES ($1, $2)
          ON CONFLICT (date) DO UPDATE SET recipe = COALESCE(content_schedule.recipe, $2)`,
