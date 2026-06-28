@@ -330,4 +330,34 @@ export async function initDb(): Promise<void> {
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_events_date ON events (date);`);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_events_recurrence_group ON events (recurrence_group_id);`);
   await pool.query(`ALTER TABLE events ADD COLUMN IF NOT EXISTS image TEXT;`);
+
+  // Lets admins mark an event as full so members see a clear banner instead
+  // of RSVPing into a class that's already at capacity.
+  await pool.query(`ALTER TABLE events ADD COLUMN IF NOT EXISTS sold_out BOOLEAN NOT NULL DEFAULT false;`);
+
+  // Member-created folders for organizing saved recipes (e.g. "Breakfast",
+  // "Meal Prep"). Recipes themselves are snapshotted as JSONB at save time
+  // (see saved_recipes below) rather than re-fetched from content_schedule,
+  // so a saved recipe survives an admin later editing or deleting that date's
+  // entry.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS recipe_folders (
+      id SERIAL PRIMARY KEY,
+      member_email TEXT NOT NULL REFERENCES members(email) ON DELETE CASCADE,
+      name TEXT NOT NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    );
+  `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS saved_recipes (
+      id SERIAL PRIMARY KEY,
+      member_email TEXT NOT NULL REFERENCES members(email) ON DELETE CASCADE,
+      folder_id INT REFERENCES recipe_folders(id) ON DELETE SET NULL,
+      recipe_date DATE,
+      recipe JSONB NOT NULL,
+      saved_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    );
+  `);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_saved_recipes_member ON saved_recipes (member_email);`);
 }

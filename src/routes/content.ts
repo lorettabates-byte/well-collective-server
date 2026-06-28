@@ -74,6 +74,34 @@ router.get("/content-today", async (_req, res) => {
   }
 });
 
+// Public: paginated past recipes for the Nutrition page's "browse past
+// recipes" view, going back from `before` (exclusive) rather than always
+// starting at today, so members can keep paging further into the archive.
+router.get("/recipes/history", async (req, res) => {
+  try {
+    const before = (req.query.before as string | undefined) || new Date().toISOString().slice(0, 10);
+    const limit = Math.min(Number(req.query.limit) || 10, 30);
+
+    const { rows } = await pool.query(
+      `SELECT date, recipe FROM content_schedule
+       WHERE date < $1 AND recipe IS NOT NULL
+       ORDER BY date DESC
+       LIMIT $2`,
+      [before, limit]
+    );
+
+    res.json({
+      recipes: rows.map((row) => ({
+        date: row.date.toISOString().slice(0, 10),
+        ...row.recipe,
+      })),
+    });
+  } catch (err) {
+    console.error("Fetch recipe history error:", err);
+    res.status(500).json({ error: "Failed to fetch recipe history" });
+  }
+});
+
 router.post("/content-schedule", requireAdmin, async (req, res) => {
   const entries = req.body as ContentBatchEntry[];
   if (!Array.isArray(entries)) {

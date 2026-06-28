@@ -27,6 +27,7 @@ interface EventRow {
   rsvps: string[];
   recurrence_group_id: string | null;
   image: string | null;
+  sold_out: boolean;
 }
 
 function serializeEvent(row: EventRow) {
@@ -41,13 +42,14 @@ function serializeEvent(row: EventRow) {
     rsvps: row.rsvps ?? [],
     recurrenceGroupId: row.recurrence_group_id ?? undefined,
     image: row.image ?? undefined,
+    soldOut: row.sold_out ?? false,
   };
 }
 
 router.get("/events", async (_req, res) => {
   try {
     const { rows } = await pool.query<EventRow>(
-      "SELECT id, title, description, date, time, location, color, rsvps, recurrence_group_id, image FROM events ORDER BY date ASC"
+      "SELECT id, title, description, date, time, location, color, rsvps, recurrence_group_id, image, sold_out FROM events ORDER BY date ASC"
     );
     res.json({ events: rows.map(serializeEvent) });
   } catch (err) {
@@ -61,7 +63,7 @@ router.get("/events", async (_req, res) => {
 // occurrences), so e.g. "every Tuesday at 9am" only needs to be set up once.
 // Only one notification is sent for the whole series, not one per occurrence.
 router.post("/events", requireAdmin, async (req, res) => {
-  const { title, description, date, time, location, color, image, recurrence } = req.body as {
+  const { title, description, date, time, location, color, image, recurrence, soldOut } = req.body as {
     title?: string;
     description?: string;
     date?: string;
@@ -70,6 +72,7 @@ router.post("/events", requireAdmin, async (req, res) => {
     color?: string;
     image?: string;
     recurrence?: { frequency: "weekly"; occurrences?: number };
+    soldOut?: boolean;
   };
 
   if (!title?.trim() || !date || !time?.trim()) {
@@ -91,8 +94,8 @@ router.post("/events", requireAdmin, async (req, res) => {
       const id = uid("e");
       insertedIds.push(id);
       await pool.query(
-        `INSERT INTO events (id, title, description, date, time, location, color, recurrence_group_id, image)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+        `INSERT INTO events (id, title, description, date, time, location, color, recurrence_group_id, image, sold_out)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
         [
           id,
           title.trim(),
@@ -103,6 +106,7 @@ router.post("/events", requireAdmin, async (req, res) => {
           color || "#0191CE",
           recurrenceGroupId,
           image || null,
+          soldOut ?? false,
         ]
       );
     }
@@ -129,7 +133,7 @@ router.post("/events", requireAdmin, async (req, res) => {
 });
 
 router.put("/events/:id", requireAdmin, async (req, res) => {
-  const { title, description, date, time, location, color, image } = req.body as {
+  const { title, description, date, time, location, color, image, soldOut } = req.body as {
     title?: string;
     description?: string;
     date?: string;
@@ -137,6 +141,7 @@ router.put("/events/:id", requireAdmin, async (req, res) => {
     location?: string;
     color?: string;
     image?: string;
+    soldOut?: boolean;
   };
 
   if (!title?.trim() || !date || !time?.trim()) {
@@ -145,7 +150,7 @@ router.put("/events/:id", requireAdmin, async (req, res) => {
 
   try {
     await pool.query(
-      `UPDATE events SET title = $2, description = $3, date = $4, time = $5, location = $6, color = $7, image = $8
+      `UPDATE events SET title = $2, description = $3, date = $4, time = $5, location = $6, color = $7, image = $8, sold_out = $9
        WHERE id = $1`,
       [
         req.params.id,
@@ -156,11 +161,25 @@ router.put("/events/:id", requireAdmin, async (req, res) => {
         location?.trim() || "",
         color || "#0191CE",
         image || null,
+        soldOut ?? false,
       ]
     );
     res.json({ ok: true });
   } catch (err) {
     console.error("Update event error:", err);
+    res.status(500).json({ error: "Failed to update event" });
+  }
+});
+
+// Lightweight toggle for the admin list view — flips sold_out without
+// requiring the full edit form to be resubmitted.
+router.post("/events/:id/sold-out", requireAdmin, async (req, res) => {
+  const { soldOut } = req.body as { soldOut?: boolean };
+  try {
+    await pool.query("UPDATE events SET sold_out = $2 WHERE id = $1", [req.params.id, !!soldOut]);
+    res.json({ ok: true });
+  } catch (err) {
+    console.error("Toggle sold-out error:", err);
     res.status(500).json({ error: "Failed to update event" });
   }
 });
