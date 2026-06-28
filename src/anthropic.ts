@@ -89,6 +89,12 @@ export interface GeneratedRecipe {
     carbs: string;
     fat: string;
   };
+  // One entry per ingredient, broken out as a USDA-FoodData-Central search
+  // query plus an estimated gram weight — lets the server look up real
+  // measured nutrition per ingredient instead of trusting the holistic
+  // `nutrition` guess above, which only exists as a fallback if that lookup
+  // is unavailable or a particular ingredient doesn't resolve.
+  nutritionLookup: { foodQuery: string; grams: number }[];
 }
 
 const VALID_IMAGE_CATEGORIES = [
@@ -125,12 +131,14 @@ ${VALID_IMAGE_CATEGORIES.join(", ")}
 
 Pick the category that most closely matches what the final plated dish looks like — be as specific as possible (e.g. a salmon dish = "salmon" not "fish", overnight oats = "overnight_oats" not "oatmeal", a Greek/Mediterranean dish = "mediterranean").
 
-For nutrition, do not guess a plausible-sounding total. Work it out ingredient by ingredient: for each ingredient in your list, recall its standard USDA nutrition value for the exact quantity you specified (e.g. "1 cup cooked quinoa" ≈ 222 kcal / 8g protein / 39g carbs / 4g fat), then add them all up for the per-serving totals. Show this reasoning to yourself before answering, but only output the final JSON.
+You must also provide a nutritionLookup array — one entry per ingredient in your ingredients list, in the same order — with a clean USDA FoodData Central search query for that food (plain food name a database would recognize, e.g. "cooked quinoa" not "1 cup cooked quinoa, fluffed") and your best estimate of its weight in grams for the quantity you specified (e.g. "1 cup cooked quinoa" ≈ 185g). This is the data the server will use to look up real measured nutrition, so it matters more than the nutrition field below — be precise about the gram weight.
+
+Also provide a fallback nutrition total (only used if the lookup above is unavailable): work it out ingredient by ingredient using standard USDA values for each quantity, then sum.
 
 Respond with ONLY a JSON object, no other text, in this exact shape:
-{"name": "recipe name", "description": "1 short sentence on why it fits this week", "ingredients": ["...", "..."], "steps": ["...", "..."], "imageCategory": "one_of_the_categories", "nutrition": {"calories": 350, "protein": "20g", "carbs": "30g", "fat": "12g"}}`;
+{"name": "recipe name", "description": "1 short sentence on why it fits this week", "ingredients": ["...", "..."], "steps": ["...", "..."], "imageCategory": "one_of_the_categories", "nutritionLookup": [{"foodQuery": "cooked quinoa", "grams": 185}, {"foodQuery": "tahini", "grams": 30}], "nutrition": {"calories": 350, "protein": "20g", "carbs": "30g", "fat": "12g"}}`;
 
-  const text = await callClaude(prompt, 800);
+  const text = await callClaude(prompt, 1100);
   const parsed = extractJson(text) as GeneratedRecipe;
   if (!parsed.name || !Array.isArray(parsed.ingredients) || !Array.isArray(parsed.steps)) {
     throw new Error("AI recipe response missing required fields");
@@ -140,6 +148,9 @@ Respond with ONLY a JSON object, no other text, in this exact shape:
   }
   if (!parsed.nutrition || typeof parsed.nutrition.calories !== "number") {
     parsed.nutrition = { calories: 0, protein: "—", carbs: "—", fat: "—" };
+  }
+  if (!Array.isArray(parsed.nutritionLookup)) {
+    parsed.nutritionLookup = [];
   }
   return parsed;
 }

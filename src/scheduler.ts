@@ -13,6 +13,7 @@ import { checkForNewLiveEvents } from "./routes/live-event-notifications";
 import { checkForNewVideos } from "./routes/video-notifications";
 import { pool } from "./db";
 import { broadcastNotification } from "./push";
+import { computeNutritionFromIngredients, isUsdaConfigured } from "./usda";
 
 const TIMEZONE = process.env.SCHEDULE_TIMEZONE || "America/New_York";
 
@@ -58,6 +59,9 @@ export async function generateAIContent(): Promise<void> {
   if (!isAnthropicConfigured()) {
     console.log("[SCHEDULER] Skipping AI content generation — ANTHROPIC_API_KEY not configured");
     return;
+  }
+  if (!isUsdaConfigured()) {
+    console.log("[SCHEDULER] FDC_API_KEY not configured — recipe nutrition will fall back to the AI's own estimate");
   }
 
   const date = todayInTimezone();
@@ -157,12 +161,28 @@ export async function generateAIContent(): Promise<void> {
   if (!row?.recipe) {
     try {
       const recipe = await generateRecipe(weeklyThemeTitle, recentRecipes);
+
+      // Prefer real USDA-measured nutrition over the AI's own estimate —
+      // only falls back to the AI's guess if FDC_API_KEY isn't configured
+      // or none of the ingredients resolved in the database.
+      const usdaNutrition = await computeNutritionFromIngredients(recipe.nutritionLookup);
+      const { verified, ...usdaTotals } = usdaNutrition ?? { verified: false };
+      const finalRecipe = {
+        ...recipe,
+        nutrition: usdaNutrition ? usdaTotals : recipe.nutrition,
+        nutritionVerified: usdaNutrition ? verified : false,
+      };
+
       await pool.query(
         `INSERT INTO content_schedule (date, recipe) VALUES ($1, $2)
          ON CONFLICT (date) DO UPDATE SET recipe = COALESCE(content_schedule.recipe, $2)`,
-        [date, JSON.stringify(recipe)]
+        [date, JSON.stringify(finalRecipe)]
       );
-      console.log(`[SCHEDULER] Generated AI recipe: "${recipe.name}"`);
+      console.log(
+        `[SCHEDULER] Generated AI recipe: "${recipe.name}" (nutrition ${
+          usdaNutrition ? (usdaNutrition.verified ? "USDA-verified" : "USDA-partial") : "AI estimate"
+        })`
+      );
     } catch (err) {
       console.error("[SCHEDULER] Recipe generation failed:", err);
     }
