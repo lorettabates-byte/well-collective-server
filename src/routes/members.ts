@@ -30,7 +30,7 @@ async function findEmailByMemberId(memberId: string): Promise<string | null> {
 }
 
 router.post("/members/sync", async (req, res) => {
-  const { email, name, avatar, bio, birthday, showBirthdayOnCalendar, workoutLog } = req.body as {
+  const { email, name, avatar, bio, birthday, showBirthdayOnCalendar, workoutLog, savedInspirationIds, likedInspirationIds } = req.body as {
     email?: string;
     name?: string;
     avatar?: string;
@@ -38,6 +38,8 @@ router.post("/members/sync", async (req, res) => {
     birthday?: string;
     showBirthdayOnCalendar?: boolean;
     workoutLog?: string[];
+    savedInspirationIds?: string[];
+    likedInspirationIds?: string[];
   };
 
   if (!email || !name) {
@@ -54,10 +56,11 @@ router.post("/members/sync", async (req, res) => {
     // from the client (e.g. a false-positive "new member" reset on the
     // client, or a stale/wiped local profile) can never overwrite a value
     // already saved for this member — it can only fill in a field that's
-    // still empty.
+    // still empty. However, saved/liked inspiration IDs should always be updated
+    // from the client since they reflect current user interactions.
     await pool.query(
-      `INSERT INTO members (email, name, avatar, bio, birthday, show_birthday_on_calendar, workout_log, updated_at)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, now())
+      `INSERT INTO members (email, name, avatar, bio, birthday, show_birthday_on_calendar, workout_log, saved_inspiration_ids, liked_inspiration_ids, updated_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, now())
        ON CONFLICT (email) DO UPDATE SET
          name = $2,
          avatar = COALESCE($3, members.avatar),
@@ -65,6 +68,8 @@ router.post("/members/sync", async (req, res) => {
          birthday = COALESCE($5, members.birthday),
          show_birthday_on_calendar = $6,
          workout_log = COALESCE($7, members.workout_log),
+         saved_inspiration_ids = $8,
+         liked_inspiration_ids = $9,
          updated_at = now()`,
       [
         normalizedEmail,
@@ -74,6 +79,8 @@ router.post("/members/sync", async (req, res) => {
         birthday || null,
         !!showBirthdayOnCalendar,
         workoutLog && workoutLog.length > 0 ? workoutLog : null,
+        savedInspirationIds && savedInspirationIds.length > 0 ? savedInspirationIds : null,
+        likedInspirationIds && likedInspirationIds.length > 0 ? likedInspirationIds : null,
       ]
     );
 
@@ -107,7 +114,7 @@ router.get("/members/me", async (req, res) => {
 
   try {
     const { rows } = await pool.query(
-      `SELECT name, avatar, bio, birthday, show_birthday_on_calendar, workout_log, featured_badge, created_at
+      `SELECT name, avatar, bio, birthday, show_birthday_on_calendar, workout_log, featured_badge, created_at, saved_inspiration_ids, liked_inspiration_ids
        FROM members WHERE email = $1`,
       [email]
     );
@@ -143,6 +150,8 @@ router.get("/members/me", async (req, res) => {
         bonusBadges: computeBonusBadges(row.created_at, messageCount, Number(cheerRows[0].count)),
         grantedBadges: badgeRows.map((b) => b.badge_id),
         featuredBadge: row.featured_badge ?? undefined,
+        savedInspirationIds: row.saved_inspiration_ids ?? undefined,
+        likedInspirationIds: row.liked_inspiration_ids ?? undefined,
       },
     });
   } catch (err) {

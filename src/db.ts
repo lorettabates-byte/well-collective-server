@@ -183,6 +183,10 @@ export async function initDb(): Promise<void> {
   `);
 
   await pool.query(`ALTER TABLE members ADD COLUMN IF NOT EXISTS bio TEXT;`);
+  // Saved and liked inspirations — persisted server-side so they survive
+  // localStorage wipes (tracking prevention, logout, device changes, etc.)
+  await pool.query(`ALTER TABLE members ADD COLUMN IF NOT EXISTS saved_inspiration_ids TEXT[];`);
+  await pool.query(`ALTER TABLE members ADD COLUMN IF NOT EXISTS liked_inspiration_ids TEXT[];`);
   // Marks an email as having already claimed its one-time free trial, so the
   // signup form can reject repeat attempts (e.g. after clearing local storage).
   await pool.query(`ALTER TABLE members ADD COLUMN IF NOT EXISTS trial_started_at TIMESTAMPTZ;`);
