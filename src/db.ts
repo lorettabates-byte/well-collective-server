@@ -392,4 +392,26 @@ export async function initDb(): Promise<void> {
     );
   `);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_meal_plan_member ON meal_plan_entries (member_email);`);
+
+  // Likes/saves on inspirations (daily inspiration, weekly theme, motivation
+  // boost, and Notes from Loretta) were previously reconstructed entirely
+  // client-side from each member's own likedInspirationIds/savedInspirationIds
+  // — every member only ever saw their own reaction echoed back, never
+  // anyone else's, since there was no shared store of who else reacted.
+  // inspiration_id covers both real ids ("1", "2" for loretta_notes rows)
+  // and the synthetic per-date ids the client generates for daily/weekly/
+  // motivational content ("daily-2026-06-29", etc.) — it's just a string key,
+  // not a foreign key, since those don't have their own table.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS inspiration_reactions (
+      inspiration_id TEXT NOT NULL,
+      member_email TEXT NOT NULL REFERENCES members(email) ON DELETE CASCADE,
+      reaction TEXT NOT NULL CHECK (reaction IN ('like', 'save')),
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      PRIMARY KEY (inspiration_id, member_email, reaction)
+    );
+  `);
+  await pool.query(
+    `CREATE INDEX IF NOT EXISTS idx_inspiration_reactions_id ON inspiration_reactions (inspiration_id);`
+  );
 }
