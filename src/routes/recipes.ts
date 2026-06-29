@@ -143,4 +143,71 @@ router.delete("/recipes/saved/:id", async (req, res) => {
   }
 });
 
+interface MealPlanRow {
+  id: number;
+  plan_date: Date;
+  recipe: Record<string, unknown>;
+}
+
+router.get("/meal-plan", async (req, res) => {
+  const email = (req.query.email as string | undefined)?.toLowerCase();
+  if (!email) return res.status(400).json({ error: "email is required" });
+
+  try {
+    const { rows } = await pool.query<MealPlanRow>(
+      "SELECT id, plan_date, recipe FROM meal_plan_entries WHERE member_email = $1 ORDER BY plan_date ASC",
+      [email]
+    );
+    res.json({
+      entries: rows.map((row) => ({
+        id: row.id,
+        planDate: row.plan_date.toISOString().slice(0, 10),
+        recipe: row.recipe,
+      })),
+    });
+  } catch (err) {
+    console.error("Fetch meal plan error:", err);
+    res.status(500).json({ error: "Failed to fetch meal plan" });
+  }
+});
+
+// Upsert — assigning a new recipe to a day that already has one replaces it.
+router.post("/meal-plan", async (req, res) => {
+  const { email, planDate, recipe } = req.body as {
+    email?: string;
+    planDate?: string;
+    recipe?: Record<string, unknown>;
+  };
+  if (!email || !planDate || !recipe) {
+    return res.status(400).json({ error: "email, planDate, and recipe are required" });
+  }
+
+  try {
+    const { rows } = await pool.query<MealPlanRow>(
+      `INSERT INTO meal_plan_entries (member_email, plan_date, recipe)
+       VALUES ($1, $2, $3)
+       ON CONFLICT (member_email, plan_date) DO UPDATE SET recipe = $3
+       RETURNING id, plan_date, recipe`,
+      [email.toLowerCase(), planDate, JSON.stringify(recipe)]
+    );
+    const row = rows[0];
+    res.status(201).json({
+      entry: { id: row.id, planDate: row.plan_date.toISOString().slice(0, 10), recipe: row.recipe },
+    });
+  } catch (err) {
+    console.error("Set meal plan entry error:", err);
+    res.status(500).json({ error: "Failed to set meal plan entry" });
+  }
+});
+
+router.delete("/meal-plan/:id", async (req, res) => {
+  try {
+    await pool.query("DELETE FROM meal_plan_entries WHERE id = $1", [req.params.id]);
+    res.json({ ok: true });
+  } catch (err) {
+    console.error("Delete meal plan entry error:", err);
+    res.status(500).json({ error: "Failed to delete meal plan entry" });
+  }
+});
+
 export default router;

@@ -376,4 +376,20 @@ export async function initDb(): Promise<void> {
     );
   `);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_saved_recipes_member ON saved_recipes (member_email);`);
+
+  // One recipe per calendar day per member — assigning a new recipe to a
+  // day that already has one replaces it (ON CONFLICT below), matching the
+  // simple one-meal-planned-per-day mental model most weekly planners use.
+  // Recipe is snapshotted as JSONB for the same reason as saved_recipes.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS meal_plan_entries (
+      id SERIAL PRIMARY KEY,
+      member_email TEXT NOT NULL REFERENCES members(email) ON DELETE CASCADE,
+      plan_date DATE NOT NULL,
+      recipe JSONB NOT NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      UNIQUE (member_email, plan_date)
+    );
+  `);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_meal_plan_member ON meal_plan_entries (member_email);`);
 }
