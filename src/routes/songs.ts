@@ -275,6 +275,23 @@ router.post("/song-categories", requireAdmin, async (req, res) => {
   }
 });
 
+router.put("/song-categories/:id", requireAdmin, async (req, res) => {
+  const { name } = req.body as { name?: string };
+  if (!name?.trim()) return res.status(400).json({ error: "name is required" });
+
+  try {
+    const { rows } = await pool.query(
+      `UPDATE song_categories SET name = $1 WHERE id = $2 RETURNING id, name, sort_order`,
+      [name.trim(), req.params.id]
+    );
+    if (rows.length === 0) return res.status(404).json({ error: "Category not found" });
+    res.json({ category: { id: rows[0].id, name: rows[0].name, sortOrder: rows[0].sort_order } });
+  } catch (err) {
+    console.error("Rename song category error:", err);
+    res.status(500).json({ error: "Failed to rename song category — name may already exist" });
+  }
+});
+
 router.delete("/song-categories/:id", requireAdmin, async (req, res) => {
   try {
     await pool.query("DELETE FROM song_categories WHERE id = $1", [req.params.id]);

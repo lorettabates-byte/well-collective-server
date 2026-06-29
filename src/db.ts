@@ -130,6 +130,13 @@ export async function initDb(): Promise<void> {
     );
   `);
 
+  // One-time rename: this category started out as "Royalty & Divine
+  // Feminine" — Loretta asked to align it with her "Made Magnificent"
+  // seminar instead. Existing song_category_links keep working since they
+  // reference category_id, not the name. Safe to run every deploy; only
+  // matches if the old name is still there.
+  await pool.query(`UPDATE song_categories SET name = 'MADE MAGNIFICENT' WHERE name = 'Royalty & Divine Feminine'`);
+
   // Seeded once — admin can rename/delete/add more from the Music admin
   // page afterward, this just gives every song a starting home so the
   // playlist isn't uncategorized on day one.
@@ -141,7 +148,8 @@ export async function initDb(): Promise<void> {
     "Healing & Wellness",
     "Ambition & Success",
     "Sisterhood & Community",
-    "Royalty & Divine Feminine",
+    "MADE MAGNIFICENT",
+    "MADE TO BE DIFFERENT",
   ];
   for (let i = 0; i < SEED_CATEGORIES.length; i++) {
     await pool.query(
@@ -158,26 +166,26 @@ export async function initDb(): Promise<void> {
     1: ["New Beginnings & Courage"],
     2: ["New Beginnings & Courage"],
     3: ["Healing & Wellness"],
-    4: ["Self-Worth & Affirmation"],
+    4: ["Self-Worth & Affirmation", "MADE MAGNIFICENT"],
     5: ["Self-Worth & Affirmation"],
     6: ["Healing & Wellness"],
     7: ["Ambition & Success"],
-    8: ["Body Positivity & Self-Acceptance"],
+    8: ["Body Positivity & Self-Acceptance", "MADE TO BE DIFFERENT"],
     9: ["Resilience & Strength", "New Beginnings & Courage"],
     10: ["Resilience & Strength"],
     11: ["New Beginnings & Courage"],
     12: ["Sisterhood & Community"],
-    13: ["Royalty & Divine Feminine"],
-    14: ["Royalty & Divine Feminine"],
-    16: ["Body Positivity & Self-Acceptance"],
+    13: ["MADE MAGNIFICENT"],
+    14: ["MADE MAGNIFICENT"],
+    16: ["Body Positivity & Self-Acceptance", "MADE TO BE DIFFERENT"],
     18: ["Healing & Wellness"],
     19: ["Resilience & Strength"],
     20: ["New Beginnings & Courage"],
     21: ["Ambition & Success"],
-    22: ["Royalty & Divine Feminine"],
-    23: ["Royalty & Divine Feminine", "Body Positivity & Self-Acceptance"],
+    22: ["MADE MAGNIFICENT"],
+    23: ["MADE MAGNIFICENT", "Body Positivity & Self-Acceptance"],
     24: ["Ambition & Success"],
-    25: ["Self-Worth & Affirmation"],
+    25: ["Self-Worth & Affirmation", "MADE TO BE DIFFERENT"],
     26: ["Resilience & Strength"],
   };
   const { rows: categoryRows } = await pool.query(`SELECT id, name FROM song_categories`);
