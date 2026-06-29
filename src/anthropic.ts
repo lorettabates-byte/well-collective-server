@@ -107,6 +107,14 @@ const VALID_IMAGE_CATEGORIES = [
   "general_healthy",
 ];
 
+// Soft "try to be different" wording wasn't enough — soup and oatmeal/
+// porridge kept recurring multiple times a week regardless. These are
+// hard-capped at once per rolling 7 days: once either group has appeared,
+// it's removed entirely from the category list the AI is even allowed to
+// choose from, not just discouraged.
+const SOUP_CATEGORIES = ["soup", "soup_asian", "soup_creamy", "soup_brothy"];
+const PORRIDGE_CATEGORIES = ["oatmeal", "overnight_oats", "chia_pudding"];
+
 export async function generateRecipe(
   weeklyThemeTitle: string | undefined,
   recentRecipes: { name: string; imageCategory?: string }[]
@@ -119,17 +127,33 @@ export async function generateRecipe(
     .map((r) => `"${r.name}"${r.imageCategory ? ` (${r.imageCategory})` : ""}`)
     .join(", ");
   const avoidContext = recentList
-    ? ` Recently served, in order from most recent: ${recentList}. Pick something clearly different from ALL of these — a different dish category, different main ingredient, and a different meal type (don't default to another breakfast/oatmeal/porridge dish or another soup just because recent ones used those).`
+    ? ` Recently served, in order from most recent: ${recentList}. Pick something clearly different from ALL of these — a different dish category, different main ingredient, and a different meal type.`
     : "";
 
-  const prompt = `You are writing a simple, healthy recipe for the WELL Collective, a women's wellness community app. ${themeContext}${avoidContext}
+  const recentCategories = new Set(recentRecipes.map((r) => r.imageCategory).filter((c): c is string => !!c));
+  const blockedCategories = new Set<string>();
+  const blockedGroupNames: string[] = [];
+  if (SOUP_CATEGORIES.some((c) => recentCategories.has(c))) {
+    SOUP_CATEGORIES.forEach((c) => blockedCategories.add(c));
+    blockedGroupNames.push("soup/stew/chili/chowder");
+  }
+  if (PORRIDGE_CATEGORIES.some((c) => recentCategories.has(c))) {
+    PORRIDGE_CATEGORIES.forEach((c) => blockedCategories.add(c));
+    blockedGroupNames.push("oatmeal/porridge/overnight oats/chia pudding");
+  }
+  const hardLimitContext = blockedGroupNames.length > 0
+    ? ` HARD RULE: ${blockedGroupNames.join(" and ")} ${blockedGroupNames.length > 1 ? "have" : "has"} already been served once in the last 7 days, which is the cap — pick a completely different kind of dish, not another one.`
+    : "";
+  const allowedCategories = VALID_IMAGE_CATEGORIES.filter((c) => !blockedCategories.has(c));
+
+  const prompt = `You are writing a simple, healthy recipe for the WELL Collective, a women's wellness community app. ${themeContext}${avoidContext}${hardLimitContext}
 
 Write one recipe that ties into that theme (e.g. comforting, energizing, calming, restorative — whatever fits). Keep it realistic for a home cook: 5-8 ingredients, 4-6 short steps. Favor whole foods (vegetables, whole grains, legumes, lean protein, fruit) over the same handful of breakfast staples — across a week, recipes should span breakfast, lunch, dinner, and snacks, not cluster around one meal type.
 
 You must also pick the ONE imageCategory that best matches the finished dish. Choose from EXACTLY one of these:
-${VALID_IMAGE_CATEGORIES.join(", ")}
+${allowedCategories.join(", ")}
 
-Pick the category that most closely matches what the final plated dish looks like — be as specific as possible (e.g. a salmon dish = "salmon" not "fish", overnight oats = "overnight_oats" not "oatmeal", a Greek/Mediterranean dish = "mediterranean").
+Pick the category that most closely matches what the final plated dish looks like — be as specific as possible (e.g. a salmon dish = "salmon" not "fish", a Greek/Mediterranean dish = "mediterranean").
 
 You must also provide a nutritionLookup array — one entry per ingredient in your ingredients list, in the same order — with a USDA FoodData Central search query for that food and your best estimate of its weight in grams for the quantity you specified (e.g. "1 cup cooked quinoa" ≈ 185g). This is the data the server will use to look up real measured nutrition, so it matters more than the nutrition field below.
 
@@ -145,7 +169,10 @@ Respond with ONLY a JSON object, no other text, in this exact shape:
   if (!parsed.name || !Array.isArray(parsed.ingredients) || !Array.isArray(parsed.steps)) {
     throw new Error("AI recipe response missing required fields");
   }
-  if (!parsed.imageCategory || !VALID_IMAGE_CATEGORIES.includes(parsed.imageCategory)) {
+  if (!parsed.imageCategory || !allowedCategories.includes(parsed.imageCategory)) {
+    // Either an invalid category, or the model ignored the hard rule above
+    // and picked a blocked one anyway — fall back rather than compound a
+    // soup/porridge repeat with a mismatched photo on top of it.
     parsed.imageCategory = "general_healthy";
   }
   if (!parsed.nutrition || typeof parsed.nutrition.calories !== "number") {
