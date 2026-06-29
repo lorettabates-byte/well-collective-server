@@ -131,7 +131,9 @@ ${VALID_IMAGE_CATEGORIES.join(", ")}
 
 Pick the category that most closely matches what the final plated dish looks like — be as specific as possible (e.g. a salmon dish = "salmon" not "fish", overnight oats = "overnight_oats" not "oatmeal", a Greek/Mediterranean dish = "mediterranean").
 
-You must also provide a nutritionLookup array — one entry per ingredient in your ingredients list, in the same order — with a clean USDA FoodData Central search query for that food (plain food name a database would recognize, e.g. "cooked quinoa" not "1 cup cooked quinoa, fluffed") and your best estimate of its weight in grams for the quantity you specified (e.g. "1 cup cooked quinoa" ≈ 185g). This is the data the server will use to look up real measured nutrition, so it matters more than the nutrition field below — be precise about the gram weight.
+You must also provide a nutritionLookup array — one entry per ingredient in your ingredients list, in the same order — with a USDA FoodData Central search query for that food and your best estimate of its weight in grams for the quantity you specified (e.g. "1 cup cooked quinoa" ≈ 185g). This is the data the server will use to look up real measured nutrition, so it matters more than the nutrition field below.
+
+For foodQuery, use USDA's own naming convention as closely as you can recall it, not a casual ingredient name — generic terms like "oats" or "chicken breast" often match the wrong entry (a branded product, an oil, a prepared dish) because FDC's search is plain relevance ranking, not smart disambiguation. Be specific and use the USDA style: "Cereals, oats, regular and quick, unenriched, dry" not "oats"; "Chicken, broilers or fryers, breast, meat only, raw" not "chicken breast"; "Avocados, raw, California" not "avocado"; "Seeds, sesame butter, tahini" not "tahini".
 
 Also provide a fallback nutrition total (only used if the lookup above is unavailable): work it out ingredient by ingredient using standard USDA values for each quantity, then sum.
 
@@ -162,13 +164,15 @@ Respond with ONLY a JSON object, no other text, in this exact shape:
 export async function parseIngredientsForNutritionLookup(
   ingredients: string[]
 ): Promise<{ foodQuery: string; grams: number }[]> {
-  const prompt = `For each of these recipe ingredients, give a clean USDA FoodData Central search query (plain food name, e.g. "1 cup cooked quinoa, fluffed" -> "cooked quinoa") and your best estimate of its weight in grams for the quantity given.
+  const prompt = `For each of these recipe ingredients, give a USDA FoodData Central search query and your best estimate of its weight in grams for the quantity given.
+
+For foodQuery, use USDA's own naming convention as closely as you can recall it, not a casual ingredient name — generic terms like "oats" or "chicken breast" often match the wrong entry (a branded product, an oil, a prepared dish) because FDC's search is plain relevance ranking, not smart disambiguation. Be specific and use the USDA style: "Cereals, oats, regular and quick, unenriched, dry" not "oats"; "Chicken, broilers or fryers, breast, meat only, raw" not "chicken breast"; "Avocados, raw, California" not "avocado"; "Seeds, sesame butter, tahini" not "tahini".
 
 Ingredients:
 ${ingredients.map((i, idx) => `${idx + 1}. ${i}`).join("\n")}
 
 Respond with ONLY a JSON array, no other text, one entry per ingredient in the same order, in this exact shape:
-[{"foodQuery": "cooked quinoa", "grams": 185}, {"foodQuery": "tahini", "grams": 30}]`;
+[{"foodQuery": "Quinoa, cooked", "grams": 185}, {"foodQuery": "Seeds, sesame butter, tahini", "grams": 30}]`;
 
   const text = await callClaude(prompt, 600);
   const match = text.match(/\[[\s\S]*\]/);
