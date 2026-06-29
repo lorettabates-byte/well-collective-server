@@ -104,6 +104,95 @@ export async function initDb(): Promise<void> {
 
   await pool.query(`ALTER TABLE songs ADD COLUMN IF NOT EXISTS lyrics TEXT;`);
 
+  // NULL = already released (every song added before this feature shipped).
+  // A non-null value is a future Music Monday slot — the public /api/songs
+  // endpoint filters these out until that moment passes, so no separate
+  // "publish" cron job is needed; the song just becomes visible on its own.
+  await pool.query(`ALTER TABLE songs ADD COLUMN IF NOT EXISTS release_at TIMESTAMPTZ;`);
+  // Tracks whether the "new song" push has already fired for this release,
+  // so the hourly check below doesn't re-notify on every run.
+  await pool.query(`ALTER TABLE songs ADD COLUMN IF NOT EXISTS notified_at TIMESTAMPTZ;`);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS song_categories (
+      id SERIAL PRIMARY KEY,
+      name TEXT NOT NULL UNIQUE,
+      sort_order INT NOT NULL DEFAULT 0,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    );
+  `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS song_category_links (
+      song_id INT NOT NULL REFERENCES songs(id) ON DELETE CASCADE,
+      category_id INT NOT NULL REFERENCES song_categories(id) ON DELETE CASCADE,
+      PRIMARY KEY (song_id, category_id)
+    );
+  `);
+
+  // Seeded once — admin can rename/delete/add more from the Music admin
+  // page afterward, this just gives every song a starting home so the
+  // playlist isn't uncategorized on day one.
+  const SEED_CATEGORIES = [
+    "Self-Worth & Affirmation",
+    "Body Positivity & Self-Acceptance",
+    "Resilience & Strength",
+    "New Beginnings & Courage",
+    "Healing & Wellness",
+    "Ambition & Success",
+    "Sisterhood & Community",
+    "Royalty & Divine Feminine",
+  ];
+  for (let i = 0; i < SEED_CATEGORIES.length; i++) {
+    await pool.query(
+      `INSERT INTO song_categories (name, sort_order) VALUES ($1, $2) ON CONFLICT (name) DO NOTHING`,
+      [SEED_CATEGORIES[i], i]
+    );
+  }
+
+  // One-time backfill assigning each of the original 24 songs to a starting
+  // category, keyed by song id (not title, since titles can have stray
+  // whitespace/punctuation that's risky to match exactly). ON CONFLICT DO
+  // NOTHING makes this safe to run on every deploy.
+  const SONG_CATEGORY_SEED: Record<number, string[]> = {
+    1: ["New Beginnings & Courage"],
+    2: ["New Beginnings & Courage"],
+    3: ["Healing & Wellness"],
+    4: ["Self-Worth & Affirmation"],
+    5: ["Self-Worth & Affirmation"],
+    6: ["Healing & Wellness"],
+    7: ["Ambition & Success"],
+    8: ["Body Positivity & Self-Acceptance"],
+    9: ["Resilience & Strength", "New Beginnings & Courage"],
+    10: ["Resilience & Strength"],
+    11: ["New Beginnings & Courage"],
+    12: ["Sisterhood & Community"],
+    13: ["Royalty & Divine Feminine"],
+    14: ["Royalty & Divine Feminine"],
+    16: ["Body Positivity & Self-Acceptance"],
+    18: ["Healing & Wellness"],
+    19: ["Resilience & Strength"],
+    20: ["New Beginnings & Courage"],
+    21: ["Ambition & Success"],
+    22: ["Royalty & Divine Feminine"],
+    23: ["Royalty & Divine Feminine", "Body Positivity & Self-Acceptance"],
+    24: ["Ambition & Success"],
+    25: ["Self-Worth & Affirmation"],
+    26: ["Resilience & Strength"],
+  };
+  const { rows: categoryRows } = await pool.query(`SELECT id, name FROM song_categories`);
+  const categoryIdByName = new Map(categoryRows.map((r) => [r.name, r.id]));
+  for (const [songId, categoryNames] of Object.entries(SONG_CATEGORY_SEED)) {
+    for (const name of categoryNames) {
+      const categoryId = categoryIdByName.get(name);
+      if (!categoryId) continue;
+      await pool.query(
+        `INSERT INTO song_category_links (song_id, category_id) VALUES ($1, $2) ON CONFLICT DO NOTHING`,
+        [Number(songId), categoryId]
+      );
+    }
+  }
+
   await pool.query(`
     CREATE TABLE IF NOT EXISTS forum_categories (
       id TEXT PRIMARY KEY,

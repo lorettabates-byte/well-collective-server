@@ -35,6 +35,7 @@ const TAG_TO_CATEGORY: Record<string, string> = {
   community: "community",
   "new-event": "newEvents",
   "new-video": "general",
+  "new-song": "newSongs",
   message: "replies",
   tribe: "mentions",
 };
@@ -48,6 +49,7 @@ const DEFAULT_NOTIFICATION_SETTINGS: Record<string, boolean> = {
   dailyInspiration: true,
   newEvents: true,
   newBlogs: true,
+  newSongs: true,
 };
 
 // A member with no saved preferences yet (never opened Notification Settings,

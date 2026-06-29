@@ -321,6 +321,30 @@ async function sendLivestreamReminder(): Promise<void> {
   await markSent(date, "livestreamReminder");
 }
 
+// Music Monday: a song's release_at passing is what makes it visible to
+// members (the public /api/songs query already filters on it) — this just
+// catches the moment that happens and fires the one-time "new song" push,
+// gated by notified_at so it can run hourly without double-sending.
+async function checkForNewlyReleasedSongs(): Promise<void> {
+  const { rows } = await pool.query(
+    `SELECT id, title FROM songs WHERE release_at IS NOT NULL AND release_at <= now() AND notified_at IS NULL`
+  );
+
+  for (const row of rows) {
+    try {
+      await broadcastNotification({
+        title: "🎵 New Music Monday Song!",
+        body: `"${row.title}" just dropped on the WELL Collective Playlist.`,
+        tag: "new-song",
+        url: "/music",
+      });
+      await pool.query(`UPDATE songs SET notified_at = now() WHERE id = $1`, [row.id]);
+    } catch (err) {
+      console.error(`Failed to send new-song notification for song ${row.id}:`, err);
+    }
+  }
+}
+
 export function startScheduler(): void {
   // AI content generation (motivation boost, recipe, nutrition tip): every day at 5:30am,
   // ahead of the 7am sends below so generated content is ready in time.
@@ -356,6 +380,12 @@ export function startScheduler(): void {
   // Check for new live events on lorettabates.com: every hour on the hour
   cron.schedule("0 * * * *", () => {
     checkForNewLiveEvents().catch((err) => console.error("Live event check failed:", err));
+  });
+
+  // Music Monday: every hour on the hour — catches whenever a queued song's
+  // release_at passes and sends the one-time "new song" push for it.
+  cron.schedule("0 * * * *", () => {
+    checkForNewlyReleasedSongs().catch((err) => console.error("New song check failed:", err));
   });
 
   console.log(`Scheduler started (timezone: ${TIMEZONE})`);
