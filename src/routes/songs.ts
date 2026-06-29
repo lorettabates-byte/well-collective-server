@@ -1,6 +1,7 @@
 import { Router } from "express";
 import { pool } from "../db";
 import { requireAdmin } from "../middleware/adminAuth";
+import { broadcastNotification } from "../push";
 
 const router = Router();
 
@@ -15,11 +16,13 @@ interface SongInput {
   categoryIds?: number[];
 }
 
-// 8am Monday in the configured timezone, on or after `from`. Used both to
+// 5pm Monday in the configured timezone, on or after `from`. Used both to
 // find the first open Music Monday slot and to add a week to the last
 // queued one, so the FIFO queue always lands on a Monday regardless of
 // what day an admin actually uploads on.
-function nextMonday8am(from: Date): Date {
+const RELEASE_HOUR = 17; // 5pm
+
+function nextMonday5pm(from: Date): Date {
   const formatter = new Intl.DateTimeFormat("en-US", {
     timeZone: TIMEZONE,
     weekday: "short",
@@ -33,12 +36,12 @@ function nextMonday8am(from: Date): Date {
   const today = dayIndex[weekday ?? "Mon"] ?? 1;
 
   let daysUntilMonday = (1 - today + 7) % 7;
-  // If it's already Monday but past 8am, push to next week rather than firing immediately.
-  if (daysUntilMonday === 0 && hour >= 8) daysUntilMonday = 7;
+  // If it's already Monday but past the release hour, push to next week rather than firing immediately.
+  if (daysUntilMonday === 0 && hour >= RELEASE_HOUR) daysUntilMonday = 7;
 
   const result = new Date(from);
   result.setUTCDate(result.getUTCDate() + daysUntilMonday);
-  // Setting an exact 8am-in-timezone instant without a date library: figure
+  // Setting an exact time-in-timezone instant without a date library: figure
   // out the UTC offset for that timezone on that date and apply it.
   const offsetFormatter = new Intl.DateTimeFormat("en-US", {
     timeZone: TIMEZONE,
@@ -48,7 +51,7 @@ function nextMonday8am(from: Date): Date {
   const offsetMatch = offsetPart.match(/GMT([+-]\d+)/);
   const offsetHours = offsetMatch ? Number(offsetMatch[1]) : 0;
 
-  result.setUTCHours(8 - offsetHours, 0, 0, 0);
+  result.setUTCHours(RELEASE_HOUR - offsetHours, 0, 0, 0);
   return result;
 }
 
@@ -60,7 +63,7 @@ async function computeNextReleaseSlot(): Promise<Date> {
   if (maxRelease) {
     return new Date(maxRelease.getTime() + 7 * 24 * 60 * 60 * 1000);
   }
-  return nextMonday8am(new Date());
+  return nextMonday5pm(new Date());
 }
 
 function formatSong(row: Record<string, unknown>) {
@@ -114,6 +117,37 @@ router.get("/songs/queue", requireAdmin, async (_req, res) => {
   } catch (err) {
     console.error("Fetch song queue error:", err);
     res.status(500).json({ error: "Failed to fetch song queue" });
+  }
+});
+
+// Skips the queue entirely and makes a song visible right now, firing the
+// "new song" push immediately instead of waiting for the hourly check to
+// notice it — for releasing a song the same day rather than next Monday.
+router.post("/songs/:id/release-now", requireAdmin, async (req, res) => {
+  try {
+    const { rows } = await pool.query(
+      `UPDATE songs SET release_at = now() WHERE id = $1 RETURNING id, title`,
+      [req.params.id]
+    );
+    if (rows.length === 0) return res.status(404).json({ error: "Song not found" });
+
+    const song = rows[0];
+    try {
+      await broadcastNotification({
+        title: "🎵 New Song!",
+        body: `"${song.title}" just dropped on the WELL Collective Playlist.`,
+        tag: "new-song",
+        url: "/music",
+      });
+      await pool.query(`UPDATE songs SET notified_at = now() WHERE id = $1`, [song.id]);
+    } catch (notifyErr) {
+      console.error(`Failed to send release-now notification for song ${song.id}:`, notifyErr);
+    }
+
+    res.json({ ok: true });
+  } catch (err) {
+    console.error("Release song now error:", err);
+    res.status(500).json({ error: "Failed to release song" });
   }
 });
 
