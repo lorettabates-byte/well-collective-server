@@ -116,7 +116,19 @@ export async function generateAIContent(): Promise<void> {
 
   if (!weeklyThemeTitle) {
     try {
-      const theme = await generateWeeklyTheme();
+      // Weekly themes are only ever stored on the Monday row, so the last
+      // ~8 weeks of Mondays covers recent history without scanning every day.
+      const { rows: recentThemeRows } = await pool.query(
+        `SELECT weekly_theme FROM content_schedule
+         WHERE date < $1 AND date >= $2 AND weekly_theme IS NOT NULL
+         ORDER BY date DESC`,
+        [date, addDays(date, -56)]
+      );
+      const recentThemes = recentThemeRows
+        .map((r) => (r.weekly_theme as { title?: string })?.title)
+        .filter((t): t is string => !!t);
+
+      const theme = await generateWeeklyTheme(recentThemes);
       const monday = mostRecentMonday(date);
       await pool.query(
         `INSERT INTO content_schedule (date, weekly_theme) VALUES ($1, $2)

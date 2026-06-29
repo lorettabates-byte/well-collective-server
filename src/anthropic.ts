@@ -222,8 +222,12 @@ export interface GeneratedWeeklyTheme {
   body: string;
 }
 
-export async function generateWeeklyTheme(): Promise<GeneratedWeeklyTheme> {
-  const prompt = `You are setting this week's wellness theme for the WELL Collective, a women's wellness community app run by Loretta Bates. Pick a single grounded, encouraging theme (e.g. rest, boundaries, gentle consistency, self-compassion, movement, connection) that the rest of the week's content can build on.
+export async function generateWeeklyTheme(recentThemes: string[] = []): Promise<GeneratedWeeklyTheme> {
+  const avoidContext = recentThemes.length > 0
+    ? ` Recent themes, most recent first: ${recentThemes.map((t) => `"${t}"`).join(", ")}. Pick something clearly different from ALL of these — not just a different word for the same idea (e.g. "Rest" and "Slowing Down" are too similar to use back to back).`
+    : "";
+
+  const prompt = `You are setting this week's wellness theme for the WELL Collective, a women's wellness community app run by Loretta Bates. Pick a single grounded, encouraging theme (e.g. rest, boundaries, gentle consistency, self-compassion, movement, connection, gratitude, joy, resilience) that the rest of the week's content can build on.${avoidContext}
 
 Respond with ONLY a JSON object, no other text, in this exact shape:
 {"title": "a short theme title, under 6 words", "body": "2-3 sentences introducing the theme for the week"}`;
