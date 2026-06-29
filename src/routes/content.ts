@@ -5,6 +5,7 @@ import { broadcastNotification } from "../push";
 import type { ContentBatchEntry } from "../types";
 import { parseIngredientsForNutritionLookup } from "../anthropic";
 import { computeNutritionFromIngredients } from "../usda";
+import { PHOTOS, resolveCategory } from "../recipePhotos";
 
 const router = Router();
 
@@ -145,6 +146,61 @@ router.post("/recipes/backfill-nutrition", requireAdmin, async (_req, res) => {
   } catch (err) {
     console.error("Recipe nutrition backfill error:", err);
     res.status(500).json({ error: "Failed to backfill recipe nutrition" });
+  }
+});
+
+// One-time admin tool: recipes are normally given a photo on the fly by
+// hashing the recipe name within its category's photo pool, which means two
+// recipes with the literal same name (the AI repeating a dish before the
+// variety fix shipped) always land on the exact same photo no matter how
+// big the pool is. This walks recent recipes newest-first and assigns each
+// an explicit `image` override, skipping any photo already used by a more
+// recent recipe in the same category so duplicates can't happen — falling
+// back to allowing reuse only once a category's whole pool is exhausted.
+router.post("/recipes/diversify-photos", requireAdmin, async (_req, res) => {
+  try {
+    const { rows } = await pool.query(
+      `SELECT date, recipe FROM content_schedule WHERE recipe IS NOT NULL ORDER BY date DESC`
+    );
+
+    const usedByCategory = new Map<string, Set<string>>();
+    const results: { date: string; name: string; image: string }[] = [];
+
+    for (const row of rows) {
+      const date = row.date.toISOString().slice(0, 10);
+      const recipe = row.recipe as {
+        name: string;
+        ingredients: string[];
+        imageCategory?: string;
+        [key: string]: unknown;
+      };
+
+      const category = resolveCategory(recipe.name, recipe.ingredients ?? [], recipe.imageCategory);
+      const pool_ = PHOTOS[category] ?? PHOTOS.general_healthy;
+      const used = usedByCategory.get(category) ?? new Set<string>();
+
+      let chosen = pool_.find((photo) => !used.has(photo));
+      if (!chosen) {
+        // Whole pool already used by more recent recipes in this category —
+        // reuse is unavoidable once there are more recipes than photos.
+        used.clear();
+        chosen = pool_[0];
+      }
+      used.add(chosen);
+      usedByCategory.set(category, used);
+
+      const updatedRecipe = { ...recipe, image: chosen, imageCategory: category };
+      await pool.query(`UPDATE content_schedule SET recipe = $1 WHERE date = $2`, [
+        JSON.stringify(updatedRecipe),
+        date,
+      ]);
+      results.push({ date, name: recipe.name, image: chosen });
+    }
+
+    res.json({ processed: results.length, results });
+  } catch (err) {
+    console.error("Recipe photo diversification error:", err);
+    res.status(500).json({ error: "Failed to diversify recipe photos" });
   }
 });
 
