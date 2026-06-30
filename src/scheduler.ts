@@ -321,6 +321,26 @@ async function sendLivestreamReminder(): Promise<void> {
   await markSent(date, "livestreamReminder");
 }
 
+// Safety net for the exact-time Tuesday 8am cron above — if that single tick
+// gets missed (e.g. Railway restarts/redeploys the server right around 8am,
+// and node-cron doesn't catch up on schedules it wasn't running for), the
+// reminder would otherwise silently never send for the whole week. This
+// hourly check re-attempts within the same morning window; alreadySent/
+// markSent make sendLivestreamReminder itself safe to call redundantly.
+async function checkLivestreamReminderWindow(): Promise<void> {
+  const formatter = new Intl.DateTimeFormat("en-US", {
+    timeZone: TIMEZONE,
+    weekday: "short",
+    hour: "numeric",
+    hour12: false,
+  });
+  const parts = formatter.formatToParts(new Date());
+  const weekday = parts.find((p) => p.type === "weekday")?.value;
+  const hour = Number(parts.find((p) => p.type === "hour")?.value ?? "0");
+  if (weekday !== "Tue" || hour < 8 || hour > 10) return;
+  await sendLivestreamReminder();
+}
+
 // Music Monday: a song's release_at passing is what makes it visible to
 // members (the public /api/songs query already filters on it) — this just
 // catches the moment that happens and fires the one-time "new song" push,
@@ -386,6 +406,12 @@ export function startScheduler(): void {
   // release_at passes and sends the one-time "new song" push for it.
   cron.schedule("0 * * * *", () => {
     checkForNewlyReleasedSongs().catch((err) => console.error("New song check failed:", err));
+  });
+
+  // Safety net for the exact-time Tuesday 8am livestream reminder above —
+  // re-checks hourly through mid-morning in case the exact tick was missed.
+  cron.schedule("0 * * * *", () => {
+    checkLivestreamReminderWindow().catch((err) => console.error("Livestream reminder window check failed:", err));
   });
 
   console.log(`Scheduler started (timezone: ${TIMEZONE})`);
