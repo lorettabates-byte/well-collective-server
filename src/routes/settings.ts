@@ -143,4 +143,51 @@ router.put("/settings/content-restrictions", requireAdmin, async (req, res) => {
   }
 });
 
+// Upcoming (today or later) cancellations, for the admin panel to display.
+router.get("/settings/livestream-cancellations", requireAdmin, async (_req, res) => {
+  try {
+    const { rows } = await pool.query(
+      `SELECT date, reason FROM livestream_cancellations WHERE date >= CURRENT_DATE ORDER BY date ASC`
+    );
+    res.json({
+      cancellations: rows.map((row) => ({
+        date: row.date.toISOString().slice(0, 10),
+        reason: row.reason ?? undefined,
+      })),
+    });
+  } catch (err) {
+    console.error("Fetch livestream cancellations error:", err);
+    res.status(500).json({ error: "Failed to fetch livestream cancellations" });
+  }
+});
+
+router.post("/settings/livestream-cancellations", requireAdmin, async (req, res) => {
+  const { date, reason } = req.body as { date?: string; reason?: string };
+  if (!date || !/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+    return res.status(400).json({ error: "date is required in yyyy-mm-dd format" });
+  }
+
+  try {
+    await pool.query(
+      `INSERT INTO livestream_cancellations (date, reason) VALUES ($1, $2)
+       ON CONFLICT (date) DO UPDATE SET reason = $2`,
+      [date, reason?.trim() || null]
+    );
+    res.status(201).json({ ok: true });
+  } catch (err) {
+    console.error("Create livestream cancellation error:", err);
+    res.status(500).json({ error: "Failed to schedule cancellation" });
+  }
+});
+
+router.delete("/settings/livestream-cancellations/:date", requireAdmin, async (req, res) => {
+  try {
+    await pool.query("DELETE FROM livestream_cancellations WHERE date = $1", [req.params.date]);
+    res.json({ ok: true });
+  } catch (err) {
+    console.error("Delete livestream cancellation error:", err);
+    res.status(500).json({ error: "Failed to remove cancellation" });
+  }
+});
+
 export default router;

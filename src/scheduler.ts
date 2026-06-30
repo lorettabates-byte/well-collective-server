@@ -312,6 +312,27 @@ async function sendLivestreamReminder(): Promise<void> {
   const date = todayInTimezone();
   if (await alreadySent(date, "livestreamReminder")) return;
 
+  // Scheduled ahead of time from the admin panel — sends a cancellation
+  // notice instead of the normal reminder, using the same sent_log kind so
+  // only one of the two ever goes out for a given day.
+  const { rows } = await pool.query(
+    "SELECT reason FROM livestream_cancellations WHERE date = $1",
+    [date]
+  );
+  if (rows.length > 0) {
+    const reason = rows[0].reason as string | null;
+    await broadcastNotification({
+      title: "Today's Live Cardio Class is Cancelled",
+      body: reason
+        ? `No live class today — ${reason}. See you next time!`
+        : "No live class today. See you next time!",
+      tag: "livestream-reminder",
+      url: "/videos",
+    });
+    await markSent(date, "livestreamReminder");
+    return;
+  }
+
   await broadcastNotification({
     title: "WELL Collective Live Cardio Class",
     body: "Join us in 1 hour for a fun live cardio class! Get ready to move and connect with the community. 💪",

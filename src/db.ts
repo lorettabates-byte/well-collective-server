@@ -511,4 +511,15 @@ export async function initDb(): Promise<void> {
   await pool.query(
     `CREATE INDEX IF NOT EXISTS idx_inspiration_reactions_id ON inspiration_reactions (inspiration_id);`
   );
+
+  // Scheduled ahead of time from the admin panel — on a cancelled date, the
+  // Tuesday 8am livestream reminder sends a "class cancelled" notice instead
+  // of the normal one, rather than needing same-day manual intervention.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS livestream_cancellations (
+      date DATE PRIMARY KEY,
+      reason TEXT,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    );
+  `);
 }

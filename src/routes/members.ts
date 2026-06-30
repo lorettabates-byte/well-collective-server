@@ -289,8 +289,12 @@ router.get("/admin/members", requireAdmin, async (_req, res) => {
         email: row.email,
         name: row.name,
         avatar: row.avatar ?? undefined,
-        trialStartedAt: row.trial_started_at ?? undefined,
-        trialEndsAt: row.trial_ends_at ?? undefined,
+        // pg parses DATE columns into JS Date objects, which JSON.stringify
+        // serializes as full ISO timestamps ("2026-07-15T00:00:00.000Z") —
+        // the client's formatDateLong expects a plain "YYYY-MM-DD" string
+        // and silently produces "Invalid Date" on anything else.
+        trialStartedAt: row.trial_started_at ? row.trial_started_at.toISOString().slice(0, 10) : undefined,
+        trialEndsAt: row.trial_ends_at ? row.trial_ends_at.toISOString().slice(0, 10) : undefined,
         updatedAt: row.updated_at,
         grantedBadges: badgesByEmail.get(row.email) ?? [],
       })),
