@@ -201,9 +201,11 @@ router.post("/threads/:threadId/messages", async (req, res) => {
       [id, req.params.threadId, authorId, authorName, authorAvatar || null, text || "", replyToId || null, image || null]
     );
 
-    // Send push notification to all members about the new community message
-    // Deep link to the specific thread
-    const deepLinkUrl = categoryId ? `/community/${categoryId}/${req.params.threadId}` : "/community";
+    // Deep link to the specific message within the thread so tapping the
+    // notification scrolls straight to the reply, not just the thread top.
+    const deepLinkUrl = categoryId
+      ? `/community/${categoryId}/${req.params.threadId}?message=${id}`
+      : "/community";
     broadcastNotification({
       title: `${authorName} posted in ${threadTitle}`,
       body: text ? text.substring(0, 100) : "📷 Shared a photo",
