@@ -4,6 +4,17 @@ import { buildScriptAudio, type ScriptSegment } from "../utils/ttsAudioBuilder";
 
 const router = Router();
 
+// Returns 0-6 (Sun-Sat) using Eastern Time so breathwork switches at midnight
+// ET, not midnight UTC (which would be 7-8 hours too early for members).
+function etDayOfWeek(): number {
+  const label = new Intl.DateTimeFormat("en-US", {
+    timeZone: "America/New_York",
+    weekday: "short",
+  }).format(new Date());
+  const idx = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].indexOf(label);
+  return idx >= 0 ? idx : new Date().getDay();
+}
+
 // Cache for generated TTS audio (key -> buffer)
 const ttsCache = new Map<string, Buffer>();
 
@@ -380,7 +391,7 @@ const BACKGROUND_SOUNDS = [
 // Get today's breathwork script
 router.get("/today", async (req, res) => {
   try {
-    const dayOfWeek = new Date().getDay();
+    const dayOfWeek = etDayOfWeek();
     const breathworkIndex = dayOfWeek % BREATHWORK_TYPES.length;
     const todayBreathwork = BREATHWORK_TYPES[breathworkIndex];
     const bgSound = BACKGROUND_SOUNDS[dayOfWeek];
@@ -401,7 +412,7 @@ router.get("/today", async (req, res) => {
 
 // Generate TTS audio for daily breathwork
 async function generateDailyTTS(): Promise<Buffer> {
-  const dayOfWeek = new Date().getDay();
+  const dayOfWeek = etDayOfWeek();
   const cacheKey = `day-${dayOfWeek}`;
 
   if (ttsCache.has(cacheKey)) {
@@ -423,7 +434,7 @@ router.get("/audio/daily", async (req, res): Promise<any> => {
   try {
     if (!process.env.OPENAI_API_KEY) {
       console.warn("[BREATHWORK] No OpenAI API key configured, returning background sound only");
-      const dayOfWeek = new Date().getDay();
+      const dayOfWeek = etDayOfWeek();
       const bgSound = BACKGROUND_SOUNDS[dayOfWeek];
       return res.redirect(bgSound.url);
     }
@@ -435,7 +446,7 @@ router.get("/audio/daily", async (req, res): Promise<any> => {
       res.send(audioBuffer);
     } catch (ttsErr) {
       console.error("[BREATHWORK] TTS generation failed, falling back to background sound:", ttsErr);
-      const dayOfWeek = new Date().getDay();
+      const dayOfWeek = etDayOfWeek();
       const bgSound = BACKGROUND_SOUNDS[dayOfWeek];
       res.redirect(bgSound.url);
     }
