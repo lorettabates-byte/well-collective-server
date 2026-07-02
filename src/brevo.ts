@@ -150,15 +150,15 @@ export async function sendTrialExpiredEmail(
               <p style="margin:0 0 24px;font-size:18px;color:#e8e8e8;">Hi ${firstName},</p>
 
               <p style="margin:0 0 20px;font-size:15px;line-height:1.7;color:#c8cdd6;">
-                I've been thinking about you. Your trial week in the WELL Collective has come to an end, and I just want you to know — it really meant a lot to me that you showed up.
+                I've been thinking about you. Your trial week in the WELL Collective has come to an end, and I just want you to know that it really meant a lot to me that you showed up!
               </p>
 
               <p style="margin:0 0 20px;font-size:15px;line-height:1.7;color:#c8cdd6;">
-                There's something I truly believe with everything in me: <strong style="color:#4db8e8;">you only get out what you give.</strong> The people who are transforming by showing up for their workouts, leaning into the weekly themes, encouraging one another in the forums — they are not doing it because it's easy. They're doing it because they decided to give it their whole selves.
+                There's something I truly believe with everything in me: <strong style="color:#4db8e8;">you only get out what you give.</strong> The people who are transforming by showing up for their workouts, leaning into the weekly themes, encouraging one another in the forums, they are not doing it because it's easy! They're doing it because they decided to give it their whole selves.
               </p>
 
               <p style="margin:0 0 20px;font-size:15px;line-height:1.7;color:#c8cdd6;">
-                That's what the WELL Collective is! It is not just an app — it is a place where people who are choosing to take care of themselves come together every single day. And there is a place in it for <em>you</em>.
+                That is what the WELL Collective is! It is a place where people who are choosing to take care of themselves come together every single day and there is definitely a place in it for <em>you</em>!
               </p>
 
               <!-- Pull quote -->
@@ -181,7 +181,7 @@ export async function sendTrialExpiredEmail(
               <table width="100%" cellpadding="0" cellspacing="0">
                 <tr>
                   <td align="center">
-                    <a href="https://lorettabates.com/well-collective"
+                    <a href="https://lorettabates.com/videolibrary.lorettabates.com/subscription-plan/"
                        style="display:inline-block;background:linear-gradient(135deg,#1a6fb8,#4db8e8);color:#ffffff;font-family:Arial,sans-serif;font-size:15px;font-weight:bold;text-decoration:none;padding:16px 40px;border-radius:50px;letter-spacing:0.5px;">
                       Join the WELL Collective →
                     </a>
@@ -216,17 +216,18 @@ export async function sendTrialExpiredEmail(
 
 Hi ${firstName},
 
-I've been thinking about you. Your trial week in the WELL Collective has come to an end, and I just want you to know — it really meant a lot to me that you showed up.
+I've been thinking about you. Your trial week in the WELL Collective has come to an end, and I just want you to know that it really meant a lot to me that you showed up!
 
-There's something I truly believe: you only get out what you give. The people who are transforming by showing up for their workouts, leaning into the weekly themes, encouraging one another in the forums — they are not doing it because it's easy. They're doing it because they decided to give it their whole selves.
+There's something I truly believe with everything in me: you only get out what you give. The people who are transforming by showing up for their workouts, leaning into the weekly themes, encouraging one another in the forums, they are not doing it because it's easy! They're doing it because they decided to give it their whole selves.
 
-That's what the WELL Collective is! It is not just an app — it is a place where people who are choosing to take care of themselves come together every single day.
+That is what the WELL Collective is! It is a place where people who are choosing to take care of themselves come together every single day and there is definitely a place in it for you!
 
-The community is here. The classes are here. The inspiration is here! It is all waiting for you to pour yourself into it and watch it pour right back.
+"The community is here. The classes are here. The inspiration is here! It is all waiting for you to pour yourself into it and watch it pour right back."
+— Loretta
 
-Come back. Join us as a full member. Come to the Tuesday livestream. Post in the Community. Start a streak. You might be surprised what happens when you give this community everything you've got.
+Come back. Join us as a full member. Come to the Tuesday livestream. Post in the Community. Cheer on a fellow member. Start a streak. You might be surprised what happens when you give this community everything you've got.
 
-Join the WELL Collective: https://lorettabates.com/well-collective
+Join the WELL Collective: https://lorettabates.com/videolibrary.lorettabates.com/subscription-plan/
 
 With love and belief in you,
 Loretta Bates`;
