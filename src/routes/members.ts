@@ -3,6 +3,7 @@ import { pool } from "../db";
 import { requireAdmin } from "../middleware/adminAuth";
 import { computeBonusBadges, computeLevelBadge, SPECIAL_BADGE_IDS } from "../badges";
 import { ADMIN_NOTIFY_EMAIL, sendNotificationToUser } from "../push";
+import { addTrialContactToBrevo } from "../brevo";
 
 const router = Router();
 
@@ -329,6 +330,12 @@ router.post("/admin/members", requireAdmin, async (req, res) => {
        ON CONFLICT (email) DO UPDATE SET name = $2`,
       [normalizedEmail, name.trim(), trialEndsAt]
     );
+
+    if (grantTrial && trialEndsAt) {
+      addTrialContactToBrevo(normalizedEmail, name.trim(), trialEndsAt)
+        .catch((err) => console.error("Brevo trial sync (admin grant) failed:", err));
+    }
+
     res.status(201).json({ ok: true });
   } catch (err) {
     console.error("Add member error:", err);

@@ -14,6 +14,7 @@ import { checkForNewVideos } from "./routes/video-notifications";
 import { pool } from "./db";
 import { broadcastNotification } from "./push";
 import { computeNutritionFromIngredients, isUsdaConfigured } from "./usda";
+import { sendTrialExpiredEmail } from "./brevo";
 
 const TIMEZONE = process.env.SCHEDULE_TIMEZONE || "America/New_York";
 
@@ -386,6 +387,30 @@ async function checkForNewlyReleasedSongs(): Promise<void> {
   }
 }
 
+async function sendTrialWinbackEmails(): Promise<void> {
+  const { rows } = await pool.query(
+    `SELECT email, name FROM members
+     WHERE trial_ends_at < CURRENT_DATE
+       AND trial_ends_at IS NOT NULL
+       AND trial_winback_sent = FALSE`
+  );
+
+  if (rows.length === 0) return;
+
+  console.log(`[BREVO] Sending win-back emails to ${rows.length} expired trial member(s)`);
+  for (const row of rows) {
+    try {
+      await sendTrialExpiredEmail(row.email, row.name);
+      await pool.query(
+        "UPDATE members SET trial_winback_sent = TRUE WHERE email = $1",
+        [row.email]
+      );
+    } catch (err) {
+      console.error(`[BREVO] Win-back failed for ${row.email}:`, err);
+    }
+  }
+}
+
 export function startScheduler(): void {
   // AI content generation (motivation boost, recipe, nutrition tip): every day at 5:30am,
   // ahead of the 7am sends below so generated content is ready in time.
@@ -434,6 +459,13 @@ export function startScheduler(): void {
   cron.schedule("0 * * * *", () => {
     checkLivestreamReminderWindow().catch((err) => console.error("Livestream reminder window check failed:", err));
   });
+
+  // Post-trial win-back: every day at 9am ET, finds any members whose trial
+  // ended yesterday (or earlier) and haven't received the email yet. The
+  // trial_winback_sent flag is the idempotency guard — safe to restart/redeploy.
+  cron.schedule("0 9 * * *", () => {
+    sendTrialWinbackEmails().catch((err) => console.error("Trial win-back emails failed:", err));
+  }, { timezone: TIMEZONE });
 
   console.log(`Scheduler started (timezone: ${TIMEZONE})`);
 }

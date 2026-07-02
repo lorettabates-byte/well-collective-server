@@ -1,6 +1,7 @@
 import { Router } from "express";
 import { pool } from "../db";
 import { requireAdmin } from "../middleware/adminAuth";
+import { sendTrialExpiredEmail } from "../brevo";
 
 const router = Router();
 
@@ -187,6 +188,18 @@ router.delete("/settings/livestream-cancellations/:date", requireAdmin, async (r
   } catch (err) {
     console.error("Delete livestream cancellation error:", err);
     res.status(500).json({ error: "Failed to remove cancellation" });
+  }
+});
+
+router.post("/settings/test-winback-email", requireAdmin, async (req, res) => {
+  const { email, name } = req.body as { email?: string; name?: string };
+  if (!email) return res.status(400).json({ error: "email required" });
+  try {
+    await sendTrialExpiredEmail(email, name || email);
+    res.json({ ok: true, sent: true });
+  } catch (err) {
+    console.error("Test winback email error:", err);
+    res.status(500).json({ error: "Failed to send test email" });
   }
 });
 

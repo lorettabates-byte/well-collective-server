@@ -522,4 +522,9 @@ export async function initDb(): Promise<void> {
       created_at TIMESTAMPTZ NOT NULL DEFAULT now()
     );
   `);
+
+  // Tracks whether the post-trial win-back email (sent by the daily Brevo
+  // scheduler job) has already been dispatched for this member. Guards against
+  // re-sending if the cron runs more than once on expiry day.
+  await pool.query(`ALTER TABLE members ADD COLUMN IF NOT EXISTS trial_winback_sent BOOLEAN NOT NULL DEFAULT FALSE;`);
 }

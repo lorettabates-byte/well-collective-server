@@ -3,6 +3,7 @@ import { Router } from "express";
 import jwt from "jsonwebtoken";
 import { pool } from "../db";
 import { ADMIN_NOTIFY_EMAIL, sendNotificationToUser } from "../push";
+import { addTrialContactToBrevo } from "../brevo";
 
 const router = Router();
 const JWT_SECRET = process.env.JWT_SECRET || "well-collective-secret-key-change-in-production";
@@ -161,6 +162,9 @@ router.post("/start-trial", async (req, res) => {
         tag: "new-signup",
         url: "/admin",
       }).catch((err) => console.error("Admin signup notification failed:", err));
+
+      addTrialContactToBrevo(normalizedEmail, name.trim(), trialEndsAt)
+        .catch((err) => console.error("Brevo trial sync failed:", err));
     }
 
     res.json({ trialEndsAt });
