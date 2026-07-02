@@ -120,6 +120,33 @@ router.get("/songs/queue", requireAdmin, async (_req, res) => {
   }
 });
 
+// Reorder the Music Monday queue — takes the new order of song IDs and
+// reassigns the existing scheduled Monday dates to them in that order,
+// so the first ID in the array gets the earliest Monday, etc.
+router.put("/songs/queue/reorder", requireAdmin, async (req, res) => {
+  const { ids } = req.body as { ids?: number[] };
+  if (!Array.isArray(ids) || ids.length === 0) {
+    return res.status(400).json({ error: "ids array required" });
+  }
+  try {
+    const { rows } = await pool.query(
+      `SELECT release_at FROM songs WHERE id = ANY($1) AND release_at IS NOT NULL AND release_at > now() ORDER BY release_at ASC`,
+      [ids]
+    );
+    const dates = rows.map((r) => r.release_at as Date);
+    if (dates.length !== ids.length) {
+      return res.status(400).json({ error: "Some songs are not in the queue" });
+    }
+    for (let i = 0; i < ids.length; i++) {
+      await pool.query("UPDATE songs SET release_at = $1 WHERE id = $2", [dates[i], ids[i]]);
+    }
+    res.json({ ok: true });
+  } catch (err) {
+    console.error("Reorder queue error:", err);
+    res.status(500).json({ error: "Failed to reorder queue" });
+  }
+});
+
 // Skips the queue entirely and makes a song visible right now, firing the
 // "new song" push immediately instead of waiting for the hourly check to
 // notice it — for releasing a song the same day rather than next Monday.
