@@ -134,6 +134,46 @@ router.get("/leaderboard", async (req, res) => {
   }
 });
 
+// Monthly leader — member with most points in the current UTC month.
+router.get("/leaderboard/monthly", async (_req, res) => {
+  try {
+    const { rows } = await pool.query(`
+      SELECT m.email, m.name, m.avatar, COALESCE(SUM(al.points), 0) AS total_points
+      FROM members m
+      JOIN activity_logs al ON al.member_email = m.email
+        AND al.created_at >= date_trunc('month', now() AT TIME ZONE 'UTC')
+      WHERE m.show_on_leaderboard = TRUE
+      GROUP BY m.email, m.name, m.avatar
+      ORDER BY total_points DESC
+      LIMIT 1
+    `);
+    res.json({ leader: rows[0] ? { name: rows[0].name, avatar: rows[0].avatar ?? null, total_points: Number(rows[0].total_points) } : null });
+  } catch (err) {
+    console.error("Monthly leader error:", err);
+    res.status(500).json({ error: "Failed to fetch monthly leader" });
+  }
+});
+
+// Yearly leader — member with most points in the current UTC year.
+router.get("/leaderboard/yearly", async (_req, res) => {
+  try {
+    const { rows } = await pool.query(`
+      SELECT m.email, m.name, m.avatar, COALESCE(SUM(al.points), 0) AS total_points
+      FROM members m
+      JOIN activity_logs al ON al.member_email = m.email
+        AND al.created_at >= date_trunc('year', now() AT TIME ZONE 'UTC')
+      WHERE m.show_on_leaderboard = TRUE
+      GROUP BY m.email, m.name, m.avatar
+      ORDER BY total_points DESC
+      LIMIT 1
+    `);
+    res.json({ leader: rows[0] ? { name: rows[0].name, avatar: rows[0].avatar ?? null, total_points: Number(rows[0].total_points) } : null });
+  } catch (err) {
+    console.error("Yearly leader error:", err);
+    res.status(500).json({ error: "Failed to fetch yearly leader" });
+  }
+});
+
 // Yesterday's WELL CUP winner (awarded by the midnight cron job).
 router.get("/leaderboard/yesterday", async (_req, res) => {
   try {
