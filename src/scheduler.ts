@@ -12,7 +12,7 @@ import { checkForNewBlogPosts } from "./routes/blog-notifications";
 import { checkForNewLiveEvents } from "./routes/live-event-notifications";
 import { checkForNewVideos } from "./routes/video-notifications";
 import { pool } from "./db";
-import { broadcastNotification } from "./push";
+import { broadcastNotification, sendNotificationToUser } from "./push";
 import { computeNutritionFromIngredients, isUsdaConfigured } from "./usda";
 import { sendTrialExpiredEmail } from "./brevo";
 
@@ -439,6 +439,72 @@ async function crownDailyWinner(): Promise<void> {
   console.log(`[WELL CUP] ${winDate} winner: ${rows[0].member_email} (${rows[0].total} pts)`);
 }
 
+async function sendPersonalizedWellChecks(): Promise<void> {
+  const date = todayInTimezone();
+  if (await alreadySent(date, "wellCheck")) return;
+
+  // Fetch every member's UTC-day point total in one query.
+  const { rows: pointRows } = await pool.query(`
+    SELECT m.email, m.name, COALESCE(SUM(al.points), 0)::int AS today_pts
+    FROM members m
+    LEFT JOIN activity_logs al
+      ON al.member_email = m.email
+      AND al.created_at >= date_trunc('day', now() AT TIME ZONE 'UTC')
+    WHERE m.membership_status = 'active'
+       OR m.trial_ends_at >= CURRENT_DATE
+    GROUP BY m.email, m.name
+  `);
+
+  // Also grab which activity types each member completed today (for the challenge preview).
+  const { rows: activityRows } = await pool.query(`
+    SELECT DISTINCT member_email, activity_type
+    FROM activity_logs
+    WHERE created_at >= date_trunc('day', now() AT TIME ZONE 'UTC')
+  `);
+  const doneByEmail = new Map<string, Set<string>>();
+  for (const r of activityRows) {
+    if (!doneByEmail.has(r.member_email)) doneByEmail.set(r.member_email, new Set());
+    doneByEmail.get(r.member_email)!.add(r.activity_type);
+  }
+
+  const CHALLENGE_HINTS: { type: string; label: string }[] = [
+    { type: "resistance_training", label: "a strength session" },
+    { type: "breathwork",          label: "10 min of breathwork" },
+    { type: "stretching",          label: "your stretching routine" },
+    { type: "class_watch",         label: "a wellness class" },
+    { type: "meal_log",            label: "logging your meals" },
+    { type: "well_activity",       label: "the daily WELL activity" },
+  ];
+
+  let sent = 0;
+  for (const row of pointRows) {
+    try {
+      const pts: number = row.today_pts;
+      const done = doneByEmail.get(row.email) ?? new Set();
+
+      // Pick the first missing activity as the challenge hint.
+      const missing = CHALLENGE_HINTS.find((c) => !done.has(c.type));
+      const challengeHint = missing ? ` Tomorrow: try ${missing.label}!` : " Amazing day — all activities complete!";
+
+      const body = pts > 0
+        ? `You earned ${pts} pts today! 🌟${challengeHint} Tap to see your full summary.`
+        : `The day isn't over yet! Log an activity and earn your first points.${challengeHint}`;
+
+      await sendNotificationToUser(row.email, {
+        title: "Your Daily WELL Check ✨",
+        body,
+        tag: "well-check",
+        url: "/well-check",
+      });
+      sent++;
+    } catch (err) {
+      console.error(`[WELL CHECK] Failed to notify ${row.email}:`, err);
+    }
+  }
+  console.log(`[WELL CHECK] Sent personalized notifications to ${sent} members`);
+  await markSent(date, "wellCheck");
+}
+
 export function startScheduler(): void {
   // AI content generation (motivation boost, recipe, nutrition tip): every day at 5:30am,
   // ahead of the 7am sends below so generated content is ready in time.
@@ -495,14 +561,9 @@ export function startScheduler(): void {
     sendTrialWinbackEmails().catch((err) => console.error("Trial win-back emails failed:", err));
   }, { timezone: TIMEZONE });
 
-  // WELL CHECK: every evening at 9pm ET, nudge members to review their day.
+  // WELL CHECK: every evening at 9pm ET, personalized per-member.
   cron.schedule("0 21 * * *", () => {
-    broadcastNotification({
-      title: "Your WELL CHECK is ready ✨",
-      body: "See how you showed up for yourself today — tap to view your daily summary.",
-      tag: "well-check",
-      url: "/profile",
-    }).catch((err) => console.error("Well Check notification failed:", err));
+    sendPersonalizedWellChecks().catch((err) => console.error("Well Check notifications failed:", err));
   }, { timezone: TIMEZONE });
 
   // WELL CUP: midnight UTC — crown yesterday's top scorer.
