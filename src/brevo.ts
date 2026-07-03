@@ -29,90 +29,112 @@ function brevoHeaders(): Record<string, string> {
   };
 }
 
-// Cached list ID so we only look it up once per process lifetime.
-let trialListIdCache: number | null = null;
+// Cache list IDs so we only look them up once per process lifetime.
+const listIdCache = new Map<string, number>();
 
-async function getTrialListId(): Promise<number> {
-  if (trialListIdCache !== null) return trialListIdCache;
+async function findOrCreateList(name: string): Promise<number> {
+  if (listIdCache.has(name)) return listIdCache.get(name)!;
 
-  // Search existing lists for our list name.
-  const res = await fetch(`${BREVO_BASE}/contacts/lists?limit=50`, {
-    headers: brevoHeaders(),
-  });
-  const data = (await res.json()) as { lists?: { id: number; name: string }[] };
-
-  const existing = data.lists?.find((l) => l.name === TRIAL_LIST_NAME);
-  if (existing) {
-    trialListIdCache = existing.id;
-    return existing.id;
+  // Paginate through ALL lists (account has 291+, limit=50 misses most).
+  let offset = 0;
+  const limit = 50;
+  while (true) {
+    const res = await fetch(`${BREVO_BASE}/contacts/lists?limit=${limit}&offset=${offset}`, {
+      headers: brevoHeaders(),
+    });
+    if (!res.ok) {
+      const body = await res.text();
+      throw new Error(`[BREVO] lists fetch failed (${res.status}): ${body}`);
+    }
+    const data = (await res.json()) as { lists?: { id: number; name: string }[]; count?: number };
+    const found = data.lists?.find((l) => l.name === name);
+    if (found) {
+      listIdCache.set(name, found.id);
+      return found.id;
+    }
+    const total = data.count ?? 0;
+    offset += limit;
+    if (offset >= total || !data.lists?.length) break;
   }
 
-  // Create the list if it doesn't exist yet.
+  // List doesn't exist — create it.
   const createRes = await fetch(`${BREVO_BASE}/contacts/lists`, {
     method: "POST",
     headers: brevoHeaders(),
-    body: JSON.stringify({ name: TRIAL_LIST_NAME, folderId: 1 }),
+    body: JSON.stringify({ name, folderId: 1 }),
   });
+  if (!createRes.ok) {
+    const body = await createRes.text();
+    throw new Error(`[BREVO] list create failed (${createRes.status}): ${body}`);
+  }
   const created = (await createRes.json()) as { id: number };
-  console.log(`[BREVO] Created "${TRIAL_LIST_NAME}" list with id ${created.id}`);
-  trialListIdCache = created.id;
+  console.log(`[BREVO] Created list "${name}" with id ${created.id}`);
+  listIdCache.set(name, created.id);
   return created.id;
 }
 
-let trialCompletedListIdCache: number | null = null;
-
-async function getTrialCompletedListId(): Promise<number> {
-  if (trialCompletedListIdCache !== null) return trialCompletedListIdCache;
-
-  const res = await fetch(`${BREVO_BASE}/contacts/lists?limit=50`, {
-    headers: brevoHeaders(),
-  });
-  const data = (await res.json()) as { lists?: { id: number; name: string }[] };
-
-  const existing = data.lists?.find((l) => l.name === TRIAL_COMPLETED_LIST_NAME);
-  if (existing) {
-    trialCompletedListIdCache = existing.id;
-    return existing.id;
+async function removeContactFromList(email: string, listName: string): Promise<void> {
+  try {
+    const listId = listIdCache.get(listName);
+    if (!listId) return; // List hasn't been loaded yet — skip silently
+    await fetch(`${BREVO_BASE}/contacts/lists/${listId}/contacts/remove`, {
+      method: "POST",
+      headers: brevoHeaders(),
+      body: JSON.stringify({ emails: [email] }),
+    });
+  } catch (err) {
+    console.error(`[BREVO] removeContactFromList error for ${email}:`, err);
   }
-
-  const createRes = await fetch(`${BREVO_BASE}/contacts/lists`, {
-    method: "POST",
-    headers: brevoHeaders(),
-    body: JSON.stringify({ name: TRIAL_COMPLETED_LIST_NAME, folderId: 1 }),
-  });
-  const created = (await createRes.json()) as { id: number };
-  console.log(`[BREVO] Created "${TRIAL_COMPLETED_LIST_NAME}" list with id ${created.id}`);
-  trialCompletedListIdCache = created.id;
-  return created.id;
 }
 
 /**
- * Upserts a contact in Brevo and adds them to the "App Trial Completed" list.
- * Called when a trial expires so we can target former trial members.
+ * Moves a contact from "App Free Trial" → "App Trial Completed" when their
+ * trial expires. Removes them from the active-trial list automatically.
  */
-export async function addCompletedTrialContactToBrevo(
+export async function moveTrialContactToCompleted(
   email: string,
   name: string
 ): Promise<void> {
-  if (!BREVO_API_KEY) return;
+  if (!BREVO_API_KEY) {
+    console.error("[BREVO] ❌ BREVO_API_KEY is not set — Brevo list sync is disabled. Add it to Railway environment variables.");
+    return;
+  }
   try {
-    const listId = await getTrialCompletedListId();
     const [firstName, ...rest] = name.split(" ");
     const lastName = rest.join(" ") || "";
-    await fetch(`${BREVO_BASE}/contacts`, {
+    const completedListId = await findOrCreateList(TRIAL_COMPLETED_LIST_NAME);
+
+    // Add to "App Trial Completed"
+    const res = await fetch(`${BREVO_BASE}/contacts`, {
       method: "POST",
       headers: brevoHeaders(),
       body: JSON.stringify({
         email,
         attributes: { FIRSTNAME: firstName, LASTNAME: lastName },
-        listIds: [listId],
+        listIds: [completedListId],
         updateEnabled: true,
       }),
     });
-    console.log(`[BREVO] Added ${email} to "${TRIAL_COMPLETED_LIST_NAME}"`);
+    if (res.ok || res.status === 204) {
+      console.log(`[BREVO] Moved ${email} → "${TRIAL_COMPLETED_LIST_NAME}"`);
+    } else {
+      const err = await res.text();
+      console.error(`[BREVO] Failed to add to completed list (${res.status}): ${err}`);
+    }
+
+    // Remove from "App Free Trial"
+    await removeContactFromList(email, TRIAL_LIST_NAME);
   } catch (err) {
-    console.error("[BREVO] addCompletedTrialContactToBrevo error:", err);
+    console.error("[BREVO] moveTrialContactToCompleted error:", err);
   }
+}
+
+/** @deprecated Use moveTrialContactToCompleted when trial expires */
+export async function addCompletedTrialContactToBrevo(
+  email: string,
+  name: string
+): Promise<void> {
+  return moveTrialContactToCompleted(email, name);
 }
 
 /**
@@ -126,12 +148,12 @@ export async function addTrialContactToBrevo(
   trialEndsAt: string
 ): Promise<void> {
   if (!BREVO_API_KEY) {
-    console.warn("[BREVO] BREVO_API_KEY not set — skipping contact sync");
+    console.error("[BREVO] ❌ BREVO_API_KEY is not set — Brevo list sync is disabled. Add it to Railway environment variables.");
     return;
   }
 
   try {
-    const listId = await getTrialListId();
+    const listId = await findOrCreateList(TRIAL_LIST_NAME);
     const [firstName, ...rest] = name.split(" ");
     const lastName = rest.join(" ") || "";
 
@@ -294,7 +316,7 @@ export async function sendMidTrialEmail(
               <table width="100%" cellpadding="0" cellspacing="0">
                 <tr>
                   <td align="center">
-                    <a href="https://lorettabates.com/well-collective-app/"
+                    <a href="https://app.lorettabates.com"
                        style="display:inline-block;background:linear-gradient(135deg,#1a6fb8,#4db8e8);color:#ffffff;font-family:Arial,sans-serif;font-size:15px;font-weight:bold;text-decoration:none;padding:16px 40px;border-radius:50px;letter-spacing:0.5px;">
                       Open the App →
                     </a>
@@ -351,7 +373,7 @@ You don't have to do this alone. The WELL Collective community is inside the app
 
 Your trial is still going, and I want you to feel the positive impact it can have on your life before it ends.
 
-Open the App: https://lorettabates.com/well-collective-app/
+Open the App: https://app.lorettabates.com
 
 With love,
 Loretta
