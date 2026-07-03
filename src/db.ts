@@ -527,4 +527,49 @@ export async function initDb(): Promise<void> {
   // scheduler job) has already been dispatched for this member. Guards against
   // re-sending if the cron runs more than once on expiry day.
   await pool.query(`ALTER TABLE members ADD COLUMN IF NOT EXISTS trial_winback_sent BOOLEAN NOT NULL DEFAULT FALSE;`);
+
+  // ── WELL CUP ──────────────────────────────────────────────────────────────
+
+  // Every point-earning event for any member. The leaderboard is computed live
+  // from this table for the current UTC day; no separate denormalized score
+  // table is needed at this scale.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS activity_logs (
+      id SERIAL PRIMARY KEY,
+      member_email TEXT NOT NULL REFERENCES members(email) ON DELETE CASCADE,
+      activity_type TEXT NOT NULL,
+      points INTEGER NOT NULL,
+      metadata JSONB,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    );
+  `);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_activity_logs_email_day
+    ON activity_logs (member_email, created_at);`);
+
+  // One winner recorded per UTC day by the midnight scheduler job.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS well_cup_wins (
+      id SERIAL PRIMARY KEY,
+      member_email TEXT NOT NULL REFERENCES members(email),
+      win_date DATE NOT NULL UNIQUE,
+      total_points INTEGER NOT NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    );
+  `);
+
+  // Daily meal log — wellness-focused questions, no calorie tracking.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS meal_entries (
+      id SERIAL PRIMARY KEY,
+      member_email TEXT NOT NULL REFERENCES members(email) ON DELETE CASCADE,
+      meal_type TEXT NOT NULL,
+      had_protein BOOLEAN NOT NULL DEFAULT FALSE,
+      had_vegetable BOOLEAN NOT NULL DEFAULT FALSE,
+      had_water BOOLEAN NOT NULL DEFAULT FALSE,
+      had_fruit BOOLEAN NOT NULL DEFAULT FALSE,
+      had_whole_foods BOOLEAN NOT NULL DEFAULT FALSE,
+      notes TEXT,
+      logged_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    );
+  `);
 }

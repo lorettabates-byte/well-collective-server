@@ -19,6 +19,7 @@ import recipesRouter from "./routes/recipes";
 import settingsRouter from "./routes/settings";
 import songsRouter from "./routes/songs";
 import subscriptionsRouter from "./routes/subscriptions";
+import pointsRouter from "./routes/points";
 import tribeRouter from "./routes/tribe";
 import videoNotificationsRouter from "./routes/video-notifications";
 import { startScheduler } from "./scheduler";
@@ -72,6 +73,7 @@ app.use("/api", tribeRouter);
 app.use("/api", eventsRouter);
 app.use("/api", recipesRouter);
 app.use("/api", inspirationReactionsRouter);
+app.use("/api", pointsRouter);
 
 async function main() {
   await initDb();

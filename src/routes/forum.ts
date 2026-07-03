@@ -2,6 +2,7 @@ import { Router } from "express";
 import { pool } from "../db";
 import { requireAdmin } from "../middleware/adminAuth";
 import { broadcastNotification } from "../push";
+import { awardPoints } from "./points";
 
 const router = Router();
 
@@ -115,13 +116,14 @@ router.get("/threads", async (_req, res) => {
 });
 
 router.post("/threads", async (req, res) => {
-  const { id, categoryId, title, authorId, authorName, authorAvatar, text, messageId, image } = req.body as {
+  const { id, categoryId, title, authorId, authorName, authorAvatar, authorEmail, text, messageId, image } = req.body as {
     id: string;
     categoryId: string;
     title: string;
     authorId: string;
     authorName: string;
     authorAvatar?: string;
+    authorEmail?: string;
     text: string;
     messageId: string;
     image?: string;
@@ -154,6 +156,11 @@ router.post("/threads", async (req, res) => {
       url: `/community/${categoryId}/${id}`,
     }).catch((err) => console.error("Failed to send community notification:", err));
 
+    if (authorEmail) {
+      awardPoints(authorEmail.toLowerCase(), "forum_post", { threadId: id })
+        .catch((err) => console.error("Award points (forum_post) error:", err));
+    }
+
     res.status(201).json({ ok: true });
   } catch (err) {
     console.error("Create thread error:", err);
@@ -172,11 +179,12 @@ router.delete("/threads/:id", requireAdmin, async (req, res) => {
 });
 
 router.post("/threads/:threadId/messages", async (req, res) => {
-  const { id, authorId, authorName, authorAvatar, text, replyToId, image } = req.body as {
+  const { id, authorId, authorName, authorAvatar, authorEmail, text, replyToId, image } = req.body as {
     id: string;
     authorId: string;
     authorName: string;
     authorAvatar?: string;
+    authorEmail?: string;
     text: string;
     replyToId?: string;
     image?: string;
@@ -212,6 +220,11 @@ router.post("/threads/:threadId/messages", async (req, res) => {
       tag: "community",
       url: deepLinkUrl,
     }).catch((err) => console.error("Failed to send community notification:", err));
+
+    if (authorEmail) {
+      awardPoints(authorEmail.toLowerCase(), "forum_comment", { threadId: req.params.threadId })
+        .catch((err) => console.error("Award points (forum_comment) error:", err));
+    }
 
     res.status(201).json({ ok: true });
   } catch (err) {
