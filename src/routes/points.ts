@@ -18,6 +18,7 @@ export const POINT_VALUES: Record<string, number> = {
   well_activity: 15,
   event_attend: 25,
   well_escape: 100,
+  tribe_add: 5,
   daily_challenge_accept: 5,
 };
 
@@ -28,6 +29,7 @@ const DAILY_CAPS: Record<string, number> = {
   sleep_log: 1,
   song_play: 5,
   class_watch: 3,
+  tribe_add: 5,
 };
 
 /**
@@ -239,6 +241,58 @@ router.get("/meals/today", async (req, res) => {
   } catch (err) {
     console.error("Fetch meals error:", err);
     res.status(500).json({ error: "Failed to fetch meals" });
+  }
+});
+
+// Log sleep hours and quality, award points, and store for Well Check recs.
+router.post("/sleep", async (req, res) => {
+  const { memberEmail, hours, quality } = req.body as {
+    memberEmail?: string;
+    hours?: number;
+    quality?: string;
+  };
+
+  const VALID_QUALITIES = ["not_enough", "enough", "needed_more"];
+  if (!memberEmail || hours === undefined || !quality || !VALID_QUALITIES.includes(quality)) {
+    return res.status(400).json({ error: "memberEmail, hours, and quality (not_enough|enough|needed_more) required" });
+  }
+
+  const email = memberEmail.toLowerCase();
+  const { rows: memberRows } = await pool.query("SELECT email FROM members WHERE email = $1", [email]);
+  if (memberRows.length === 0) return res.json({ ok: false, message: "Member not found" });
+
+  try {
+    await pool.query(
+      `INSERT INTO sleep_entries (member_email, hours, quality) VALUES ($1, $2, $3)`,
+      [email, Math.min(Math.max(Number(hours), 1), 24), quality]
+    );
+    const award = await awardPoints(email, "sleep_log", { hours, quality });
+    res.status(201).json({ ok: true, ...award });
+  } catch (err) {
+    console.error("Log sleep error:", err);
+    res.status(500).json({ error: "Failed to log sleep" });
+  }
+});
+
+// Today's sleep entry for the logged-in member (for Well Check recommendations).
+router.get("/sleep/today", async (req, res) => {
+  const { email } = req.query as { email?: string };
+  if (!email) return res.status(400).json({ error: "email required" });
+
+  try {
+    const { rows } = await pool.query(
+      `SELECT hours, quality, logged_at
+       FROM sleep_entries
+       WHERE member_email = $1
+         AND logged_at >= date_trunc('day', now() AT TIME ZONE 'UTC')
+       ORDER BY logged_at DESC
+       LIMIT 1`,
+      [email.toLowerCase()]
+    );
+    res.json({ entry: rows[0] ?? null });
+  } catch (err) {
+    console.error("Fetch sleep error:", err);
+    res.status(500).json({ error: "Failed to fetch sleep" });
   }
 });
 

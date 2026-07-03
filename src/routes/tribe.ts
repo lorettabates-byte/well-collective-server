@@ -2,6 +2,7 @@ import { Router } from "express";
 import { pool } from "../db";
 import { sendNotificationToUser } from "../push";
 import { computeBonusBadges, computeLevelBadge } from "../badges";
+import { awardPoints } from "./points";
 
 const router = Router();
 
@@ -117,11 +118,17 @@ router.post("/tribe", async (req, res) => {
       return res.status(400).json({ error: "Cannot add yourself to your own WELL Tribe" });
     }
 
-    await pool.query(
+    const { rows: insertRows } = await pool.query(
       `INSERT INTO tribe_members (owner_email, member_email) VALUES ($1, $2)
-       ON CONFLICT (owner_email, member_email) DO NOTHING`,
+       ON CONFLICT (owner_email, member_email) DO NOTHING
+       RETURNING owner_email`,
       [ownerEmail, targetEmail.toLowerCase()]
     );
+
+    // Only award points if this was a new addition (not a duplicate)
+    if (insertRows.length > 0) {
+      awardPoints(ownerEmail, "tribe_add").catch(() => {});
+    }
 
     const { rows: ownerRows } = await pool.query("SELECT name FROM members WHERE email = $1", [ownerEmail]);
     const ownerName = ownerRows[0]?.name || "Someone";

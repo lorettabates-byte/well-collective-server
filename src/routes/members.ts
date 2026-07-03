@@ -155,20 +155,16 @@ router.get("/members/me", async (req, res) => {
     }
 
     const row = rows[0];
-    const { rows: msgRows } = await pool.query(
-      "SELECT COUNT(*) FROM forum_messages WHERE author_id = $1",
-      [deriveMemberId(email)]
-    );
-    const { rows: cheerRows } = await pool.query(
-      "SELECT COUNT(*) FROM tribe_cheers WHERE sender_email = $1",
-      [email]
-    );
-    const { rows: badgeRows } = await pool.query(
-      "SELECT badge_id FROM member_badges WHERE member_email = $1",
-      [email]
-    );
+    const [msgRows, cheerRows, badgeRows, tribeAddedRows, tribeAddedByRows, totalPtsRows] = await Promise.all([
+      pool.query("SELECT COUNT(*) FROM forum_messages WHERE author_id = $1", [deriveMemberId(email)]),
+      pool.query("SELECT COUNT(*) FROM tribe_cheers WHERE sender_email = $1", [email]),
+      pool.query("SELECT badge_id FROM member_badges WHERE member_email = $1", [email]),
+      pool.query("SELECT COUNT(*) FROM tribe_members WHERE owner_email = $1", [email]),
+      pool.query("SELECT COUNT(*) FROM tribe_members WHERE member_email = $1", [email]),
+      pool.query("SELECT COALESCE(SUM(points), 0) AS total FROM activity_logs WHERE member_email = $1", [email]),
+    ]);
 
-    const messageCount = Number(msgRows[0].count);
+    const messageCount = Number(msgRows.rows[0].count);
 
     res.json({
       member: {
@@ -178,12 +174,15 @@ router.get("/members/me", async (req, res) => {
         birthday: row.birthday ?? undefined,
         showBirthdayOnCalendar: row.show_birthday_on_calendar,
         levelBadge: computeLevelBadge(messageCount, (row.workout_log ?? []).length),
-        bonusBadges: computeBonusBadges(row.created_at, messageCount, Number(cheerRows[0].count)),
-        grantedBadges: badgeRows.map((b) => b.badge_id),
+        bonusBadges: computeBonusBadges(row.created_at, messageCount, Number(cheerRows.rows[0].count)),
+        grantedBadges: badgeRows.rows.map((b) => b.badge_id),
         featuredBadge: row.featured_badge ?? undefined,
         savedInspirationIds: row.saved_inspiration_ids ?? undefined,
         likedInspirationIds: row.liked_inspiration_ids ?? undefined,
         showOnLeaderboard: row.show_on_leaderboard ?? true,
+        tribeConnections: Number(tribeAddedRows.rows[0].count),
+        addedByCount: Number(tribeAddedByRows.rows[0].count),
+        allTimePoints: Number(totalPtsRows.rows[0].total),
       },
     });
   } catch (err) {

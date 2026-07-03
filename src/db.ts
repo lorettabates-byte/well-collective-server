@@ -574,6 +574,20 @@ export async function initDb(): Promise<void> {
     );
   `);
 
+  // Daily sleep log — hours and how rested the member felt. Used by the Well
+  // Check to surface personalised rest recommendations.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS sleep_entries (
+      id SERIAL PRIMARY KEY,
+      member_email TEXT NOT NULL REFERENCES members(email) ON DELETE CASCADE,
+      hours NUMERIC(4,1) NOT NULL,
+      quality TEXT NOT NULL CHECK (quality IN ('not_enough', 'enough', 'needed_more')),
+      logged_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    );
+  `);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_sleep_entries_email_day
+    ON sleep_entries (member_email, logged_at);`);
+
   // Seed yesterday's WELL CUP winner if none exists yet (first-run bootstrap).
   // The midnight cron takes over from today onward; ON CONFLICT keeps this safe
   // to run on every startup without clobbering real winners.
