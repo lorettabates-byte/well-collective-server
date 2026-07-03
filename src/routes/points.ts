@@ -95,8 +95,12 @@ router.post("/activity", async (req, res) => {
   }
 });
 
-// Today's leaderboard — top 10 members by UTC-day points.
-router.get("/leaderboard", async (_req, res) => {
+// Today's leaderboard — members visible on the board, ordered by UTC-day points.
+// ?limit=N caps the result (default 10). Pass limit=all for the full list.
+router.get("/leaderboard", async (req, res) => {
+  const limitParam = (req.query.limit as string | undefined) ?? "10";
+  const limitClause = limitParam === "all" ? "" : `LIMIT ${Math.min(parseInt(limitParam) || 10, 500)}`;
+
   try {
     const { rows } = await pool.query(`
       SELECT
@@ -107,9 +111,10 @@ router.get("/leaderboard", async (_req, res) => {
       FROM members m
       JOIN activity_logs al ON al.member_email = m.email
         AND al.created_at >= date_trunc('day', now() AT TIME ZONE 'UTC')
+      WHERE m.show_on_leaderboard = TRUE
       GROUP BY m.email, m.name, m.avatar
       ORDER BY total_points DESC
-      LIMIT 10
+      ${limitClause}
     `);
 
     res.json({
@@ -119,7 +124,6 @@ router.get("/leaderboard", async (_req, res) => {
         avatar: r.avatar ?? null,
         points: Number(r.total_points),
       })),
-      // When the board resets (midnight UTC)
       resetAt: new Date(new Date().setUTCHours(24, 0, 0, 0)).toISOString(),
     });
   } catch (err) {

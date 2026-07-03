@@ -145,7 +145,7 @@ router.get("/members/me", async (req, res) => {
 
   try {
     const { rows } = await pool.query(
-      `SELECT name, avatar, bio, birthday, show_birthday_on_calendar, workout_log, featured_badge, created_at, saved_inspiration_ids, liked_inspiration_ids
+      `SELECT name, avatar, bio, birthday, show_birthday_on_calendar, workout_log, featured_badge, created_at, saved_inspiration_ids, liked_inspiration_ids, show_on_leaderboard
        FROM members WHERE email = $1`,
       [email]
     );
@@ -183,6 +183,7 @@ router.get("/members/me", async (req, res) => {
         featuredBadge: row.featured_badge ?? undefined,
         savedInspirationIds: row.saved_inspiration_ids ?? undefined,
         likedInspirationIds: row.liked_inspiration_ids ?? undefined,
+        showOnLeaderboard: row.show_on_leaderboard ?? true,
       },
     });
   } catch (err) {
@@ -492,6 +493,24 @@ router.delete("/members/:email", requireAdmin, async (req, res) => {
   } catch (err) {
     console.error("Delete member error:", err);
     res.status(500).json({ error: "Failed to delete member" });
+  }
+});
+
+// Let a member show or hide themselves from the WELL CUP leaderboard.
+router.put("/members/leaderboard-visibility", async (req, res) => {
+  const { email, showOnLeaderboard } = req.body as { email?: string; showOnLeaderboard?: boolean };
+  if (!email || showOnLeaderboard === undefined) {
+    return res.status(400).json({ error: "email and showOnLeaderboard required" });
+  }
+  try {
+    await pool.query(
+      "UPDATE members SET show_on_leaderboard = $1 WHERE email = $2",
+      [showOnLeaderboard, email.toLowerCase()]
+    );
+    res.json({ ok: true });
+  } catch (err) {
+    console.error("Leaderboard visibility error:", err);
+    res.status(500).json({ error: "Failed to update leaderboard visibility" });
   }
 });
 

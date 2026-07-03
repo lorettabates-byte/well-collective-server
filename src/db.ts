@@ -527,6 +527,7 @@ export async function initDb(): Promise<void> {
   // scheduler job) has already been dispatched for this member. Guards against
   // re-sending if the cron runs more than once on expiry day.
   await pool.query(`ALTER TABLE members ADD COLUMN IF NOT EXISTS trial_winback_sent BOOLEAN NOT NULL DEFAULT FALSE;`);
+  await pool.query(`ALTER TABLE members ADD COLUMN IF NOT EXISTS show_on_leaderboard BOOLEAN NOT NULL DEFAULT TRUE;`);
 
   // ── WELL CUP ──────────────────────────────────────────────────────────────
 

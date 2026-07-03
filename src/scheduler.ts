@@ -467,5 +467,17 @@ export function startScheduler(): void {
     sendTrialWinbackEmails().catch((err) => console.error("Trial win-back emails failed:", err));
   }, { timezone: TIMEZONE });
 
+  // WELL CHECK: every evening at 9pm ET, nudge members to review their day.
+  // Tapping the notification deep-links to their profile page where the
+  // Today's Well Check card lives.
+  cron.schedule("0 21 * * *", () => {
+    broadcastNotification({
+      title: "Your WELL CHECK is ready ✨",
+      body: "See how you showed up for yourself today — tap to view your daily summary.",
+      tag: "well-check",
+      url: "/profile",
+    }).catch((err) => console.error("Well Check notification failed:", err));
+  }, { timezone: TIMEZONE });
+
   console.log(`Scheduler started (timezone: ${TIMEZONE})`);
 }
