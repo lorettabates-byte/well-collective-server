@@ -19,6 +19,7 @@ import recipesRouter from "./routes/recipes";
 import settingsRouter from "./routes/settings";
 import songsRouter from "./routes/songs";
 import subscriptionsRouter from "./routes/subscriptions";
+import analyticsRouter from "./routes/analytics";
 import pointsRouter from "./routes/points";
 import scheduledNotificationsRouter from "./routes/scheduledNotifications";
 import tribeRouter from "./routes/tribe";
@@ -74,6 +75,7 @@ app.use("/api", tribeRouter);
 app.use("/api", eventsRouter);
 app.use("/api", recipesRouter);
 app.use("/api", inspirationReactionsRouter);
+app.use("/api", analyticsRouter);
 app.use("/api", pointsRouter);
 app.use("/api", scheduledNotificationsRouter);
 

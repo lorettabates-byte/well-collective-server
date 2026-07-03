@@ -94,6 +94,13 @@ router.post("/member-login", async (req, res) => {
 
     const token = jwt.sign({ email, name }, JWT_SECRET, { expiresIn: "30d" });
 
+    // Track login event — fire-and-forget, never blocks the response
+    pool.query(
+      `INSERT INTO analytics_events (member_email, event_type, metadata)
+       VALUES ($1, 'login', $2)`,
+      [email, JSON.stringify({ via: "member-login" })]
+    ).catch(() => {});
+
     res.json({ token, user: { email, name } });
   } catch (err) {
     console.error("Member login error:", err);

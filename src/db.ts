@@ -610,6 +610,21 @@ export async function initDb(): Promise<void> {
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_sleep_entries_email_day
     ON sleep_entries (member_email, logged_at);`);
 
+  // Behavioural analytics — every significant in-app action the client
+  // wants to track (app opens, section visits, session duration, tutorial
+  // flow, logins). Separate from activity_logs which is for WELL Cup points.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS analytics_events (
+      id SERIAL PRIMARY KEY,
+      member_email TEXT REFERENCES members(email) ON DELETE CASCADE,
+      event_type TEXT NOT NULL,
+      metadata JSONB,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    );
+  `);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_analytics_events_email ON analytics_events (member_email);`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_analytics_events_type_time ON analytics_events (event_type, created_at);`);
+
   // Scheduled push notifications created by the admin.
   await pool.query(`
     CREATE TABLE IF NOT EXISTS scheduled_notifications (
