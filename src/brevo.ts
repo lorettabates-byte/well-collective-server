@@ -208,8 +208,9 @@ export async function sendDay3Email(
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>You're 3 days in — here's what you might be missing!</title>
+<style>@import url('https://fonts.googleapis.com/css2?family=Poppins:wght@400;600;700&display=swap');</style>
 </head>
-<body style="margin:0;padding:0;background:#0d1117;font-family:Georgia,serif;color:#e8e8e8;">
+<body style="margin:0;padding:0;background:#0d1117;font-family:'Poppins',Arial,sans-serif;color:#e8e8e8;">
   <table width="100%" cellpadding="0" cellspacing="0" style="background:#0d1117;padding:40px 20px;">
     <tr>
       <td align="center">
@@ -222,7 +223,7 @@ export async function sendDay3Email(
                    alt="WELL Collective by Loretta Bates"
                    width="220"
                    style="display:block;margin:0 auto 12px;max-width:220px;height:auto;" />
-              <p style="margin:0;font-family:Georgia,serif;font-size:13px;color:#c8e8f8;letter-spacing:1px;text-transform:uppercase;">by Loretta Bates</p>
+              <p style="margin:0;font-family:'Poppins',Arial,sans-serif;font-size:13px;color:#c8e8f8;letter-spacing:1px;text-transform:uppercase;">by Loretta Bates</p>
             </td>
           </tr>
 
@@ -429,8 +430,9 @@ export async function sendTrialExpiredEmail(
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>We miss what you had to offer</title>
+<style>@import url('https://fonts.googleapis.com/css2?family=Poppins:wght@400;600;700&display=swap');</style>
 </head>
-<body style="margin:0;padding:0;background:#0d1117;font-family:Georgia,serif;color:#e8e8e8;">
+<body style="margin:0;padding:0;background:#0d1117;font-family:'Poppins',Arial,sans-serif;color:#e8e8e8;">
   <table width="100%" cellpadding="0" cellspacing="0" style="background:#0d1117;padding:40px 20px;">
     <tr>
       <td align="center">
@@ -443,14 +445,14 @@ export async function sendTrialExpiredEmail(
                    alt="WELL Collective by Loretta Bates"
                    width="220"
                    style="display:block;margin:0 auto 12px;max-width:220px;height:auto;" />
-              <p style="margin:0;font-family:Georgia,serif;font-size:13px;color:#c8e8f8;letter-spacing:1px;text-transform:uppercase;">by Loretta Bates</p>
+              <p style="margin:0;font-family:'Poppins',Arial,sans-serif;font-size:13px;color:#c8e8f8;letter-spacing:1px;text-transform:uppercase;">by Loretta Bates</p>
             </td>
           </tr>
 
           <!-- Body -->
           <tr>
             <td style="padding:40px 40px 32px;">
-              <p style="margin:0 0 8px;font-size:22px;font-weight:bold;color:#ffffff;font-family:Georgia,serif;">We miss what you had to offer</p>
+              <p style="margin:0 0 8px;font-size:22px;font-weight:bold;color:#ffffff;font-family:'Poppins',Arial,sans-serif;">We miss what you had to offer</p>
               <p style="margin:0 0 24px;font-size:18px;color:#e8e8e8;">Hi ${firstName},</p>
 
               <p style="margin:0 0 20px;font-size:15px;line-height:1.7;color:#c8cdd6;">

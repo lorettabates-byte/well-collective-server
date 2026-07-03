@@ -21,6 +21,9 @@ export const POINT_VALUES: Record<string, number> = {
   tribe_add: 5,
   cardio: 20,
   daily_challenge_accept: 10,
+  tutorial_complete: 50,
+  notifications_enabled: 20,
+  add_to_homescreen: 25,
 };
 
 // Max times a given activity type can earn points in one UTC day per member.
@@ -33,6 +36,9 @@ const DAILY_CAPS: Record<string, number> = {
   tribe_add: 5,
   cardio: 1,
   daily_challenge_accept: 3,
+  tutorial_complete: 1,
+  notifications_enabled: 1,
+  add_to_homescreen: 1,
 };
 
 /**
