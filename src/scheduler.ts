@@ -411,6 +411,34 @@ async function sendTrialWinbackEmails(): Promise<void> {
   }
 }
 
+async function crownDailyWinner(): Promise<void> {
+  // Find the member with the most points in yesterday's UTC day.
+  const { rows } = await pool.query(`
+    SELECT al.member_email, SUM(al.points)::int AS total
+    FROM activity_logs al
+    JOIN members m ON m.email = al.member_email
+    WHERE al.created_at >= date_trunc('day', now() AT TIME ZONE 'UTC') - INTERVAL '1 day'
+      AND al.created_at <  date_trunc('day', now() AT TIME ZONE 'UTC')
+      AND m.show_on_leaderboard = TRUE
+    GROUP BY al.member_email
+    ORDER BY total DESC
+    LIMIT 1
+  `);
+  if (rows.length === 0) return;
+
+  const yesterday = new Date();
+  yesterday.setUTCDate(yesterday.getUTCDate() - 1);
+  const winDate = yesterday.toISOString().slice(0, 10);
+
+  await pool.query(
+    `INSERT INTO well_cup_wins (member_email, win_date, total_points)
+     VALUES ($1, $2, $3)
+     ON CONFLICT (win_date) DO NOTHING`,
+    [rows[0].member_email, winDate, rows[0].total]
+  );
+  console.log(`[WELL CUP] ${winDate} winner: ${rows[0].member_email} (${rows[0].total} pts)`);
+}
+
 export function startScheduler(): void {
   // AI content generation (motivation boost, recipe, nutrition tip): every day at 5:30am,
   // ahead of the 7am sends below so generated content is ready in time.
@@ -468,8 +496,6 @@ export function startScheduler(): void {
   }, { timezone: TIMEZONE });
 
   // WELL CHECK: every evening at 9pm ET, nudge members to review their day.
-  // Tapping the notification deep-links to their profile page where the
-  // Today's Well Check card lives.
   cron.schedule("0 21 * * *", () => {
     broadcastNotification({
       title: "Your WELL CHECK is ready ✨",
@@ -478,6 +504,12 @@ export function startScheduler(): void {
       url: "/profile",
     }).catch((err) => console.error("Well Check notification failed:", err));
   }, { timezone: TIMEZONE });
+
+  // WELL CUP: midnight UTC — crown yesterday's top scorer.
+  // Runs at 00:00 UTC so the UTC day has fully closed before we tally.
+  cron.schedule("0 0 * * *", () => {
+    crownDailyWinner().catch((err) => console.error("Crown daily winner failed:", err));
+  });
 
   console.log(`Scheduler started (timezone: ${TIMEZONE})`);
 }

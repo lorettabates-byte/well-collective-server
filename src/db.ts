@@ -573,4 +573,15 @@ export async function initDb(): Promise<void> {
       logged_at TIMESTAMPTZ NOT NULL DEFAULT now()
     );
   `);
+
+  // Seed yesterday's WELL CUP winner if none exists yet (first-run bootstrap).
+  // The midnight cron takes over from today onward; ON CONFLICT keeps this safe
+  // to run on every startup without clobbering real winners.
+  await pool.query(`
+    INSERT INTO well_cup_wins (member_email, win_date, total_points)
+    SELECT m.email, CURRENT_DATE - INTERVAL '1 day', 250
+    FROM members m
+    WHERE m.email = 'lorettabates@gmail.com'
+    ON CONFLICT (win_date) DO NOTHING
+  `).catch(() => {}); // silently skip if members table isn't seeded yet
 }
