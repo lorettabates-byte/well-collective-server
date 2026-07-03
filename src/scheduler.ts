@@ -14,7 +14,7 @@ import { checkForNewVideos } from "./routes/video-notifications";
 import { pool } from "./db";
 import { broadcastNotification, sendNotificationToUser } from "./push";
 import { computeNutritionFromIngredients, isUsdaConfigured } from "./usda";
-import { sendTrialExpiredEmail } from "./brevo";
+import { addCompletedTrialContactToBrevo, addTrialContactToBrevo, sendMidTrialEmail, sendTrialExpiredEmail } from "./brevo";
 import { awardPoints } from "./routes/points";
 
 const TIMEZONE = process.env.SCHEDULE_TIMEZONE || "America/New_York";
@@ -412,6 +412,55 @@ async function sendTrialWinbackEmails(): Promise<void> {
   }
 }
 
+async function sendMidTrialEmails(): Promise<void> {
+  // Members whose trial started 3–4 days ago who haven't received the mid-trial email yet.
+  const { rows } = await pool.query(
+    `SELECT email, name FROM members
+     WHERE trial_started_at >= now() - INTERVAL '4 days'
+       AND trial_started_at <  now() - INTERVAL '3 days'
+       AND trial_mid_email_sent = FALSE
+       AND trial_ends_at IS NOT NULL`
+  );
+
+  if (rows.length === 0) return;
+
+  console.log(`[BREVO] Sending mid-trial emails to ${rows.length} member(s)`);
+  for (const row of rows) {
+    try {
+      await sendMidTrialEmail(row.email, row.name);
+      await pool.query(
+        "UPDATE members SET trial_mid_email_sent = TRUE WHERE email = $1",
+        [row.email]
+      );
+    } catch (err) {
+      console.error(`[BREVO] Mid-trial email failed for ${row.email}:`, err);
+    }
+  }
+}
+
+async function syncMembersToBrevoLists(): Promise<void> {
+  // Active trial members → "App Free Trial"
+  const { rows: activeRows } = await pool.query(
+    `SELECT email, name, trial_ends_at::text AS trial_ends_at
+     FROM members
+     WHERE trial_ends_at IS NOT NULL AND trial_ends_at >= CURRENT_DATE`
+  );
+  for (const row of activeRows) {
+    await addTrialContactToBrevo(row.email, row.name, row.trial_ends_at).catch(() => {});
+  }
+
+  // Expired trial members → "App Trial Completed"
+  const { rows: expiredRows } = await pool.query(
+    `SELECT email, name FROM members
+     WHERE trial_ends_at IS NOT NULL AND trial_ends_at < CURRENT_DATE`
+  );
+  for (const row of expiredRows) {
+    await addCompletedTrialContactToBrevo(row.email, row.name).catch(() => {});
+  }
+
+  console.log(`[BREVO] Synced ${activeRows.length} active + ${expiredRows.length} expired trial members to lists`);
+}
+
 async function crownDailyWinner(): Promise<void> {
   // Find the member with the most points in yesterday's UTC day.
   const { rows } = await pool.query(`
@@ -555,6 +604,17 @@ export function startScheduler(): void {
     checkLivestreamReminderWindow().catch((err) => console.error("Livestream reminder window check failed:", err));
   });
 
+  // DAY-3 MID-TRIAL EMAIL: 9am ET, same schedule as win-back.
+  cron.schedule("0 9 * * *", () => {
+    sendMidTrialEmails().catch((err) => console.error("Mid-trial emails failed:", err));
+  }, { timezone: TIMEZONE });
+
+  // BREVO LIST SYNC: every morning at 6am ET — keeps "App Free Trial" and
+  // "App Trial Completed" lists current so Loretta can run campaigns against them.
+  cron.schedule("0 6 * * *", () => {
+    syncMembersToBrevoLists().catch((err) => console.error("Brevo list sync failed:", err));
+  }, { timezone: TIMEZONE });
+
   // Post-trial win-back: every day at 9am ET, finds any members whose trial
   // ended yesterday (or earlier) and haven't received the email yet. The
   // trial_winback_sent flag is the idempotency guard — safe to restart/redeploy.
@@ -605,6 +665,9 @@ export function startScheduler(): void {
       console.error("Scheduled notification dispatch error:", err);
     }
   });
+
+  // Run immediately on startup so lists exist and are populated right away.
+  syncMembersToBrevoLists().catch((err) => console.error("Brevo startup sync failed:", err));
 
   console.log(`Scheduler started (timezone: ${TIMEZONE})`);
 }
