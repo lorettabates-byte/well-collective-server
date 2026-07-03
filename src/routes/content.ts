@@ -260,12 +260,14 @@ router.post("/send-test", requireAdmin, async (req, res) => {
   }
 });
 
-// Public: feed of the admin's instant/manual push notifications, surfaced in
-// the app under Inspirations > "Notes from Loretta".
+// Public: feed of the admin's notes visible now (scheduled_for <= now or null).
 router.get("/notes", async (_req, res) => {
   try {
     const { rows } = await pool.query(
-      "SELECT id, title, body, image, created_at FROM loretta_notes ORDER BY created_at DESC LIMIT 50"
+      `SELECT id, title, body, image, created_at, scheduled_for
+       FROM loretta_notes
+       WHERE COALESCE(scheduled_for, created_at) <= NOW()
+       ORDER BY COALESCE(scheduled_for, created_at) DESC LIMIT 50`
     );
     res.json({
       notes: rows.map((row) => ({
@@ -273,7 +275,7 @@ router.get("/notes", async (_req, res) => {
         title: row.title,
         body: row.body,
         image: row.image ?? undefined,
-        sentAt: row.created_at.toISOString(),
+        sentAt: (row.scheduled_for ?? row.created_at).toISOString(),
       })),
     });
   } catch (err) {
@@ -282,26 +284,61 @@ router.get("/notes", async (_req, res) => {
   }
 });
 
-// Admin: send an instant push notification and persist it as a note.
+// Admin: all notes including future-scheduled ones.
+router.get("/notes/admin", requireAdmin, async (_req, res) => {
+  try {
+    const { rows } = await pool.query(
+      `SELECT id, title, body, image, created_at, scheduled_for
+       FROM loretta_notes
+       ORDER BY COALESCE(scheduled_for, created_at) DESC`
+    );
+    res.json({
+      notes: rows.map((row) => ({
+        id: String(row.id),
+        title: row.title,
+        body: row.body,
+        image: row.image ?? undefined,
+        sentAt: (row.scheduled_for ?? row.created_at).toISOString(),
+        scheduledFor: row.scheduled_for ? row.scheduled_for.toISOString() : null,
+      })),
+    });
+  } catch (err) {
+    console.error("Fetch admin notes error:", err);
+    res.status(500).json({ error: "Failed to fetch notes" });
+  }
+});
+
+// Admin: create a note, optionally scheduled for a future time.
 router.post("/notes", requireAdmin, async (req, res) => {
   try {
-    const { title, body, image } = req.body as { title?: string; body?: string; image?: string };
+    const { title, body, image, scheduledFor } = req.body as {
+      title?: string; body?: string; image?: string; scheduledFor?: string;
+    };
     if (!title?.trim() || !body?.trim()) {
       return res.status(400).json({ error: "Title and body are required" });
     }
 
+    const scheduledAt = scheduledFor ? new Date(scheduledFor) : null;
+    const isImmediate = !scheduledAt || scheduledAt <= new Date();
+
     const { rows } = await pool.query(
-      "INSERT INTO loretta_notes (title, body, image) VALUES ($1, $2, $3) RETURNING id, title, body, image, created_at",
-      [title.trim(), body.trim(), image || null]
+      `INSERT INTO loretta_notes (title, body, image, scheduled_for)
+       VALUES ($1, $2, $3, $4)
+       RETURNING id, title, body, image, created_at, scheduled_for`,
+      [title.trim(), body.trim(), image || null, scheduledAt]
     );
     const note = rows[0];
 
-    const result = await broadcastNotification({
-      title: note.title,
-      body: note.body,
-      tag: "loretta-note",
-      url: "/inspirations",
-    });
+    // Only broadcast push notification for immediate (non-future) notes.
+    let pushResult;
+    if (isImmediate) {
+      pushResult = await broadcastNotification({
+        title: note.title,
+        body: note.body,
+        tag: "loretta-note",
+        url: "/inspirations",
+      });
+    }
 
     res.status(201).json({
       note: {
@@ -309,13 +346,52 @@ router.post("/notes", requireAdmin, async (req, res) => {
         title: note.title,
         body: note.body,
         image: note.image ?? undefined,
-        sentAt: note.created_at.toISOString(),
+        sentAt: (note.scheduled_for ?? note.created_at).toISOString(),
+        scheduledFor: note.scheduled_for ? note.scheduled_for.toISOString() : null,
       },
-      push: result,
+      push: pushResult,
     });
   } catch (err) {
     console.error("Create note error:", err);
     res.status(500).json({ error: "Failed to send notification" });
+  }
+});
+
+// Admin: edit a note's title and/or body.
+router.patch("/notes/:id", requireAdmin, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { title, body } = req.body as { title?: string; body?: string };
+    if (!title?.trim() || !body?.trim()) {
+      return res.status(400).json({ error: "Title and body are required" });
+    }
+    const { rows } = await pool.query(
+      `UPDATE loretta_notes SET title = $1, body = $2 WHERE id = $3
+       RETURNING id, title, body, image, created_at, scheduled_for`,
+      [title.trim(), body.trim(), Number(id)]
+    );
+    if (!rows.length) return res.status(404).json({ error: "Note not found" });
+    const note = rows[0];
+    res.json({
+      id: String(note.id),
+      title: note.title,
+      body: note.body,
+      sentAt: (note.scheduled_for ?? note.created_at).toISOString(),
+    });
+  } catch (err) {
+    console.error("Update note error:", err);
+    res.status(500).json({ error: "Failed to update note" });
+  }
+});
+
+// Admin: delete a note.
+router.delete("/notes/:id", requireAdmin, async (req, res) => {
+  try {
+    await pool.query("DELETE FROM loretta_notes WHERE id = $1", [Number(req.params.id)]);
+    res.json({ ok: true });
+  } catch (err) {
+    console.error("Delete note error:", err);
+    res.status(500).json({ error: "Failed to delete note" });
   }
 });
 

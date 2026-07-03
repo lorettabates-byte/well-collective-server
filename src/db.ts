@@ -394,6 +394,9 @@ export async function initDb(): Promise<void> {
   // images — fine here since notes are admin-only and infrequent, unlike the
   // continuously-growing forum_messages table.
   await pool.query(`ALTER TABLE loretta_notes ADD COLUMN IF NOT EXISTS image TEXT;`);
+  // Future-dated notes stay hidden from the public feed until their scheduled
+  // time arrives; null means "send immediately" (treated as created_at).
+  await pool.query(`ALTER TABLE loretta_notes ADD COLUMN IF NOT EXISTS scheduled_for TIMESTAMPTZ;`);
 
   // Track published blog posts and videos to detect new ones for notifications
   await pool.query(`
