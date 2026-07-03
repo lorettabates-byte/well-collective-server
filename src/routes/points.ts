@@ -29,7 +29,7 @@ export const POINT_VALUES: Record<string, number> = {
 // Max times a given activity type can earn points in one UTC day per member.
 const DAILY_CAPS: Record<string, number> = {
   app_open: 1,
-  blog_open: 1,
+  blog_open: 5,
   sleep_log: 1,
   song_play: 5,
   class_watch: 3,
