@@ -32,7 +32,7 @@ async function findEmailByMemberId(memberId: string): Promise<string | null> {
 }
 
 router.post("/members/sync", async (req, res) => {
-  const { email, name, avatar, bio, birthday, showBirthdayOnCalendar, workoutLog, savedInspirationIds, likedInspirationIds } = req.body as {
+  const { email, name, avatar, bio, birthday, showBirthdayOnCalendar, workoutLog, savedInspirationIds, likedInspirationIds, heightCm, weightKg, age, gender } = req.body as {
     email?: string;
     name?: string;
     avatar?: string;
@@ -42,6 +42,10 @@ router.post("/members/sync", async (req, res) => {
     workoutLog?: string[];
     savedInspirationIds?: string[];
     likedInspirationIds?: string[];
+    heightCm?: number;
+    weightKg?: number;
+    age?: number;
+    gender?: string;
   };
 
   if (!email || !name) {
@@ -61,8 +65,8 @@ router.post("/members/sync", async (req, res) => {
     // still empty. However, saved/liked inspiration IDs should always be updated
     // from the client since they reflect current user interactions.
     await pool.query(
-      `INSERT INTO members (email, name, avatar, bio, birthday, show_birthday_on_calendar, workout_log, saved_inspiration_ids, liked_inspiration_ids, updated_at)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, now())
+      `INSERT INTO members (email, name, avatar, bio, birthday, show_birthday_on_calendar, workout_log, saved_inspiration_ids, liked_inspiration_ids, height_cm, weight_kg, age, gender, updated_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, now())
        ON CONFLICT (email) DO UPDATE SET
          name = $2,
          avatar = COALESCE($3, members.avatar),
@@ -72,6 +76,10 @@ router.post("/members/sync", async (req, res) => {
          workout_log = COALESCE($7, members.workout_log),
          saved_inspiration_ids = $8,
          liked_inspiration_ids = $9,
+         height_cm = COALESCE($10, members.height_cm),
+         weight_kg = COALESCE($11, members.weight_kg),
+         age = COALESCE($12, members.age),
+         gender = COALESCE($13, members.gender),
          updated_at = now()`,
       [
         normalizedEmail,
@@ -83,6 +91,10 @@ router.post("/members/sync", async (req, res) => {
         workoutLog && workoutLog.length > 0 ? workoutLog : null,
         savedInspirationIds && savedInspirationIds.length > 0 ? savedInspirationIds : null,
         likedInspirationIds && likedInspirationIds.length > 0 ? likedInspirationIds : null,
+        heightCm ?? null,
+        weightKg ?? null,
+        age ?? null,
+        gender || null,
       ]
     );
 
@@ -146,7 +158,7 @@ router.get("/members/me", async (req, res) => {
 
   try {
     const { rows } = await pool.query(
-      `SELECT name, avatar, bio, birthday, show_birthday_on_calendar, workout_log, featured_badge, created_at, saved_inspiration_ids, liked_inspiration_ids, show_on_leaderboard
+      `SELECT name, avatar, bio, birthday, show_birthday_on_calendar, workout_log, featured_badge, created_at, saved_inspiration_ids, liked_inspiration_ids, show_on_leaderboard, height_cm, weight_kg, age, gender
        FROM members WHERE email = $1`,
       [email]
     );
@@ -181,6 +193,10 @@ router.get("/members/me", async (req, res) => {
         savedInspirationIds: row.saved_inspiration_ids ?? undefined,
         likedInspirationIds: row.liked_inspiration_ids ?? undefined,
         showOnLeaderboard: row.show_on_leaderboard ?? true,
+        heightCm: row.height_cm != null ? Number(row.height_cm) : undefined,
+        weightKg: row.weight_kg != null ? Number(row.weight_kg) : undefined,
+        age: row.age != null ? Number(row.age) : undefined,
+        gender: row.gender ?? undefined,
         tribeConnections: Number(tribeAddedRows.rows[0].count),
         addedByCount: Number(tribeAddedByRows.rows[0].count),
         allTimePoints: Number(totalPtsRows.rows[0].total),

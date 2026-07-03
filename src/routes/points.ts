@@ -304,7 +304,7 @@ router.get("/activity/today", async (req, res) => {
 
 // Log a meal entry and award points.
 router.post("/meals", async (req, res) => {
-  const { memberEmail, mealType, hadProtein, hadVegetable, hadWater, hadFruit, hadWholeFoods, notes } = req.body as {
+  const { memberEmail, mealType, hadProtein, hadVegetable, hadWater, hadFruit, hadWholeFoods, notes, estimatedCalories } = req.body as {
     memberEmail?: string;
     mealType?: string;
     hadProtein?: boolean;
@@ -313,6 +313,7 @@ router.post("/meals", async (req, res) => {
     hadFruit?: boolean;
     hadWholeFoods?: boolean;
     notes?: string;
+    estimatedCalories?: number;
   };
 
   if (!memberEmail || !mealType) {
@@ -322,9 +323,9 @@ router.post("/meals", async (req, res) => {
   try {
     const { rows } = await pool.query(
       `INSERT INTO meal_entries
-         (member_email, meal_type, had_protein, had_vegetable, had_water, had_fruit, had_whole_foods, notes)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-       RETURNING id, meal_type, had_protein, had_vegetable, had_water, had_fruit, had_whole_foods, notes, logged_at`,
+         (member_email, meal_type, had_protein, had_vegetable, had_water, had_fruit, had_whole_foods, notes, estimated_calories)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+       RETURNING id, meal_type, had_protein, had_vegetable, had_water, had_fruit, had_whole_foods, notes, estimated_calories, logged_at`,
       [
         memberEmail.toLowerCase(),
         mealType,
@@ -334,6 +335,7 @@ router.post("/meals", async (req, res) => {
         hadFruit ?? false,
         hadWholeFoods ?? false,
         notes ?? null,
+        estimatedCalories != null ? Math.max(0, Math.round(Number(estimatedCalories))) : null,
       ]
     );
 
@@ -353,7 +355,7 @@ router.get("/meals/today", async (req, res) => {
 
   try {
     const { rows } = await pool.query(
-      `SELECT id, meal_type, had_protein, had_vegetable, had_water, had_fruit, had_whole_foods, notes, logged_at
+      `SELECT id, meal_type, had_protein, had_vegetable, had_water, had_fruit, had_whole_foods, notes, estimated_calories, logged_at
        FROM meal_entries
        WHERE member_email = $1
          AND logged_at >= date_trunc('day', now() AT TIME ZONE 'UTC')
@@ -364,6 +366,110 @@ router.get("/meals/today", async (req, res) => {
   } catch (err) {
     console.error("Fetch meals error:", err);
     res.status(500).json({ error: "Failed to fetch meals" });
+  }
+});
+
+// Log today's step count (one entry per day, updated if re-submitted).
+// Points: 1 pt per 1,000 steps, capped at 15 pts (15,000 steps).
+router.post("/steps", async (req, res) => {
+  const { memberEmail, steps } = req.body as { memberEmail?: string; steps?: number };
+  if (!memberEmail || steps === undefined) {
+    return res.status(400).json({ error: "memberEmail and steps required" });
+  }
+
+  const email = memberEmail.toLowerCase();
+  const stepCount = Math.max(0, Math.min(Math.round(Number(steps)), 100_000));
+
+  const { rows: memberRows } = await pool.query("SELECT email FROM members WHERE email = $1", [email]);
+  if (memberRows.length === 0) return res.json({ ok: false, message: "Member not found" });
+
+  try {
+    const { rows: existing } = await pool.query(
+      `SELECT id FROM step_entries WHERE member_email = $1 AND logged_at::date = (now() AT TIME ZONE 'UTC')::date`,
+      [email]
+    );
+
+    let entry;
+    if (existing.length > 0) {
+      const { rows } = await pool.query(
+        `UPDATE step_entries SET steps = $2, logged_at = now() WHERE id = $1 RETURNING *`,
+        [existing[0].id, stepCount]
+      );
+      entry = rows[0];
+    } else {
+      const { rows } = await pool.query(
+        `INSERT INTO step_entries (member_email, steps) VALUES ($1, $2) RETURNING *`,
+        [email, stepCount]
+      );
+      entry = rows[0];
+    }
+
+    // Points: replace any existing step points for today with the new amount
+    const pointsToAward = Math.min(Math.floor(stepCount / 1000), 15);
+    await pool.query(
+      `DELETE FROM activity_logs WHERE member_email = $1 AND activity_type = 'steps'
+         AND created_at >= date_trunc('day', now() AT TIME ZONE 'UTC')`,
+      [email]
+    );
+    if (pointsToAward > 0) {
+      await pool.query(
+        `INSERT INTO activity_logs (member_email, activity_type, points, metadata)
+         VALUES ($1, 'steps', $2, $3)`,
+        [email, pointsToAward, JSON.stringify({ steps: stepCount })]
+      );
+    }
+
+    res.json({ ok: true, entry, points: pointsToAward });
+  } catch (err) {
+    console.error("Log steps error:", err);
+    res.status(500).json({ error: "Failed to log steps" });
+  }
+});
+
+// Today's step count for a member.
+router.get("/steps/today", async (req, res) => {
+  const { email } = req.query as { email?: string };
+  if (!email) return res.status(400).json({ error: "email required" });
+
+  try {
+    const { rows } = await pool.query(
+      `SELECT steps, logged_at FROM step_entries
+       WHERE member_email = $1 AND logged_at::date = (now() AT TIME ZONE 'UTC')::date
+       ORDER BY logged_at DESC LIMIT 1`,
+      [email.toLowerCase()]
+    );
+    res.json({ entry: rows[0] ?? null });
+  } catch (err) {
+    console.error("Fetch steps error:", err);
+    res.status(500).json({ error: "Failed to fetch steps" });
+  }
+});
+
+// Current login streak for a member — used by the Home page banner.
+router.get("/streak", async (req, res) => {
+  const { email } = req.query as { email?: string };
+  if (!email) return res.status(400).json({ error: "email required" });
+
+  try {
+    const { rows } = await pool.query(
+      `SELECT current_streak, longest_streak, last_login_date::text FROM login_streaks WHERE member_email = $1`,
+      [email.toLowerCase()]
+    );
+    if (rows.length === 0) return res.json({ streak: null });
+
+    const n = rows[0].current_streak;
+    const bonus = n >= 30 ? 100 : n >= 14 ? 50 : n >= 7 ? 25 : n >= 4 ? 10 : n >= 2 ? 5 : 0;
+    res.json({
+      streak: {
+        current_streak: n,
+        longest_streak: rows[0].longest_streak,
+        last_login_date: String(rows[0].last_login_date).slice(0, 10),
+        todays_bonus: bonus,
+      },
+    });
+  } catch (err) {
+    console.error("Streak fetch error:", err);
+    res.status(500).json({ error: "Failed to fetch streak" });
   }
 });
 

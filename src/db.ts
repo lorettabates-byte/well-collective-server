@@ -299,6 +299,10 @@ export async function initDb(): Promise<void> {
   // know a member turned a category off and broadcastNotification/
   // sendNotificationToUser would send to them regardless.
   await pool.query(`ALTER TABLE members ADD COLUMN IF NOT EXISTS notification_settings JSONB;`);
+  await pool.query(`ALTER TABLE members ADD COLUMN IF NOT EXISTS height_cm NUMERIC;`);
+  await pool.query(`ALTER TABLE members ADD COLUMN IF NOT EXISTS weight_kg NUMERIC;`);
+  await pool.query(`ALTER TABLE members ADD COLUMN IF NOT EXISTS age INT;`);
+  await pool.query(`ALTER TABLE members ADD COLUMN IF NOT EXISTS gender TEXT;`);
 
   await pool.query(`
     CREATE TABLE IF NOT EXISTS app_settings (
@@ -609,6 +613,21 @@ export async function initDb(): Promise<void> {
   `);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_sleep_entries_email_day
     ON sleep_entries (member_email, logged_at);`);
+
+  // Daily step counts — one updatable entry per member per day.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS step_entries (
+      id SERIAL PRIMARY KEY,
+      member_email TEXT NOT NULL REFERENCES members(email) ON DELETE CASCADE,
+      steps INT NOT NULL,
+      logged_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    );
+  `);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_step_entries_email_day ON step_entries (member_email, logged_at);`);
+
+  // Optional estimated calorie count on a meal entry (not tracked by default,
+  // members can enter this voluntarily for the energy balance feature).
+  await pool.query(`ALTER TABLE meal_entries ADD COLUMN IF NOT EXISTS estimated_calories INT;`);
 
   // Login streak per member — updated each time a new UTC day's first app_open
   // point is awarded. Separate from analytics_events so it can be queried
