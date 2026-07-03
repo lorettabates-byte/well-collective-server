@@ -550,10 +550,22 @@ router.put("/members/leaderboard-visibility", async (req, res) => {
 // Admin: manually fire the day-3 engagement email blast to all members who haven't received it
 router.post("/admin/send-day3-blast", requireAdmin, async (_req, res) => {
   try {
-    const sent = await sendDay3EmailBlast();
-    res.json({ ok: true, sent });
+    const result = await sendDay3EmailBlast();
+    res.json({ ok: true, ...result });
   } catch (err) {
     console.error("Day-3 blast error:", err);
+    res.status(500).json({ error: "Blast failed" });
+  }
+});
+
+// Admin: reset day3_email_sent flag and re-blast to ALL members
+router.post("/admin/force-day3-blast", requireAdmin, async (_req, res) => {
+  try {
+    await pool.query("UPDATE members SET day3_email_sent = FALSE");
+    const result = await sendDay3EmailBlast();
+    res.json({ ok: true, ...result });
+  } catch (err) {
+    console.error("Force day-3 blast error:", err);
     res.status(500).json({ error: "Blast failed" });
   }
 });
