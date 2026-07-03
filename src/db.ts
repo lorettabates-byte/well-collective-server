@@ -541,6 +541,11 @@ export async function initDb(): Promise<void> {
   // re-sending if the cron runs more than once on expiry day.
   await pool.query(`ALTER TABLE members ADD COLUMN IF NOT EXISTS trial_winback_sent BOOLEAN NOT NULL DEFAULT FALSE;`);
   await pool.query(`ALTER TABLE members ADD COLUMN IF NOT EXISTS trial_mid_email_sent BOOLEAN NOT NULL DEFAULT FALSE;`);
+  // day3_email_sent: tracks the day-3 engagement email for ALL members (trial + paid).
+  // trial_mid_email_sent is kept for backward compat; new code uses day3_email_sent.
+  await pool.query(`ALTER TABLE members ADD COLUMN IF NOT EXISTS day3_email_sent BOOLEAN NOT NULL DEFAULT FALSE;`);
+  // Backfill: anyone who already received the mid-trial email counts as done.
+  await pool.query(`UPDATE members SET day3_email_sent = TRUE WHERE trial_mid_email_sent = TRUE;`);
   await pool.query(`ALTER TABLE members ADD COLUMN IF NOT EXISTS show_on_leaderboard BOOLEAN NOT NULL DEFAULT TRUE;`);
 
   // ── WELL CUP ──────────────────────────────────────────────────────────────

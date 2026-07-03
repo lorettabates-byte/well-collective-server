@@ -187,12 +187,15 @@ export async function addTrialContactToBrevo(
  * Sends the day-3 mid-trial email via Brevo transactional email API.
  * Called by the daily scheduler for members whose trial started exactly 3 days ago.
  */
-export async function sendMidTrialEmail(
+// Kept as alias so existing scheduler call sites don't break
+export const sendMidTrialEmail = sendDay3Email;
+
+export async function sendDay3Email(
   email: string,
   name: string
 ): Promise<void> {
   if (!BREVO_API_KEY) {
-    console.warn("[BREVO] BREVO_API_KEY not set — skipping mid-trial email");
+    console.warn("[BREVO] BREVO_API_KEY not set — skipping day-3 email");
     return;
   }
 
@@ -204,7 +207,7 @@ export async function sendMidTrialEmail(
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>You're 3 days in — here's what you might be missing</title>
+<title>You're 3 days in — here's what you might be missing!</title>
 </head>
 <body style="margin:0;padding:0;background:#0d1117;font-family:Georgia,serif;color:#e8e8e8;">
   <table width="100%" cellpadding="0" cellspacing="0" style="background:#0d1117;padding:40px 20px;">
@@ -229,7 +232,7 @@ export async function sendMidTrialEmail(
               <p style="margin:0 0 24px;font-size:18px;color:#e8e8e8;">Hey ${firstName},</p>
 
               <p style="margin:0 0 20px;font-size:15px;line-height:1.7;color:#c8cdd6;">
-                You've been a part of the WELL Collective for 3 days now, and I just want to make sure you're getting the most out of every single one.
+                You've been a part of the WELL Collective for 3 days now, and I just want to make sure you're getting the most out of every single day!
               </p>
 
               <p style="margin:0 0 28px;font-size:15px;line-height:1.7;color:#c8cdd6;">
@@ -242,7 +245,7 @@ export async function sendMidTrialEmail(
                   <td style="background:#0a1520;border:1px solid #1e2a3a;border-radius:12px;padding:20px 24px;">
                     <p style="margin:0 0 6px;font-size:16px;font-weight:bold;color:#4db8e8;">🏆 The WELL Cup</p>
                     <p style="margin:0;font-size:14px;line-height:1.7;color:#c8cdd6;">
-                      Everything you do inside the app earns you points — opening the app, logging sleep, completing a workout, listening to music, attending a live event, even accepting a daily challenge! The top point-earner each day wins the WELL Cup. It's our way of celebrating you for showing up. The Monthly Cup Winner gets a <strong style="color:#e8e8e8;">FREE month of the WELL Collective</strong>, and the WELL CROWN winner (for the year) receives a <strong style="color:#e8e8e8;">FREE WELL ESCAPE!</strong>
+                      Everything you do inside the app earns you points: opening the app, logging sleep, completing a workout, listening to music, attending a live event, even accepting a daily challenge! The top point-earner each day wins the WELL Cup. It's our way of celebrating you for showing up. The Monthly Cup Winner gets a <strong style="color:#e8e8e8;">FREE month of the WELL Collective</strong>, and the WELL CROWN winner (for the year) receives a <strong style="color:#e8e8e8;">FREE WELL ESCAPE!</strong>
                     </p>
                   </td>
                 </tr>
@@ -254,7 +257,7 @@ export async function sendMidTrialEmail(
                   <td style="background:#0a1520;border:1px solid #1e2a3a;border-radius:12px;padding:20px 24px;">
                     <p style="margin:0 0 6px;font-size:16px;font-weight:bold;color:#4db8e8;">🎥 Live Classes + Video Library</p>
                     <p style="margin:0;font-size:14px;line-height:1.7;color:#c8cdd6;">
-                      New classes drop weekly — breathwork, strength training, stretching, cardio, and more. Can't make it live? Every class is saved in the video library so you can work out on your schedule, not mine.
+                      New classes drop weekly! Breathwork, strength training, stretching, cardio, and more. Can't make it live? Every class is saved in the video library so you can work out on your schedule, not mine.
                     </p>
                   </td>
                 </tr>
@@ -297,7 +300,7 @@ export async function sendMidTrialEmail(
               </table>
 
               <!-- Feature: Community -->
-              <table width="100%" cellpadding="0" cellspacing="0" style="margin:0 0 32px;">
+              <table width="100%" cellpadding="0" cellspacing="0" style="margin:0 0 28px;">
                 <tr>
                   <td style="background:#0a1520;border:1px solid #1e2a3a;border-radius:12px;padding:20px 24px;">
                     <p style="margin:0 0 6px;font-size:16px;font-weight:bold;color:#4db8e8;">💬 Community</p>
@@ -309,7 +312,7 @@ export async function sendMidTrialEmail(
               </table>
 
               <p style="margin:0 0 28px;font-size:15px;line-height:1.7;color:#c8cdd6;">
-                Your trial is still going, and I want you to feel the positive impact it can have on your life before it ends.
+                You are a vital part of this community, and it needs what you have to offer!
               </p>
 
               <!-- CTA -->
@@ -334,7 +337,7 @@ export async function sendMidTrialEmail(
               </p>
               <p style="margin:0;font-size:14px;font-weight:bold;color:#c8cdd6;">Loretta</p>
               <p style="margin:12px 0 0;font-size:11px;color:#4b5563;">
-                You're receiving this because you started a free trial of the WELL Collective app. Questions? Reply to this email anytime.
+                You're receiving this because you're a member of the WELL Collective app. Questions? Reply to this email anytime.
               </p>
             </td>
           </tr>
@@ -349,15 +352,15 @@ export async function sendMidTrialEmail(
 
   const textContent = `Hey ${firstName},
 
-You've been a part of the WELL Collective for 3 days now, and I just want to make sure you're getting the most out of every single one.
+You've been a part of the WELL Collective for 3 days now, and I just want to make sure you're getting the most out of every single day!
 
 Here are the features I don't want you to miss:
 
 🏆 THE WELL CUP
-Everything you do inside the app earns you points — opening the app, logging sleep, completing a workout, listening to music, attending a live event, even accepting a daily challenge! The top point-earner each day wins the WELL Cup. It's our way of celebrating you for showing up. The Monthly Cup Winner gets a FREE month of the WELL Collective, and the WELL CROWN winner (for the year) receives a FREE WELL ESCAPE!
+Everything you do inside the app earns you points: opening the app, logging sleep, completing a workout, listening to music, attending a live event, even accepting a daily challenge! The top point-earner each day wins the WELL Cup. It's our way of celebrating you for showing up. The Monthly Cup Winner gets a FREE month of the WELL Collective, and the WELL CROWN winner (for the year) receives a FREE WELL ESCAPE!
 
 🎥 LIVE CLASSES + VIDEO LIBRARY
-New classes drop weekly — breathwork, strength training, stretching, cardio, and more. Can't make it live? Every class is saved in the video library so you can work out on your schedule, not mine.
+New classes drop weekly! Breathwork, strength training, stretching, cardio, and more. Can't make it live? Every class is saved in the video library so you can work out on your schedule, not mine.
 
 🥗 NUTRITION
 A new recipe is waiting for you every single day. Add it to your weekly meal plan, and the app will automatically build your shopping list. You can also log your meals, track nutrition info, and add your own items to the list manually.
@@ -371,14 +374,14 @@ Workshops, livestreams, and WELL Escapes are all in one place. Click Going on an
 💬 COMMUNITY
 You don't have to do this alone. The WELL Collective community is inside the app! Be sure to post, comment, share wins, and connect with people who are on the same journey.
 
-Your trial is still going, and I want you to feel the positive impact it can have on your life before it ends.
+You are a vital part of this community, and it needs what you have to offer!
 
 Open the App: https://app.lorettabates.com
 
 With love,
 Loretta
 
-You're receiving this because you started a free trial of the WELL Collective app. Questions? Reply to this email anytime.`;
+You're receiving this because you're a member of the WELL Collective app. Questions? Reply to this email anytime.`;
 
   try {
     const res = await fetch(`${BREVO_BASE}/smtp/email`, {
@@ -387,20 +390,20 @@ You're receiving this because you started a free trial of the WELL Collective ap
       body: JSON.stringify({
         sender: { name: SENDER_NAME, email: WELL_SENDER_EMAIL },
         to: [{ email, name }],
-        subject: `You're 3 days in — here's what you might be missing ✨`,
+        subject: `You're 3 days in — here's what you might be missing! ✨`,
         htmlContent,
         textContent,
       }),
     });
 
     if (res.ok || res.status === 201) {
-      console.log(`[BREVO] Mid-trial email sent to ${email}`);
+      console.log(`[BREVO] Day-3 email sent to ${email}`);
     } else {
       const err = await res.text();
-      console.error(`[BREVO] Failed to send mid-trial email (${res.status}): ${err}`);
+      console.error(`[BREVO] Failed to send day-3 email (${res.status}): ${err}`);
     }
   } catch (err) {
-    console.error("[BREVO] sendMidTrialEmail error:", err);
+    console.error("[BREVO] sendDay3Email error:", err);
   }
 }
 

@@ -4,6 +4,7 @@ import { requireAdmin } from "../middleware/adminAuth";
 import { computeBonusBadges, computeLevelBadge, SPECIAL_BADGE_IDS } from "../badges";
 import { ADMIN_NOTIFY_EMAIL, sendNotificationToUser } from "../push";
 import { addTrialContactToBrevo } from "../brevo";
+import { sendDay3EmailBlast } from "../scheduler";
 
 const router = Router();
 
@@ -543,6 +544,17 @@ router.put("/members/leaderboard-visibility", async (req, res) => {
   } catch (err) {
     console.error("Leaderboard visibility error:", err);
     res.status(500).json({ error: "Failed to update leaderboard visibility" });
+  }
+});
+
+// Admin: manually fire the day-3 engagement email blast to all members who haven't received it
+router.post("/admin/send-day3-blast", requireAdmin, async (_req, res) => {
+  try {
+    const sent = await sendDay3EmailBlast();
+    res.json({ ok: true, sent });
+  } catch (err) {
+    console.error("Day-3 blast error:", err);
+    res.status(500).json({ error: "Blast failed" });
   }
 });
 

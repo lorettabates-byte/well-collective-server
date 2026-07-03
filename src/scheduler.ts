@@ -415,27 +415,26 @@ async function sendTrialWinbackEmails(): Promise<void> {
 }
 
 async function sendMidTrialEmails(): Promise<void> {
-  // Members whose trial started 3–4 days ago who haven't received the mid-trial email yet.
+  // All members (trial OR paid) who joined 3–4 days ago and haven't received the day-3 email.
   const { rows } = await pool.query(
     `SELECT email, name FROM members
-     WHERE trial_started_at >= now() - INTERVAL '4 days'
-       AND trial_started_at <  now() - INTERVAL '3 days'
-       AND trial_mid_email_sent = FALSE
-       AND trial_ends_at IS NOT NULL`
+     WHERE created_at >= now() - INTERVAL '4 days'
+       AND created_at <  now() - INTERVAL '3 days'
+       AND day3_email_sent = FALSE`
   );
 
   if (rows.length === 0) return;
 
-  console.log(`[BREVO] Sending mid-trial emails to ${rows.length} member(s)`);
+  console.log(`[BREVO] Sending day-3 emails to ${rows.length} member(s)`);
   for (const row of rows) {
     try {
       await sendMidTrialEmail(row.email, row.name);
       await pool.query(
-        "UPDATE members SET trial_mid_email_sent = TRUE WHERE email = $1",
+        "UPDATE members SET day3_email_sent = TRUE, trial_mid_email_sent = TRUE WHERE email = $1",
         [row.email]
       );
     } catch (err) {
-      console.error(`[BREVO] Mid-trial email failed for ${row.email}:`, err);
+      console.error(`[BREVO] Day-3 email failed for ${row.email}:`, err);
     }
   }
 }
@@ -463,29 +462,31 @@ async function syncMembersToBrevoLists(): Promise<void> {
   console.log(`[BREVO] Synced ${activeRows.length} active + ${expiredRows.length} expired trial members to lists`);
 }
 
-async function sendMidTrialEmailBlast(): Promise<void> {
-  // One-time blast: sends the mid-trial email to ALL current active trial members
-  // who haven't received it yet, regardless of when they signed up.
+export async function sendDay3EmailBlast(): Promise<number> {
+  // Manual or startup blast: day-3 engagement email to ALL members who haven't received it.
   const { rows } = await pool.query(
-    `SELECT email, name FROM members
-     WHERE trial_ends_at >= CURRENT_DATE
-       AND trial_ends_at IS NOT NULL
-       AND trial_mid_email_sent = FALSE`
+    `SELECT email, name FROM members WHERE day3_email_sent = FALSE`
   );
-  if (rows.length === 0) return;
-  console.log(`[BREVO] Sending mid-trial blast to ${rows.length} existing trial member(s)`);
+  if (rows.length === 0) return 0;
+  console.log(`[BREVO] Sending day-3 blast to ${rows.length} member(s)`);
+  let sent = 0;
   for (const row of rows) {
     try {
       await sendMidTrialEmail(row.email, row.name);
       await pool.query(
-        "UPDATE members SET trial_mid_email_sent = TRUE WHERE email = $1",
+        "UPDATE members SET day3_email_sent = TRUE, trial_mid_email_sent = TRUE WHERE email = $1",
         [row.email]
       );
+      sent++;
     } catch (err) {
-      console.error(`[BREVO] Mid-trial blast failed for ${row.email}:`, err);
+      console.error(`[BREVO] Day-3 blast failed for ${row.email}:`, err);
     }
   }
+  return sent;
 }
+
+// Keep old name as alias for the startup call below
+const sendMidTrialEmailBlast = sendDay3EmailBlast;
 
 async function crownDailyWinner(): Promise<void> {
   // Find the member with the most points in yesterday's UTC day.
