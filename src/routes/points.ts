@@ -3,6 +3,72 @@ import { pool } from "../db";
 
 const router = Router();
 
+function streakBonusPoints(streak: number): number {
+  if (streak >= 30) return 100;
+  if (streak >= 14) return 50;
+  if (streak >= 7) return 25;
+  if (streak >= 4) return 10;
+  if (streak >= 2) return 5;
+  return 0;
+}
+
+async function updateLoginStreak(
+  email: string
+): Promise<{ streak: number; bonus: number; longestStreak: number }> {
+  const today = new Date().toUTCString().slice(0, 16); // not reliable — use SQL
+  const { rows } = await pool.query(
+    `SELECT current_streak, last_login_date::text AS last_login_date, longest_streak
+     FROM login_streaks WHERE member_email = $1`,
+    [email]
+  );
+
+  const todayRow = await pool.query(`SELECT CURRENT_DATE AS today`);
+  const todayStr: string = todayRow.rows[0].today.toISOString().slice(0, 10);
+
+  let currentStreak = 1;
+  let longestStreak = 1;
+
+  if (rows.length > 0) {
+    const { current_streak, last_login_date, longest_streak } = rows[0];
+    const lastDate: string = last_login_date.slice(0, 10);
+
+    if (lastDate === todayStr) {
+      // Already processed today — return without awarding bonus again
+      return { streak: current_streak, bonus: 0, longestStreak: longest_streak };
+    }
+
+    const prev = new Date(todayStr);
+    prev.setUTCDate(prev.getUTCDate() - 1);
+    const yesterdayStr = prev.toISOString().slice(0, 10);
+
+    currentStreak = lastDate === yesterdayStr ? current_streak + 1 : 1;
+    longestStreak = Math.max(currentStreak, longest_streak);
+  }
+
+  await pool.query(
+    `INSERT INTO login_streaks (member_email, current_streak, last_login_date, longest_streak, updated_at)
+     VALUES ($1, $2, CURRENT_DATE, $3, now())
+     ON CONFLICT (member_email) DO UPDATE SET
+       current_streak = $2,
+       last_login_date = CURRENT_DATE,
+       longest_streak = $3,
+       updated_at = now()`,
+    [email, currentStreak, longestStreak]
+  );
+
+  const bonus = streakBonusPoints(currentStreak);
+
+  if (bonus > 0) {
+    await pool.query(
+      `INSERT INTO activity_logs (member_email, activity_type, points, metadata)
+       VALUES ($1, 'login_streak_bonus', $2, $3)`,
+      [email, bonus, JSON.stringify({ streak: currentStreak })]
+    );
+  }
+
+  return { streak: currentStreak, bonus, longestStreak };
+}
+
 export const POINT_VALUES: Record<string, number> = {
   app_open: 5,
   forum_post: 10,
@@ -24,6 +90,7 @@ export const POINT_VALUES: Record<string, number> = {
   tutorial_complete: 50,
   notifications_enabled: 20,
   add_to_homescreen: 25,
+  login_streak_bonus: 0, // variable — awarded directly in updateLoginStreak
 };
 
 // Max times a given activity type can earn points in one UTC day per member.
@@ -98,8 +165,15 @@ router.post("/activity", async (req, res) => {
   if (memberRows.length === 0) return res.json({ awarded: false, points: 0 });
 
   try {
-    const result = await awardPoints(memberEmail.toLowerCase(), type, metadata);
-    res.json(result);
+    const email = memberEmail.toLowerCase();
+    const result = await awardPoints(email, type, metadata);
+
+    let streakData: { streak: number; bonus: number; longestStreak: number } | null = null;
+    if (result.awarded && type === "app_open") {
+      streakData = await updateLoginStreak(email).catch(() => null);
+    }
+
+    res.json({ ...result, streak: streakData });
   } catch (err) {
     console.error("Log activity error:", err);
     res.status(500).json({ error: "Failed to log activity" });

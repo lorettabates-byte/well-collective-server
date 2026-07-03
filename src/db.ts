@@ -610,6 +610,19 @@ export async function initDb(): Promise<void> {
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_sleep_entries_email_day
     ON sleep_entries (member_email, logged_at);`);
 
+  // Login streak per member — updated each time a new UTC day's first app_open
+  // point is awarded. Separate from analytics_events so it can be queried
+  // cheaply without scanning the full event log.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS login_streaks (
+      member_email TEXT PRIMARY KEY REFERENCES members(email) ON DELETE CASCADE,
+      current_streak INT NOT NULL DEFAULT 1,
+      last_login_date DATE NOT NULL DEFAULT CURRENT_DATE,
+      longest_streak INT NOT NULL DEFAULT 1,
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    );
+  `);
+
   // Behavioural analytics — every significant in-app action the client
   // wants to track (app opens, section visits, session duration, tutorial
   // flow, logins). Separate from activity_logs which is for WELL Cup points.
