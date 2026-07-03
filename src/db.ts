@@ -483,9 +483,7 @@ export async function initDb(): Promise<void> {
   `);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_saved_recipes_member ON saved_recipes (member_email);`);
 
-  // One recipe per calendar day per member — assigning a new recipe to a
-  // day that already has one replaces it (ON CONFLICT below), matching the
-  // simple one-meal-planned-per-day mental model most weekly planners use.
+  // One recipe per calendar day per member per meal type.
   // Recipe is snapshotted as JSONB for the same reason as saved_recipes.
   await pool.query(`
     CREATE TABLE IF NOT EXISTS meal_plan_entries (
@@ -498,6 +496,12 @@ export async function initDb(): Promise<void> {
     );
   `);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_meal_plan_member ON meal_plan_entries (member_email);`);
+  // Add meal_type column (breakfast/lunch/dinner/snack) and migrate unique constraint.
+  await pool.query(`ALTER TABLE meal_plan_entries ADD COLUMN IF NOT EXISTS meal_type TEXT NOT NULL DEFAULT 'dinner';`);
+  // Drop the old per-day unique constraint so multiple meal types can exist per day.
+  await pool.query(`ALTER TABLE meal_plan_entries DROP CONSTRAINT IF EXISTS meal_plan_entries_member_email_plan_date_key;`);
+  // New unique constraint: one recipe per (member, date, meal_type).
+  await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS idx_meal_plan_member_date_type ON meal_plan_entries (member_email, plan_date, meal_type);`);
 
   // Likes/saves on inspirations (daily inspiration, weekly theme, motivation
   // boost, and Notes from Loretta) were previously reconstructed entirely

@@ -146,6 +146,7 @@ router.delete("/recipes/saved/:id", async (req, res) => {
 interface MealPlanRow {
   id: number;
   plan_date: Date;
+  meal_type: string;
   recipe: Record<string, unknown>;
 }
 
@@ -155,13 +156,14 @@ router.get("/meal-plan", async (req, res) => {
 
   try {
     const { rows } = await pool.query<MealPlanRow>(
-      "SELECT id, plan_date, recipe FROM meal_plan_entries WHERE member_email = $1 ORDER BY plan_date ASC",
+      "SELECT id, plan_date, meal_type, recipe FROM meal_plan_entries WHERE member_email = $1 ORDER BY plan_date ASC, meal_type ASC",
       [email]
     );
     res.json({
       entries: rows.map((row) => ({
         id: row.id,
         planDate: row.plan_date.toISOString().slice(0, 10),
+        mealType: row.meal_type,
         recipe: row.recipe,
       })),
     });
@@ -171,28 +173,29 @@ router.get("/meal-plan", async (req, res) => {
   }
 });
 
-// Upsert — assigning a new recipe to a day that already has one replaces it.
+// Upsert — replacing an existing recipe for the same date + meal type.
 router.post("/meal-plan", async (req, res) => {
-  const { email, planDate, recipe } = req.body as {
+  const { email, planDate, mealType, recipe } = req.body as {
     email?: string;
     planDate?: string;
+    mealType?: string;
     recipe?: Record<string, unknown>;
   };
-  if (!email || !planDate || !recipe) {
-    return res.status(400).json({ error: "email, planDate, and recipe are required" });
+  if (!email || !planDate || !mealType || !recipe) {
+    return res.status(400).json({ error: "email, planDate, mealType, and recipe are required" });
   }
 
   try {
     const { rows } = await pool.query<MealPlanRow>(
-      `INSERT INTO meal_plan_entries (member_email, plan_date, recipe)
-       VALUES ($1, $2, $3)
-       ON CONFLICT (member_email, plan_date) DO UPDATE SET recipe = $3
-       RETURNING id, plan_date, recipe`,
-      [email.toLowerCase(), planDate, JSON.stringify(recipe)]
+      `INSERT INTO meal_plan_entries (member_email, plan_date, meal_type, recipe)
+       VALUES ($1, $2, $3, $4)
+       ON CONFLICT (member_email, plan_date, meal_type) DO UPDATE SET recipe = $4
+       RETURNING id, plan_date, meal_type, recipe`,
+      [email.toLowerCase(), planDate, mealType, JSON.stringify(recipe)]
     );
     const row = rows[0];
     res.status(201).json({
-      entry: { id: row.id, planDate: row.plan_date.toISOString().slice(0, 10), recipe: row.recipe },
+      entry: { id: row.id, planDate: row.plan_date.toISOString().slice(0, 10), mealType: row.meal_type, recipe: row.recipe },
     });
   } catch (err) {
     console.error("Set meal plan entry error:", err);
