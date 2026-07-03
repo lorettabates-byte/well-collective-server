@@ -614,6 +614,35 @@ export async function initDb(): Promise<void> {
     );
   `);
 
+  // ── COUPON SEEDS ──────────────────────────────────────────────────────────
+  // 50 WELL Escape access coupons (free admission, single-use)
+  for (let i = 1; i <= 50; i++) {
+    const code = `ESCAPE-WELL-${String(i).padStart(3, "0")}`;
+    await pool.query(
+      `INSERT INTO coupons (code, description, discount_type, discount_value, max_uses)
+       VALUES ($1, $2, 'percentage', 100, 1) ON CONFLICT (code) DO NOTHING`,
+      [code, "WELL Escape — complimentary access (admin gift)"]
+    );
+  }
+  // 50 $10 discount coupons (single-use)
+  for (let i = 1; i <= 50; i++) {
+    const code = `SAVE10-WELL-${String(i).padStart(3, "0")}`;
+    await pool.query(
+      `INSERT INTO coupons (code, description, discount_type, discount_value, max_uses)
+       VALUES ($1, $2, 'fixed', 10, 1) ON CONFLICT (code) DO NOTHING`,
+      [code, "$10 off — WELL Collective discount"]
+    );
+  }
+  // 50 birthday coupons (free month — 100% off, single-use)
+  for (let i = 1; i <= 50; i++) {
+    const code = `BDAY-WELL-${String(i).padStart(3, "0")}`;
+    await pool.query(
+      `INSERT INTO coupons (code, description, discount_type, discount_value, max_uses)
+       VALUES ($1, $2, 'percentage', 100, 1) ON CONFLICT (code) DO NOTHING`,
+      [code, "Happy Birthday — enjoy a free month of WELL Collective on us! 🎂"]
+    );
+  }
+
   // Seed yesterday's WELL CUP winner if none exists yet (first-run bootstrap).
   // The midnight cron takes over from today onward; ON CONFLICT keeps this safe
   // to run on every startup without clobbering real winners.

@@ -506,13 +506,46 @@ async function crownDailyWinner(): Promise<void> {
   yesterday.setUTCDate(yesterday.getUTCDate() - 1);
   const winDate = yesterday.toISOString().slice(0, 10);
 
-  await pool.query(
+  const { rowCount } = await pool.query(
     `INSERT INTO well_cup_wins (member_email, win_date, total_points)
      VALUES ($1, $2, $3)
      ON CONFLICT (win_date) DO NOTHING`,
     [rows[0].member_email, winDate, rows[0].total]
   );
   console.log(`[WELL CUP] ${winDate} winner: ${rows[0].member_email} (${rows[0].total} pts)`);
+
+  // Notify the winner — only on the first insert (not if already recorded)
+  if (rowCount && rowCount > 0) {
+    await sendNotificationToUser(rows[0].member_email, {
+      title: "🏆 You won the WELL Cup today!",
+      body: `${rows[0].total.toLocaleString()} points — you led the entire leaderboard. Open the app to share your win!`,
+      tag: "well-cup-win",
+    }).catch((err) => console.error("[WELL CUP] Push to winner failed:", err));
+  }
+}
+
+async function crownMonthlyWinner(): Promise<void> {
+  // Runs on the last day of each month — find the member with the most points this month.
+  const { rows } = await pool.query(`
+    SELECT al.member_email, m.name, SUM(al.points)::int AS total
+    FROM activity_logs al
+    JOIN members m ON m.email = al.member_email
+    WHERE date_trunc('month', al.created_at AT TIME ZONE 'UTC') = date_trunc('month', now() AT TIME ZONE 'UTC')
+      AND m.show_on_leaderboard = TRUE
+    GROUP BY al.member_email, m.name
+    ORDER BY total DESC
+    LIMIT 1
+  `);
+  if (rows.length === 0) return;
+
+  const monthName = new Date().toLocaleString("default", { month: "long", year: "numeric" });
+  console.log(`[WELL CUP] ${monthName} monthly leader: ${rows[0].member_email} (${rows[0].total} pts)`);
+
+  await sendNotificationToUser(rows[0].member_email, {
+    title: `🏆 You're the ${monthName} WELL Cup Leader!`,
+    body: `${rows[0].total.toLocaleString()} points this month — you've earned a free month of WELL Collective. We'll be in touch!`,
+    tag: "well-cup-monthly-win",
+  }).catch((err) => console.error("[WELL CUP] Monthly push failed:", err));
 }
 
 async function sendPersonalizedWellChecks(): Promise<void> {
@@ -658,6 +691,17 @@ export function startScheduler(): void {
   cron.schedule("0 0 * * *", () => {
     crownDailyWinner().catch((err) => console.error("Crown daily winner failed:", err));
   });
+
+  // WELL CUP: last day of each month at 11:45 PM ET — notify monthly leader.
+  cron.schedule("45 23 28-31 * *", async () => {
+    const now = new Date();
+    const tomorrow = new Date(now);
+    tomorrow.setDate(now.getDate() + 1);
+    // Only run on the actual last day of the month
+    if (tomorrow.getMonth() !== now.getMonth()) {
+      crownMonthlyWinner().catch((err) => console.error("Crown monthly winner failed:", err));
+    }
+  }, { timezone: TIMEZONE });
 
   // WELL CUP: award event_attend points for events that passed yesterday.
   cron.schedule("5 0 * * *", async () => {
