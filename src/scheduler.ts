@@ -15,6 +15,7 @@ import { pool } from "./db";
 import { broadcastNotification, sendNotificationToUser } from "./push";
 import { computeNutritionFromIngredients, isUsdaConfigured } from "./usda";
 import { sendTrialExpiredEmail } from "./brevo";
+import { awardPoints } from "./routes/points";
 
 const TIMEZONE = process.env.SCHEDULE_TIMEZONE || "America/New_York";
 
@@ -570,6 +571,39 @@ export function startScheduler(): void {
   // Runs at 00:00 UTC so the UTC day has fully closed before we tally.
   cron.schedule("0 0 * * *", () => {
     crownDailyWinner().catch((err) => console.error("Crown daily winner failed:", err));
+  });
+
+  // WELL CUP: award event_attend points for events that passed yesterday.
+  cron.schedule("5 0 * * *", async () => {
+    try {
+      const yesterday = addDays(todayInTimezone(), -1);
+      const { rows: rsvpRows } = await pool.query<{ member_email: string }>(
+        "SELECT DISTINCT member_email FROM event_rsvps WHERE event_id IN (SELECT id FROM events WHERE date = $1)",
+        [yesterday]
+      );
+      for (const row of rsvpRows) {
+        await awardPoints(row.member_email, "event_attend");
+      }
+      if (rsvpRows.length > 0) {
+        console.log(`Awarded event_attend points to ${rsvpRows.length} members for ${yesterday} events`);
+      }
+    } catch (err) {
+      console.error("Event attend points error:", err);
+    }
+  });
+
+  // SCHEDULED NOTIFICATIONS: check every minute for due notifications.
+  cron.schedule("* * * * *", async () => {
+    try {
+      const { rows } = await pool.query<{ title: string; body: string }>(
+        "UPDATE scheduled_notifications SET sent = TRUE WHERE send_at <= now() AND sent = FALSE RETURNING title, body"
+      );
+      for (const row of rows) {
+        await broadcastNotification({ title: row.title, body: row.body, tag: "scheduled" });
+      }
+    } catch (err) {
+      console.error("Scheduled notification dispatch error:", err);
+    }
   });
 
   console.log(`Scheduler started (timezone: ${TIMEZONE})`);

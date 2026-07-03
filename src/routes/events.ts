@@ -210,7 +210,7 @@ router.delete("/events/:id", requireAdmin, async (req, res) => {
 });
 
 router.post("/events/:id/rsvp", async (req, res) => {
-  const { memberId } = req.body as { memberId?: string };
+  const { memberId, memberEmail } = req.body as { memberId?: string; memberEmail?: string };
   if (!memberId) return res.status(400).json({ error: "memberId required" });
 
   try {
@@ -218,9 +218,22 @@ router.post("/events/:id/rsvp", async (req, res) => {
     if (rows.length === 0) return res.status(404).json({ error: "Event not found" });
 
     const rsvps = rows[0].rsvps ?? [];
-    const updated = rsvps.includes(memberId) ? rsvps.filter((r) => r !== memberId) : [...rsvps, memberId];
+    const isRemoving = rsvps.includes(memberId);
+    const updated = isRemoving ? rsvps.filter((r) => r !== memberId) : [...rsvps, memberId];
 
     await pool.query("UPDATE events SET rsvps = $2 WHERE id = $1", [req.params.id, updated]);
+
+    if (memberEmail) {
+      if (isRemoving) {
+        await pool.query("DELETE FROM event_rsvps WHERE event_id = $1 AND member_email = $2", [req.params.id, memberEmail]);
+      } else {
+        await pool.query(
+          "INSERT INTO event_rsvps (event_id, member_email) VALUES ($1, $2) ON CONFLICT DO NOTHING",
+          [req.params.id, memberEmail]
+        );
+      }
+    }
+
     res.json({ ok: true, rsvps: updated });
   } catch (err) {
     console.error("RSVP error:", err);

@@ -243,6 +243,39 @@ router.post("/members/featured-badge", async (req, res) => {
   }
 });
 
+// Self-service: any logged-in full member can claim the founding-member badge
+// during the first 6 months after launch (before 2027-01-03). Idempotent.
+router.post("/members/claim-founding-badge", async (req, res) => {
+  const { email } = req.body as { email?: string };
+  if (!email) return res.status(400).json({ error: "email required" });
+
+  const FOUNDING_CUTOFF = "2027-01-03";
+  const today = new Date().toISOString().slice(0, 10);
+  if (today > FOUNDING_CUTOFF) return res.json({ granted: false, reason: "offer_expired" });
+
+  const memberEmail = email.toLowerCase();
+  try {
+    const { rows } = await pool.query(
+      "SELECT trial_ends_at FROM members WHERE email = $1",
+      [memberEmail]
+    );
+    if (rows.length === 0) return res.json({ granted: false, reason: "not_found" });
+
+    const trialEndsAt: string | null = rows[0].trial_ends_at ? rows[0].trial_ends_at.toISOString().slice(0, 10) : null;
+    const onActiveTrial = !!trialEndsAt && trialEndsAt > today;
+    if (onActiveTrial) return res.json({ granted: false, reason: "on_trial" });
+
+    await pool.query(
+      "INSERT INTO member_badges (member_email, badge_id) VALUES ($1, 'founding-member') ON CONFLICT DO NOTHING",
+      [memberEmail]
+    );
+    res.json({ granted: true });
+  } catch (err) {
+    console.error("Claim founding badge error:", err);
+    res.status(500).json({ error: "Failed to claim badge" });
+  }
+});
+
 // Admin: grant or revoke a special badge (e.g. "well-escape") that can't be
 // earned automatically from in-app activity.
 router.post("/admin/members/:email/badges", requireAdmin, async (req, res) => {

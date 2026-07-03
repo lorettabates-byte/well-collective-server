@@ -448,6 +448,15 @@ export async function initDb(): Promise<void> {
   // of RSVPing into a class that's already at capacity.
   await pool.query(`ALTER TABLE events ADD COLUMN IF NOT EXISTS sold_out BOOLEAN NOT NULL DEFAULT false;`);
 
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS event_rsvps (
+      event_id TEXT NOT NULL,
+      member_email TEXT NOT NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      PRIMARY KEY (event_id, member_email)
+    );
+  `);
+
   // Member-created folders for organizing saved recipes (e.g. "Breakfast",
   // "Meal Prep"). Recipes themselves are snapshotted as JSONB at save time
   // (see saved_recipes below) rather than re-fetched from content_schedule,
@@ -587,6 +596,18 @@ export async function initDb(): Promise<void> {
   `);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_sleep_entries_email_day
     ON sleep_entries (member_email, logged_at);`);
+
+  // Scheduled push notifications created by the admin.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS scheduled_notifications (
+      id SERIAL PRIMARY KEY,
+      title TEXT NOT NULL,
+      body TEXT NOT NULL,
+      send_at TIMESTAMPTZ NOT NULL,
+      sent BOOLEAN NOT NULL DEFAULT FALSE,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    );
+  `);
 
   // Seed yesterday's WELL CUP winner if none exists yet (first-run bootstrap).
   // The midnight cron takes over from today onward; ON CONFLICT keeps this safe
