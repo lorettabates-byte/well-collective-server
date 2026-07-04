@@ -484,7 +484,12 @@ async function generateDailyTTS(): Promise<Buffer> {
   const todayBreathwork = BREATHWORK_TYPES[breathworkIndex];
 
   console.log(`[BREATHWORK] Building TTS for ${todayBreathwork.name}...`);
-  const buffer = await buildScriptAudio(buildTimedSegments(todayBreathwork, DAILY_TARGET_SECONDS));
+  // Trailing quiet after the outro gives the client room to fade the music
+  // out instead of stopping it dead on the guide's last word.
+  const buffer = await buildScriptAudio([
+    ...buildTimedSegments(todayBreathwork, DAILY_TARGET_SECONDS - 12),
+    p(12000),
+  ]);
   ttsCache.set(cacheKey, buffer);
   console.log(`[BREATHWORK] Built ${buffer.length} bytes of TTS audio`);
   return buffer;
@@ -522,16 +527,33 @@ router.get("/audio/daily", async (req, res): Promise<any> => {
 // to loop the voice track.
 const sessionGuideCache = new Map<string, Buffer>();
 
+// Every Deeper Session closes the same way: the guide winds the practice
+// down, then the track holds ~45s of quiet so the music can breathe and
+// fade out instead of cutting off mid-note the moment the voice stops.
+const SESSION_WRAP_UP: ScriptSegment[] = [
+  s("Our time together is coming to a close."),
+  s("Take one final, slow, deep breath in."),
+  p(4000),
+  s("And let it go."),
+  p(4000),
+  s("When you're ready, gently return to your day, carrying this calm with you."),
+];
+const WIND_DOWN_RESERVED_SECONDS = 75; // wrap-up speech + trailing quiet
+
 async function generateSessionGuideTTS(guideIndex: number, durationMinutes: number): Promise<Buffer> {
   const cacheKey = `${guideIndex}-${durationMinutes}`;
   if (sessionGuideCache.has(cacheKey)) return sessionGuideCache.get(cacheKey)!;
 
   console.log(`[BREATHWORK] Building Deeper Session guide voice #${guideIndex} (${durationMinutes} min)...`);
   const guide = DEEPER_SESSION_GUIDES[guideIndex];
-  const segments = buildTimedSegments(
-    { name: "", description: "", ...guide },
-    durationMinutes * 60
-  );
+  const segments = [
+    ...buildTimedSegments(
+      { name: "", description: "", ...guide },
+      durationMinutes * 60 - WIND_DOWN_RESERVED_SECONDS
+    ),
+    ...SESSION_WRAP_UP,
+    p(45000),
+  ];
   const buffer = await buildScriptAudio(segments);
   sessionGuideCache.set(cacheKey, buffer);
   console.log(`[BREATHWORK] Built ${buffer.length} bytes for guide #${guideIndex} (${durationMinutes} min)`);
