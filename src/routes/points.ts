@@ -1,5 +1,6 @@
 import { Router } from "express";
 import { pool } from "../db";
+import { todayInTimezone, addDays, SQL_DAY_START, SQL_MONTH_START, SQL_YEAR_START, sqlSameDay } from "../dateUtils";
 
 const router = Router();
 
@@ -15,15 +16,13 @@ function streakBonusPoints(streak: number): number {
 async function updateLoginStreak(
   email: string
 ): Promise<{ streak: number; bonus: number; longestStreak: number }> {
-  const today = new Date().toUTCString().slice(0, 16); // not reliable — use SQL
   const { rows } = await pool.query(
     `SELECT current_streak, last_login_date::text AS last_login_date, longest_streak
      FROM login_streaks WHERE member_email = $1`,
     [email]
   );
 
-  const todayRow = await pool.query(`SELECT CURRENT_DATE AS today`);
-  const todayStr: string = todayRow.rows[0].today.toISOString().slice(0, 10);
+  const todayStr = todayInTimezone();
 
   let currentStreak = 1;
   let longestStreak = 1;
@@ -37,23 +36,20 @@ async function updateLoginStreak(
       return { streak: current_streak, bonus: 0, longestStreak: longest_streak };
     }
 
-    const prev = new Date(todayStr);
-    prev.setUTCDate(prev.getUTCDate() - 1);
-    const yesterdayStr = prev.toISOString().slice(0, 10);
-
+    const yesterdayStr = addDays(todayStr, -1);
     currentStreak = lastDate === yesterdayStr ? current_streak + 1 : 1;
     longestStreak = Math.max(currentStreak, longest_streak);
   }
 
   await pool.query(
     `INSERT INTO login_streaks (member_email, current_streak, last_login_date, longest_streak, updated_at)
-     VALUES ($1, $2, CURRENT_DATE, $3, now())
+     VALUES ($1, $2, $3, $4, now())
      ON CONFLICT (member_email) DO UPDATE SET
        current_streak = $2,
-       last_login_date = CURRENT_DATE,
-       longest_streak = $3,
+       last_login_date = $3,
+       longest_streak = $4,
        updated_at = now()`,
-    [email, currentStreak, longestStreak]
+    [email, currentStreak, todayStr, longestStreak]
   );
 
   const bonus = streakBonusPoints(currentStreak);
@@ -93,7 +89,7 @@ export const POINT_VALUES: Record<string, number> = {
   login_streak_bonus: 0, // variable — awarded directly in updateLoginStreak
 };
 
-// Max times a given activity type can earn points in one UTC day per member.
+// Max times a given activity type can earn points in one calendar day (member-facing timezone) per member.
 const DAILY_CAPS: Record<string, number> = {
   app_open: 1,
   blog_open: 5,
@@ -125,7 +121,7 @@ export async function awardPoints(
     const { rows } = await pool.query(
       `SELECT COUNT(*) AS count FROM activity_logs
        WHERE member_email = $1 AND activity_type = $2
-         AND created_at >= date_trunc('day', now() AT TIME ZONE 'UTC')`,
+         AND created_at >= ${SQL_DAY_START}`,
       [memberEmail, activityType]
     );
     if (Number(rows[0].count) >= cap) return { awarded: false, points: 0 };
@@ -180,7 +176,8 @@ router.post("/activity", async (req, res) => {
   }
 });
 
-// Today's leaderboard — members visible on the board, ordered by UTC-day points.
+// Today's leaderboard — members visible on the board, ordered by points earned
+// today in the member-facing timezone (America/New_York by default).
 // ?limit=N caps the result (default 10). Pass limit=all for the full list.
 router.get("/leaderboard", async (req, res) => {
   const limitParam = (req.query.limit as string | undefined) ?? "10";
@@ -195,12 +192,14 @@ router.get("/leaderboard", async (req, res) => {
         COALESCE(SUM(al.points), 0) AS total_points
       FROM members m
       JOIN activity_logs al ON al.member_email = m.email
-        AND al.created_at >= date_trunc('day', now() AT TIME ZONE 'UTC')
+        AND al.created_at >= ${SQL_DAY_START}
       WHERE m.show_on_leaderboard = TRUE
       GROUP BY m.email, m.name, m.avatar
       ORDER BY total_points DESC
       ${limitClause}
     `);
+
+    const { rows: resetRows } = await pool.query(`SELECT (${SQL_DAY_START} + INTERVAL '1 day') AS reset_at`);
 
     res.json({
       leaderboard: rows.map((r) => ({
@@ -209,7 +208,7 @@ router.get("/leaderboard", async (req, res) => {
         avatar: r.avatar ?? null,
         points: Number(r.total_points),
       })),
-      resetAt: new Date(new Date().setUTCHours(24, 0, 0, 0)).toISOString(),
+      resetAt: new Date(resetRows[0].reset_at).toISOString(),
     });
   } catch (err) {
     console.error("Leaderboard error:", err);
@@ -217,14 +216,14 @@ router.get("/leaderboard", async (req, res) => {
   }
 });
 
-// Monthly leader — member with most points in the current UTC month.
+// Monthly leader — member with most points in the current month (member-facing timezone).
 router.get("/leaderboard/monthly", async (_req, res) => {
   try {
     const { rows } = await pool.query(`
       SELECT m.email, m.name, m.avatar, COALESCE(SUM(al.points), 0) AS total_points
       FROM members m
       JOIN activity_logs al ON al.member_email = m.email
-        AND al.created_at >= date_trunc('month', now() AT TIME ZONE 'UTC')
+        AND al.created_at >= ${SQL_MONTH_START}
       WHERE m.show_on_leaderboard = TRUE
       GROUP BY m.email, m.name, m.avatar
       ORDER BY total_points DESC
@@ -237,14 +236,14 @@ router.get("/leaderboard/monthly", async (_req, res) => {
   }
 });
 
-// Yearly leader — member with most points in the current UTC year.
+// Yearly leader — member with most points in the current year (member-facing timezone).
 router.get("/leaderboard/yearly", async (_req, res) => {
   try {
     const { rows } = await pool.query(`
       SELECT m.email, m.name, m.avatar, COALESCE(SUM(al.points), 0) AS total_points
       FROM members m
       JOIN activity_logs al ON al.member_email = m.email
-        AND al.created_at >= date_trunc('year', now() AT TIME ZONE 'UTC')
+        AND al.created_at >= ${SQL_YEAR_START}
       WHERE m.show_on_leaderboard = TRUE
       GROUP BY m.email, m.name, m.avatar
       ORDER BY total_points DESC
@@ -257,15 +256,17 @@ router.get("/leaderboard/yearly", async (_req, res) => {
   }
 });
 
-// Yesterday's WELL CUP winner (awarded by the midnight cron job).
+// Yesterday's WELL CUP winner (awarded by the midnight-ET cron job).
 router.get("/leaderboard/yesterday", async (_req, res) => {
   try {
-    const { rows } = await pool.query(`
-      SELECT w.win_date, w.total_points, m.name, m.avatar, m.email
-      FROM well_cup_wins w
-      JOIN members m ON m.email = w.member_email
-      WHERE w.win_date = CURRENT_DATE - INTERVAL '1 day'
-    `);
+    const yesterday = addDays(todayInTimezone(), -1);
+    const { rows } = await pool.query(
+      `SELECT w.win_date, w.total_points, m.name, m.avatar, m.email
+       FROM well_cup_wins w
+       JOIN members m ON m.email = w.member_email
+       WHERE w.win_date = $1`,
+      [yesterday]
+    );
     res.json({ winner: rows[0] ?? null });
   } catch (err) {
     console.error("Yesterday winner error:", err);
@@ -283,7 +284,7 @@ router.get("/activity/today", async (req, res) => {
       SELECT activity_type, SUM(points) AS points, COUNT(*) AS count
       FROM activity_logs
       WHERE member_email = $1
-        AND created_at >= date_trunc('day', now() AT TIME ZONE 'UTC')
+        AND created_at >= ${SQL_DAY_START}
       GROUP BY activity_type
     `, [email.toLowerCase()]);
 
@@ -358,7 +359,7 @@ router.get("/meals/today", async (req, res) => {
       `SELECT id, meal_type, had_protein, had_vegetable, had_water, had_fruit, had_whole_foods, notes, estimated_calories, logged_at
        FROM meal_entries
        WHERE member_email = $1
-         AND logged_at >= date_trunc('day', now() AT TIME ZONE 'UTC')
+         AND logged_at >= ${SQL_DAY_START}
        ORDER BY logged_at ASC`,
       [email.toLowerCase()]
     );
@@ -385,7 +386,7 @@ router.post("/steps", async (req, res) => {
 
   try {
     const { rows: existing } = await pool.query(
-      `SELECT id FROM step_entries WHERE member_email = $1 AND logged_at::date = (now() AT TIME ZONE 'UTC')::date`,
+      `SELECT id FROM step_entries WHERE member_email = $1 AND ${sqlSameDay("logged_at")}`,
       [email]
     );
 
@@ -408,7 +409,7 @@ router.post("/steps", async (req, res) => {
     const pointsToAward = Math.min(Math.floor(stepCount / 1000), 15);
     await pool.query(
       `DELETE FROM activity_logs WHERE member_email = $1 AND activity_type = 'steps'
-         AND created_at >= date_trunc('day', now() AT TIME ZONE 'UTC')`,
+         AND created_at >= ${SQL_DAY_START}`,
       [email]
     );
     if (pointsToAward > 0) {
@@ -434,7 +435,7 @@ router.get("/steps/today", async (req, res) => {
   try {
     const { rows } = await pool.query(
       `SELECT steps, logged_at FROM step_entries
-       WHERE member_email = $1 AND logged_at::date = (now() AT TIME ZONE 'UTC')::date
+       WHERE member_email = $1 AND ${sqlSameDay("logged_at")}
        ORDER BY logged_at DESC LIMIT 1`,
       [email.toLowerCase()]
     );
@@ -513,7 +514,7 @@ router.get("/sleep/today", async (req, res) => {
       `SELECT hours, quality, logged_at
        FROM sleep_entries
        WHERE member_email = $1
-         AND logged_at >= date_trunc('day', now() AT TIME ZONE 'UTC')
+         AND logged_at >= ${SQL_DAY_START}
        ORDER BY logged_at DESC
        LIMIT 1`,
       [email.toLowerCase()]

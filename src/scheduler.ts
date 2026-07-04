@@ -16,25 +16,7 @@ import { broadcastNotification, sendNotificationToUser } from "./push";
 import { computeNutritionFromIngredients, isUsdaConfigured } from "./usda";
 import { addTrialContactToBrevo, moveTrialContactToCompleted, sendMidTrialEmail, sendTrialExpiredEmail } from "./brevo";
 import { awardPoints } from "./routes/points";
-
-const TIMEZONE = process.env.SCHEDULE_TIMEZONE || "America/New_York";
-
-function todayInTimezone(): string {
-  const formatter = new Intl.DateTimeFormat("en-CA", {
-    timeZone: TIMEZONE,
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  });
-  return formatter.format(new Date()); // en-CA gives YYYY-MM-DD
-}
-
-function addDays(dateStr: string, days: number): string {
-  const [y, m, d] = dateStr.split("-").map(Number);
-  const date = new Date(Date.UTC(y, m - 1, d));
-  date.setUTCDate(date.getUTCDate() + days);
-  return date.toISOString().slice(0, 10);
-}
+import { TIMEZONE, todayInTimezone, addDays, SQL_DAY_START, SQL_MONTH_START } from "./dateUtils";
 
 // Weekly themes are only stored on the Monday row, so to find "this week's"
 // theme from any day we scan backward up to 7 days for the most recent one.
@@ -517,13 +499,13 @@ async function sendMidTrialEmailBlast(): Promise<void> {
 }
 
 async function crownDailyWinner(): Promise<void> {
-  // Find the member with the most points in yesterday's UTC day.
+  // Find the member with the most points in yesterday's day, in the member-facing timezone.
   const { rows } = await pool.query(`
     SELECT al.member_email, SUM(al.points)::int AS total
     FROM activity_logs al
     JOIN members m ON m.email = al.member_email
-    WHERE al.created_at >= date_trunc('day', now() AT TIME ZONE 'UTC') - INTERVAL '1 day'
-      AND al.created_at <  date_trunc('day', now() AT TIME ZONE 'UTC')
+    WHERE al.created_at >= ${SQL_DAY_START} - INTERVAL '1 day'
+      AND al.created_at <  ${SQL_DAY_START}
       AND m.show_on_leaderboard = TRUE
     GROUP BY al.member_email
     ORDER BY total DESC
@@ -531,9 +513,7 @@ async function crownDailyWinner(): Promise<void> {
   `);
   if (rows.length === 0) return;
 
-  const yesterday = new Date();
-  yesterday.setUTCDate(yesterday.getUTCDate() - 1);
-  const winDate = yesterday.toISOString().slice(0, 10);
+  const winDate = addDays(todayInTimezone(), -1);
 
   const { rowCount } = await pool.query(
     `INSERT INTO well_cup_wins (member_email, win_date, total_points)
@@ -559,7 +539,7 @@ async function crownMonthlyWinner(): Promise<void> {
     SELECT al.member_email, m.name, SUM(al.points)::int AS total
     FROM activity_logs al
     JOIN members m ON m.email = al.member_email
-    WHERE date_trunc('month', al.created_at AT TIME ZONE 'UTC') = date_trunc('month', now() AT TIME ZONE 'UTC')
+    WHERE al.created_at >= ${SQL_MONTH_START}
       AND m.show_on_leaderboard = TRUE
     GROUP BY al.member_email, m.name
     ORDER BY total DESC
@@ -581,13 +561,13 @@ async function sendPersonalizedWellChecks(): Promise<void> {
   const date = todayInTimezone();
   if (await alreadySent(date, "wellCheck")) return;
 
-  // Fetch every member's UTC-day point total in one query.
+  // Fetch every member's point total for today (member-facing timezone) in one query.
   const { rows: pointRows } = await pool.query(`
     SELECT m.email, m.name, COALESCE(SUM(al.points), 0)::int AS today_pts
     FROM members m
     LEFT JOIN activity_logs al
       ON al.member_email = m.email
-      AND al.created_at >= date_trunc('day', now() AT TIME ZONE 'UTC')
+      AND al.created_at >= ${SQL_DAY_START}
     WHERE m.membership_status = 'active'
        OR m.trial_ends_at >= CURRENT_DATE
     GROUP BY m.email, m.name
@@ -597,7 +577,7 @@ async function sendPersonalizedWellChecks(): Promise<void> {
   const { rows: activityRows } = await pool.query(`
     SELECT DISTINCT member_email, activity_type
     FROM activity_logs
-    WHERE created_at >= date_trunc('day', now() AT TIME ZONE 'UTC')
+    WHERE created_at >= ${SQL_DAY_START}
   `);
   const doneByEmail = new Map<string, Set<string>>();
   for (const r of activityRows) {
@@ -715,11 +695,11 @@ export function startScheduler(): void {
     sendPersonalizedWellChecks().catch((err) => console.error("Well Check notifications failed:", err));
   }, { timezone: TIMEZONE });
 
-  // WELL CUP: midnight UTC — crown yesterday's top scorer.
-  // Runs at 00:00 UTC so the UTC day has fully closed before we tally.
+  // WELL CUP: midnight ET — crown yesterday's top scorer.
+  // Runs at 00:00 America/New_York so the member-facing day has fully closed before we tally.
   cron.schedule("0 0 * * *", () => {
     crownDailyWinner().catch((err) => console.error("Crown daily winner failed:", err));
-  });
+  }, { timezone: TIMEZONE });
 
   // WELL CUP: last day of each month at 11:45 PM ET — notify monthly leader.
   cron.schedule("45 23 28-31 * *", async () => {
@@ -749,7 +729,7 @@ export function startScheduler(): void {
     } catch (err) {
       console.error("Event attend points error:", err);
     }
-  });
+  }, { timezone: TIMEZONE });
 
   // SCHEDULED NOTIFICATIONS: check every minute for due notifications.
   cron.schedule("* * * * *", async () => {
