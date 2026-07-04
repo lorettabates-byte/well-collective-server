@@ -628,10 +628,17 @@ export async function initDb(): Promise<void> {
   // Optional estimated calorie count on a meal entry (not tracked by default,
   // members can enter this voluntarily for the energy balance feature).
   await pool.query(`ALTER TABLE meal_entries ADD COLUMN IF NOT EXISTS estimated_calories INT;`);
+  // Full macro breakdown from the USDA-backed calorie estimator (see
+  // /api/meals/estimate) — nutrition_verified mirrors the Recipe flow's
+  // "verified against USDA" flag (false = AI filled a gap FDC couldn't match).
+  await pool.query(`ALTER TABLE meal_entries ADD COLUMN IF NOT EXISTS estimated_protein_g NUMERIC;`);
+  await pool.query(`ALTER TABLE meal_entries ADD COLUMN IF NOT EXISTS estimated_carbs_g NUMERIC;`);
+  await pool.query(`ALTER TABLE meal_entries ADD COLUMN IF NOT EXISTS estimated_fat_g NUMERIC;`);
+  await pool.query(`ALTER TABLE meal_entries ADD COLUMN IF NOT EXISTS nutrition_verified BOOLEAN;`);
 
-  // Login streak per member — updated each time a new UTC day's first app_open
-  // point is awarded. Separate from analytics_events so it can be queried
-  // cheaply without scanning the full event log.
+  // Login streak per member — updated each time a new day's (member-facing
+  // timezone) first app_open point is awarded. Separate from analytics_events
+  // so it can be queried cheaply without scanning the full event log.
   await pool.query(`
     CREATE TABLE IF NOT EXISTS login_streaks (
       member_email TEXT PRIMARY KEY REFERENCES members(email) ON DELETE CASCADE,

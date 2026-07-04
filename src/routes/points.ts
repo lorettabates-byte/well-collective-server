@@ -1,6 +1,8 @@
 import { Router } from "express";
 import { pool } from "../db";
 import { todayInTimezone, addDays, SQL_DAY_START, SQL_MONTH_START, SQL_YEAR_START, sqlSameDay } from "../dateUtils";
+import { isAnthropicConfigured, parseMealDescriptionForNutritionLookup } from "../anthropic";
+import { isUsdaConfigured, computeNutritionFromIngredients } from "../usda";
 
 const router = Router();
 
@@ -303,9 +305,44 @@ router.get("/activity/today", async (req, res) => {
   }
 });
 
+// Estimate calories + macros for a freeform meal description. Uses the same
+// approach as AI-generated recipes: Claude breaks the description into food
+// items + gram estimates, then real nutrition values come from USDA
+// FoodData Central (not an LLM guess) via computeNutritionFromIngredients.
+router.post("/meals/estimate", async (req, res) => {
+  const { description } = req.body as { description?: string };
+  if (!description || !description.trim()) {
+    return res.status(400).json({ error: "description required" });
+  }
+  if (!isAnthropicConfigured() || !isUsdaConfigured()) {
+    return res.status(503).json({ error: "Calorie estimator is not configured" });
+  }
+
+  try {
+    const items = await parseMealDescriptionForNutritionLookup(description.trim());
+    const nutrition = await computeNutritionFromIngredients(items);
+    if (!nutrition) {
+      return res.status(422).json({ error: "Couldn't estimate nutrition for that description" });
+    }
+    res.json({
+      calories: nutrition.calories,
+      protein: parseInt(nutrition.protein, 10) || 0,
+      carbs: parseInt(nutrition.carbs, 10) || 0,
+      fat: parseInt(nutrition.fat, 10) || 0,
+      verified: nutrition.verified,
+    });
+  } catch (err) {
+    console.error("Meal estimate error:", err);
+    res.status(500).json({ error: "Failed to estimate meal nutrition" });
+  }
+});
+
 // Log a meal entry and award points.
 router.post("/meals", async (req, res) => {
-  const { memberEmail, mealType, hadProtein, hadVegetable, hadWater, hadFruit, hadWholeFoods, notes, estimatedCalories } = req.body as {
+  const {
+    memberEmail, mealType, hadProtein, hadVegetable, hadWater, hadFruit, hadWholeFoods, notes,
+    estimatedCalories, estimatedProtein, estimatedCarbs, estimatedFat, nutritionVerified,
+  } = req.body as {
     memberEmail?: string;
     mealType?: string;
     hadProtein?: boolean;
@@ -315,6 +352,10 @@ router.post("/meals", async (req, res) => {
     hadWholeFoods?: boolean;
     notes?: string;
     estimatedCalories?: number;
+    estimatedProtein?: number;
+    estimatedCarbs?: number;
+    estimatedFat?: number;
+    nutritionVerified?: boolean;
   };
 
   if (!memberEmail || !mealType) {
@@ -324,9 +365,11 @@ router.post("/meals", async (req, res) => {
   try {
     const { rows } = await pool.query(
       `INSERT INTO meal_entries
-         (member_email, meal_type, had_protein, had_vegetable, had_water, had_fruit, had_whole_foods, notes, estimated_calories)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-       RETURNING id, meal_type, had_protein, had_vegetable, had_water, had_fruit, had_whole_foods, notes, estimated_calories, logged_at`,
+         (member_email, meal_type, had_protein, had_vegetable, had_water, had_fruit, had_whole_foods, notes,
+          estimated_calories, estimated_protein_g, estimated_carbs_g, estimated_fat_g, nutrition_verified)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+       RETURNING id, meal_type, had_protein, had_vegetable, had_water, had_fruit, had_whole_foods, notes,
+         estimated_calories, estimated_protein_g, estimated_carbs_g, estimated_fat_g, nutrition_verified, logged_at`,
       [
         memberEmail.toLowerCase(),
         mealType,
@@ -337,6 +380,10 @@ router.post("/meals", async (req, res) => {
         hadWholeFoods ?? false,
         notes ?? null,
         estimatedCalories != null ? Math.max(0, Math.round(Number(estimatedCalories))) : null,
+        estimatedProtein != null ? Math.max(0, Math.round(Number(estimatedProtein))) : null,
+        estimatedCarbs != null ? Math.max(0, Math.round(Number(estimatedCarbs))) : null,
+        estimatedFat != null ? Math.max(0, Math.round(Number(estimatedFat))) : null,
+        nutritionVerified ?? null,
       ]
     );
 
@@ -356,7 +403,8 @@ router.get("/meals/today", async (req, res) => {
 
   try {
     const { rows } = await pool.query(
-      `SELECT id, meal_type, had_protein, had_vegetable, had_water, had_fruit, had_whole_foods, notes, estimated_calories, logged_at
+      `SELECT id, meal_type, had_protein, had_vegetable, had_water, had_fruit, had_whole_foods, notes,
+         estimated_calories, estimated_protein_g, estimated_carbs_g, estimated_fat_g, nutrition_verified, logged_at
        FROM meal_entries
        WHERE member_email = $1
          AND logged_at >= ${SQL_DAY_START}

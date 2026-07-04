@@ -213,6 +213,36 @@ Respond with ONLY a JSON array, no other text, one entry per ingredient in the s
   return parsed;
 }
 
+// Breaks a member's freeform meal description ("grilled chicken breast, brown
+// rice, steamed broccoli") into the same {foodQuery, grams} shape used for
+// recipes, so the calorie estimator can look up real USDA nutrition per food
+// item instead of guessing calories for the meal as a whole.
+export async function parseMealDescriptionForNutritionLookup(
+  description: string
+): Promise<{ foodQuery: string; grams: number }[]> {
+  const prompt = `A member of a wellness app described a meal they ate. Break it into individual food items, and for each one give a USDA FoodData Central search query plus your best estimate of its weight in grams for a typical portion of what they described.
+
+For foodQuery, use USDA's own naming convention as closely as you can recall it, not a casual food name — generic terms like "oats" or "chicken breast" often match the wrong entry (a branded product, an oil, a prepared dish) because FDC's search is plain relevance ranking, not smart disambiguation. Be specific and use the USDA style: "Cereals, oats, regular and quick, unenriched, dry" not "oats"; "Chicken, broilers or fryers, breast, meat only, raw" not "chicken breast"; "Avocados, raw, California" not "avocado".
+
+If a portion size is stated (e.g. "large", "2 cups", "a handful"), use it to inform the gram estimate. If nothing is stated, assume a typical single-adult portion.
+
+Meal description: "${description}"
+
+Respond with ONLY a JSON array, no other text, one entry per distinct food item, in this exact shape:
+[{"foodQuery": "Chicken, broilers or fryers, breast, meat only, raw", "grams": 170}, {"foodQuery": "Rice, brown, long-grain, cooked", "grams": 195}]`;
+
+  const text = await callClaude(prompt, 600);
+  const match = text.match(/\[[\s\S]*\]/);
+  if (!match) {
+    throw new Error("No JSON array found in meal parsing response");
+  }
+  const parsed = JSON.parse(match[0]) as { foodQuery: string; grams: number }[];
+  if (!Array.isArray(parsed) || parsed.length === 0) {
+    throw new Error("Meal parsing response was not a usable array");
+  }
+  return parsed;
+}
+
 export interface GeneratedDailyInspiration {
   title: string;
   body: string;
