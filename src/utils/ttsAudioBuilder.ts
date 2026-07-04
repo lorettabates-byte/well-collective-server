@@ -117,8 +117,10 @@ async function padOrTrimToExactly(buffer: Buffer, ms: number): Promise<Buffer> {
   const seconds = (ms / 1000).toFixed(3);
   // Strip the variable leading/trailing silence the TTS model bakes in
   // BEFORE fitting to the window — otherwise a clip whose word starts 300ms
-  // in sounds late against a clip whose word starts immediately, which is
-  // exactly the uneven "1, 2, 3 fast... 5, 6 slow" counting members heard.
+  // in sounds late against a clip whose word starts immediately.
+  // Pad to the target duration but do NOT hard-trim, since numbers shouldn't
+  // be cut off mid-word. If a number is slightly longer than expected, padding
+  // alone lets it breathe. A 100ms fade-out prevents clicks at the boundary.
   const stripSilence =
     "silenceremove=start_periods=1:start_threshold=-40dB:start_silence=0.05," +
     "areverse," +
@@ -127,7 +129,7 @@ async function padOrTrimToExactly(buffer: Buffer, ms: number): Promise<Buffer> {
   await runFfmpeg([
     "-y",
     "-i", inPath,
-    "-af", `${stripSilence},apad=whole_dur=${seconds},atrim=0:${seconds}`,
+    "-af", `${stripSilence},apad=whole_dur=${seconds},afade=t=out:st=${(ms - 100) / 1000}:d=0.1`,
     outPath,
   ]);
   const result = fs.readFileSync(outPath);
@@ -182,9 +184,9 @@ async function concatBuffers(buffers: Buffer[]): Promise<Buffer> {
   return result;
 }
 
-// Each spoken number, generated once and trimmed/padded to exactly one second,
-// so counted breath holds always land one second apart regardless of how fast
-// or slow the model naturally speaks that word.
+// Each spoken number is padded to 1.2 seconds with a 100ms fade-out, so there's
+// room for the full word to sound without being cut off, yet counts stay in sync.
+// Counting still feels evenly-paced because the fade happens in the last 100ms.
 const numberWords = ["one", "two", "three", "four", "five", "six", "seven", "eight"];
 const numberClipCache = new Map<number, Buffer>();
 
@@ -192,7 +194,7 @@ async function getNumberClip(n: number): Promise<Buffer> {
   if (numberClipCache.has(n)) return numberClipCache.get(n)!;
   const raw = await synthesizeRaw(numberWords[n - 1] + ".", true);
   const warmed = await warmAndClean(raw);
-  const exact = await padOrTrimToExactly(warmed, 1000);
+  const exact = await padOrTrimToExactly(warmed, 1200);
   numberClipCache.set(n, exact);
   return exact;
 }
