@@ -319,21 +319,137 @@ router.post("/meals/estimate", async (req, res) => {
   }
 
   try {
-    const items = await parseMealDescriptionForNutritionLookup(description.trim());
-    const nutrition = await computeNutritionFromIngredients(items);
-    if (!nutrition) {
+    const parsed = await parseMealDescriptionForNutritionLookup(description.trim());
+
+    // Per-item lookups (sequential — see the FDC flakiness note in usda.ts)
+    // so "eggs, ham, and orange juice" comes back as three editable rows on
+    // the client instead of one opaque combined total.
+    const items: { label: string; calories: number; protein: number; carbs: number; fat: number; verified: boolean }[] = [];
+    for (const item of parsed) {
+      const nutrition = await computeNutritionFromIngredients([item]);
+      if (!nutrition) continue;
+      items.push({
+        label: item.label,
+        calories: nutrition.calories,
+        protein: parseInt(nutrition.protein, 10) || 0,
+        carbs: parseInt(nutrition.carbs, 10) || 0,
+        fat: parseInt(nutrition.fat, 10) || 0,
+        verified: nutrition.verified,
+      });
+    }
+    if (items.length === 0) {
       return res.status(422).json({ error: "Couldn't estimate nutrition for that description" });
     }
+
+    const totals = items.reduce(
+      (sum, i) => ({
+        calories: sum.calories + i.calories,
+        protein: sum.protein + i.protein,
+        carbs: sum.carbs + i.carbs,
+        fat: sum.fat + i.fat,
+      }),
+      { calories: 0, protein: 0, carbs: 0, fat: 0 }
+    );
+
     res.json({
-      calories: nutrition.calories,
-      protein: parseInt(nutrition.protein, 10) || 0,
-      carbs: parseInt(nutrition.carbs, 10) || 0,
-      fat: parseInt(nutrition.fat, 10) || 0,
-      verified: nutrition.verified,
+      items,
+      calories: totals.calories,
+      protein: totals.protein,
+      carbs: totals.carbs,
+      fat: totals.fat,
+      verified: items.every((i) => i.verified),
     });
   } catch (err) {
     console.error("Meal estimate error:", err);
     res.status(500).json({ error: "Failed to estimate meal nutrition" });
+  }
+});
+
+// Edit a previously logged meal (owner-checked by email).
+router.put("/meals/:id", async (req, res) => {
+  const {
+    memberEmail, mealType, hadProtein, hadVegetable, hadWater, hadFruit, hadWholeFoods, notes,
+    estimatedCalories, estimatedProtein, estimatedCarbs, estimatedFat, nutritionVerified,
+  } = req.body as {
+    memberEmail?: string;
+    mealType?: string;
+    hadProtein?: boolean;
+    hadVegetable?: boolean;
+    hadWater?: boolean;
+    hadFruit?: boolean;
+    hadWholeFoods?: boolean;
+    notes?: string;
+    estimatedCalories?: number | null;
+    estimatedProtein?: number | null;
+    estimatedCarbs?: number | null;
+    estimatedFat?: number | null;
+    nutritionVerified?: boolean | null;
+  };
+
+  if (!memberEmail) return res.status(400).json({ error: "memberEmail required" });
+
+  try {
+    const { rows } = await pool.query(
+      `UPDATE meal_entries SET
+         meal_type = COALESCE($3, meal_type),
+         had_protein = COALESCE($4, had_protein),
+         had_vegetable = COALESCE($5, had_vegetable),
+         had_water = COALESCE($6, had_water),
+         had_fruit = COALESCE($7, had_fruit),
+         had_whole_foods = COALESCE($8, had_whole_foods),
+         notes = $9,
+         estimated_calories = $10,
+         estimated_protein_g = $11,
+         estimated_carbs_g = $12,
+         estimated_fat_g = $13,
+         nutrition_verified = $14
+       WHERE id = $1 AND member_email = $2
+       RETURNING id, meal_type, had_protein, had_vegetable, had_water, had_fruit, had_whole_foods, notes,
+         estimated_calories,
+         estimated_protein_g::float8 AS estimated_protein_g,
+         estimated_carbs_g::float8 AS estimated_carbs_g,
+         estimated_fat_g::float8 AS estimated_fat_g,
+         nutrition_verified, logged_at`,
+      [
+        req.params.id,
+        memberEmail.toLowerCase(),
+        mealType ?? null,
+        hadProtein ?? null,
+        hadVegetable ?? null,
+        hadWater ?? null,
+        hadFruit ?? null,
+        hadWholeFoods ?? null,
+        notes ?? null,
+        estimatedCalories != null ? Math.max(0, Math.round(Number(estimatedCalories))) : null,
+        estimatedProtein != null ? Math.max(0, Math.round(Number(estimatedProtein))) : null,
+        estimatedCarbs != null ? Math.max(0, Math.round(Number(estimatedCarbs))) : null,
+        estimatedFat != null ? Math.max(0, Math.round(Number(estimatedFat))) : null,
+        nutritionVerified ?? null,
+      ]
+    );
+    if (rows.length === 0) return res.status(404).json({ error: "Meal not found" });
+    res.json({ meal: rows[0] });
+  } catch (err) {
+    console.error("Update meal error:", err);
+    res.status(500).json({ error: "Failed to update meal" });
+  }
+});
+
+// Delete a logged meal (owner-checked by email).
+router.delete("/meals/:id", async (req, res) => {
+  const { email } = req.query as { email?: string };
+  if (!email) return res.status(400).json({ error: "email required" });
+
+  try {
+    const { rowCount } = await pool.query(
+      "DELETE FROM meal_entries WHERE id = $1 AND member_email = $2",
+      [req.params.id, email.toLowerCase()]
+    );
+    if (rowCount === 0) return res.status(404).json({ error: "Meal not found" });
+    res.json({ ok: true });
+  } catch (err) {
+    console.error("Delete meal error:", err);
+    res.status(500).json({ error: "Failed to delete meal" });
   }
 });
 

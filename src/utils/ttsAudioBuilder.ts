@@ -32,16 +32,61 @@ function runFfmpeg(args: string[]): Promise<void> {
 // tts-1-hd model couldn't — this is what makes the guide sound like a
 // meditation teacher instead of a screen reader.
 const VOICE_INSTRUCTIONS =
-  "You are a meditation and breathwork guide. Speak very slowly, softly, and warmly, " +
-  "in a low, soothing, unhurried voice — like guiding someone toward sleep. " +
-  "Leave gentle space around your words. Never sound bright, chipper, or announcer-like.";
+  "You are a meditation and breathwork guide. Speak slowly, softly, and warmly, " +
+  "in a natural, soothing, unhurried voice — like guiding someone toward sleep. " +
+  "Never sound bright, chipper, or announcer-like.";
 
-async function synthesizeRaw(text: string): Promise<Buffer> {
+// Numbers get their own short delivery so they fit comfortably inside the
+// fixed one-second count window — the slow meditative delivery stretched
+// them past a second, and the hard trim clipped some words while leaving
+// others whole, which made the counting sound unevenly spaced.
+const NUMBER_INSTRUCTIONS = "Say just this number softly and calmly, in under one second.";
+
+const ELEVENLABS_API_KEY = process.env.ELEVENLABS_API_KEY;
+// "Rachel" — ElevenLabs' warm female narration voice.
+const ELEVENLABS_VOICE_ID = process.env.ELEVENLABS_VOICE_ID || "21m00Tcm4TlvDq8ikWAM";
+
+export function isTtsConfigured(): boolean {
+  return !!(ELEVENLABS_API_KEY || process.env.OPENAI_API_KEY);
+}
+
+// ElevenLabs produces genuinely human-sounding speech, so when a key is
+// configured it takes priority; OpenAI TTS stays as the fallback so the
+// feature keeps working without an ElevenLabs account.
+async function synthesizeElevenLabs(text: string): Promise<Buffer> {
+  const res = await fetch(
+    `https://api.elevenlabs.io/v1/text-to-speech/${ELEVENLABS_VOICE_ID}?output_format=mp3_44100_128`,
+    {
+      method: "POST",
+      headers: {
+        "xi-api-key": ELEVENLABS_API_KEY!,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        text,
+        model_id: "eleven_multilingual_v2",
+        // Higher stability keeps the delivery even and calm across clips;
+        // low style keeps it conversational instead of theatrical.
+        voice_settings: { stability: 0.6, similarity_boost: 0.8, style: 0.15, use_speaker_boost: true },
+      }),
+      signal: AbortSignal.timeout(60000),
+    }
+  );
+  if (!res.ok) {
+    throw new Error(`ElevenLabs TTS error ${res.status}: ${await res.text()}`);
+  }
+  return Buffer.from(await res.arrayBuffer());
+}
+
+async function synthesizeRaw(text: string, isNumber = false): Promise<Buffer> {
+  if (ELEVENLABS_API_KEY) {
+    return synthesizeElevenLabs(text);
+  }
   const mp3 = await openai.audio.speech.create({
     model: "gpt-4o-mini-tts",
     voice: "sage",
     input: text,
-    instructions: VOICE_INSTRUCTIONS,
+    instructions: isNumber ? NUMBER_INSTRUCTIONS : VOICE_INSTRUCTIONS,
   });
   return Buffer.from(await mp3.arrayBuffer());
 }
@@ -70,10 +115,19 @@ async function padOrTrimToExactly(buffer: Buffer, ms: number): Promise<Buffer> {
   const outPath = path.join(dir, "out.mp3");
   fs.writeFileSync(inPath, buffer);
   const seconds = (ms / 1000).toFixed(3);
+  // Strip the variable leading/trailing silence the TTS model bakes in
+  // BEFORE fitting to the window — otherwise a clip whose word starts 300ms
+  // in sounds late against a clip whose word starts immediately, which is
+  // exactly the uneven "1, 2, 3 fast... 5, 6 slow" counting members heard.
+  const stripSilence =
+    "silenceremove=start_periods=1:start_threshold=-40dB:start_silence=0.05," +
+    "areverse," +
+    "silenceremove=start_periods=1:start_threshold=-40dB:start_silence=0.05," +
+    "areverse";
   await runFfmpeg([
     "-y",
     "-i", inPath,
-    "-af", `apad=whole_dur=${seconds},atrim=0:${seconds}`,
+    "-af", `${stripSilence},apad=whole_dur=${seconds},atrim=0:${seconds}`,
     outPath,
   ]);
   const result = fs.readFileSync(outPath);
@@ -136,7 +190,7 @@ const numberClipCache = new Map<number, Buffer>();
 
 async function getNumberClip(n: number): Promise<Buffer> {
   if (numberClipCache.has(n)) return numberClipCache.get(n)!;
-  const raw = await synthesizeRaw(numberWords[n - 1] + ".");
+  const raw = await synthesizeRaw(numberWords[n - 1] + ".", true);
   const warmed = await warmAndClean(raw);
   const exact = await padOrTrimToExactly(warmed, 1000);
   numberClipCache.set(n, exact);

@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { pool } from "../db";
-import { buildScriptAudio, estimateSeconds, type ScriptSegment } from "../utils/ttsAudioBuilder";
+import { buildScriptAudio, estimateSeconds, isTtsConfigured, type ScriptSegment } from "../utils/ttsAudioBuilder";
 
 const router = Router();
 
@@ -493,7 +493,7 @@ async function generateDailyTTS(): Promise<Buffer> {
 // Get daily breathwork audio (female voice guiding through today's breathing)
 router.get("/audio/daily", async (req, res): Promise<any> => {
   try {
-    if (!process.env.OPENAI_API_KEY) {
+    if (!isTtsConfigured()) {
       console.warn("[BREATHWORK] No OpenAI API key configured, returning background sound only");
       const dayOfWeek = etDayOfWeek();
       const bgSound = BACKGROUND_SOUNDS[dayOfWeek];
@@ -542,7 +542,7 @@ async function generateSessionGuideTTS(guideIndex: number, durationMinutes: numb
 // :id is the stored session's database id; each session maps to its own unique script.
 router.get("/audio/session-guide/:id", async (req, res): Promise<any> => {
   try {
-    if (!process.env.OPENAI_API_KEY) {
+    if (!isTtsConfigured()) {
       return res.status(404).json({ error: "Voice guidance unavailable" });
     }
     const sessionId = parseInt(req.params.id, 10) || 0;
