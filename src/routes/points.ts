@@ -369,7 +369,11 @@ router.post("/meals", async (req, res) => {
           estimated_calories, estimated_protein_g, estimated_carbs_g, estimated_fat_g, nutrition_verified)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
        RETURNING id, meal_type, had_protein, had_vegetable, had_water, had_fruit, had_whole_foods, notes,
-         estimated_calories, estimated_protein_g, estimated_carbs_g, estimated_fat_g, nutrition_verified, logged_at`,
+         estimated_calories,
+         estimated_protein_g::float8 AS estimated_protein_g,
+         estimated_carbs_g::float8 AS estimated_carbs_g,
+         estimated_fat_g::float8 AS estimated_fat_g,
+         nutrition_verified, logged_at`,
       [
         memberEmail.toLowerCase(),
         mealType,
@@ -404,7 +408,11 @@ router.get("/meals/today", async (req, res) => {
   try {
     const { rows } = await pool.query(
       `SELECT id, meal_type, had_protein, had_vegetable, had_water, had_fruit, had_whole_foods, notes,
-         estimated_calories, estimated_protein_g, estimated_carbs_g, estimated_fat_g, nutrition_verified, logged_at
+         estimated_calories,
+         estimated_protein_g::float8 AS estimated_protein_g,
+         estimated_carbs_g::float8 AS estimated_carbs_g,
+         estimated_fat_g::float8 AS estimated_fat_g,
+         nutrition_verified, logged_at
        FROM meal_entries
        WHERE member_email = $1
          AND logged_at >= ${SQL_DAY_START}
