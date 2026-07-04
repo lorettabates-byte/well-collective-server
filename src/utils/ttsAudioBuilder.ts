@@ -28,12 +28,20 @@ function runFfmpeg(args: string[]): Promise<void> {
   });
 }
 
+// gpt-4o-mini-tts takes free-text delivery direction, which the older
+// tts-1-hd model couldn't — this is what makes the guide sound like a
+// meditation teacher instead of a screen reader.
+const VOICE_INSTRUCTIONS =
+  "You are a meditation and breathwork guide. Speak very slowly, softly, and warmly, " +
+  "in a low, soothing, unhurried voice — like guiding someone toward sleep. " +
+  "Leave gentle space around your words. Never sound bright, chipper, or announcer-like.";
+
 async function synthesizeRaw(text: string): Promise<Buffer> {
   const mp3 = await openai.audio.speech.create({
-    model: "tts-1-hd",
-    voice: "shimmer",
+    model: "gpt-4o-mini-tts",
+    voice: "sage",
     input: text,
-    speed: 0.95, // sentence-level pacing is handled by inserted pause segments, not by slowing the voice
+    instructions: VOICE_INSTRUCTIONS,
   });
   return Buffer.from(await mp3.arrayBuffer());
 }
@@ -108,6 +116,10 @@ async function concatBuffers(buffers: Buffer[]): Promise<Buffer> {
     "-safe", "0",
     "-i", listPath,
     "-c:a", "libmp3lame",
+    // Mono voice tracks don't need more — keeps the full-length session
+    // guides (10-30 min) small enough to cache and stream comfortably.
+    "-b:a", "64k",
+    "-ac", "1",
     outPath,
   ]);
 
@@ -150,7 +162,27 @@ async function getSilence(ms: number): Promise<Buffer> {
   return sil;
 }
 
-const SENTENCE_PAUSE_MS = 650;
+// Breathing room between sentences — meditation pacing wants real gaps,
+// not conversational ones.
+const SENTENCE_PAUSE_MS = 1500;
+
+// Rough duration model for a segment list, used to size scripts to a target
+// length before synthesizing anything. Speech is modeled at ~0.45s/word at the
+// slow meditative delivery; counts are exactly 1s per number (see getNumberClip).
+export function estimateSeconds(segments: ScriptSegment[]): number {
+  let total = 0;
+  for (const segment of segments) {
+    if (segment.type === "speech") {
+      const words = segment.text.split(/\s+/).filter(Boolean).length;
+      total += 0.5 + words * 0.45 + SENTENCE_PAUSE_MS / 1000;
+    } else if (segment.type === "count") {
+      total += (segment.to - segment.from + 1) + SENTENCE_PAUSE_MS / 1000;
+    } else {
+      total += segment.ms / 1000;
+    }
+  }
+  return total;
+}
 
 export async function buildScriptAudio(segments: ScriptSegment[]): Promise<Buffer> {
   const parts: Buffer[] = [];

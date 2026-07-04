@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { pool } from "../db";
-import { buildScriptAudio, type ScriptSegment } from "../utils/ttsAudioBuilder";
+import { buildScriptAudio, estimateSeconds, type ScriptSegment } from "../utils/ttsAudioBuilder";
 
 const router = Router();
 
@@ -20,6 +20,7 @@ const ttsCache = new Map<string, Buffer>();
 
 const s = (text: string): ScriptSegment => ({ type: "speech", text });
 const c = (from: number, to: number): ScriptSegment => ({ type: "count", from, to });
+const p = (ms: number): ScriptSegment => ({ type: "pause", ms });
 
 // Standardized short cues so the in-memory speech cache (see ttsAudioBuilder)
 // reuses the same rendered clip across every script instead of re-synthesizing
@@ -39,30 +40,72 @@ function segmentsToDisplayText(segments: ScriptSegment[]): string {
     .join(" ");
 }
 
-const BREATHWORK_TYPES: { name: string; description: string; segments: ScriptSegment[] }[] = [
+// Each practice is defined as intro + one repeatable breathing cycle +
+// rotating encouragement lines + outro, and buildTimedSegments repeats the
+// cycle until the script genuinely fills the advertised duration — the old
+// fixed scripts only held 2-4 cycles and ran ~90 seconds against a promised
+// 5 minutes.
+interface TimedBreathwork {
+  name: string;
+  description: string;
+  intro: ScriptSegment[];
+  cycle: ScriptSegment[];
+  interludes: string[];
+  outro: ScriptSegment[];
+}
+
+function buildTimedSegments(t: TimedBreathwork, targetSeconds: number): ScriptSegment[] {
+  const segments: ScriptSegment[] = [...t.intro];
+  const outroSeconds = estimateSeconds(t.outro);
+  let interludeIdx = 0;
+  let cyclesSinceInterlude = 0;
+
+  while (estimateSeconds(segments) + outroSeconds < targetSeconds) {
+    segments.push(...t.cycle);
+    cyclesSinceInterlude++;
+    if (
+      cyclesSinceInterlude >= 3 &&
+      t.interludes.length > 0 &&
+      estimateSeconds(segments) + outroSeconds + 8 < targetSeconds
+    ) {
+      segments.push(s(t.interludes[interludeIdx % t.interludes.length]));
+      interludeIdx++;
+      cyclesSinceInterlude = 0;
+    }
+  }
+
+  segments.push(...t.outro);
+  return segments;
+}
+
+const DAILY_TARGET_SECONDS = 5 * 60;
+
+const BREATHWORK_TYPES: TimedBreathwork[] = [
   {
     name: "Box Breathing",
-    description: "Inhale for 4 counts, hold for 4 counts, exhale for 4 counts, hold for 4 counts. Repeat 5 times.",
-    segments: [
+    description: "Inhale for 4 counts, hold for 4 counts, exhale for 4 counts, hold for 4 counts.",
+    intro: [
       s("Welcome to today's guided box breathing exercise."),
       s("Box breathing helps calm your nervous system and improve focus."),
       s("Find a comfortable position and close your eyes if you'd like."),
       s("Take a moment to settle in."),
+      p(3000),
+    ],
+    cycle: [
       INHALE, c(1, 4),
       HOLD, c(1, 4),
       EXHALE, c(1, 4),
       HOLD, c(1, 4),
-      s("Good, let's continue."),
-      INHALE, c(1, 4),
-      HOLD, c(1, 4),
-      EXHALE, c(1, 4),
-      HOLD, c(1, 4),
-      s("Continue at your own pace with this rhythm."),
-      INHALE, c(1, 4),
-      HOLD, c(1, 4),
-      EXHALE, c(1, 4),
-      HOLD, c(1, 4),
-      s("Beautiful. Each breath is bringing you deeper into calm."),
+    ],
+    interludes: [
+      "Good, let's continue.",
+      "Continue at your own pace with this rhythm.",
+      "Each breath is bringing you deeper into calm.",
+      "Let your shoulders soften.",
+      "You're doing beautifully.",
+    ],
+    outro: [
+      s("Beautiful. Each breath has brought you deeper into calm."),
       s("When you're ready, take three natural breaths and gently open your eyes."),
       s("You've completed your box breathing exercise."),
     ],
@@ -70,47 +113,51 @@ const BREATHWORK_TYPES: { name: string; description: string; segments: ScriptSeg
   {
     name: "Diaphragmatic Breathing",
     description: "Deep belly breathing to activate your parasympathetic nervous system. Breathe in for 4 counts, out for 6 counts.",
-    segments: [
+    intro: [
       s("Welcome to diaphragmatic breathing."),
       s("This technique helps reduce stress and promotes deep relaxation."),
       s("Find a comfortable seated or lying position."),
       s("You can place one hand on your chest and one on your belly."),
       s("As you inhale through your nose, let the breath travel down into your belly, allowing it to expand."),
-      c(1, 4),
-      EXHALE, c(1, 6),
-      s("Feel your belly fall as you release the breath."),
+      p(3000),
+    ],
+    cycle: [
       INHALE, c(1, 4),
       EXHALE, c(1, 6),
-      s("The exhale is longer than the inhale, which signals your body to relax."),
-      INHALE, c(1, 4),
-      EXHALE, c(1, 6),
-      s("Feel yourself becoming more and more relaxed with each breath."),
-      INHALE, c(1, 4),
-      EXHALE, c(1, 6),
-      s("You're doing beautifully."),
+    ],
+    interludes: [
+      "Feel your belly fall as you release the breath.",
+      "The exhale is longer than the inhale, which signals your body to relax.",
+      "Feel yourself becoming more and more relaxed with each breath.",
+      "Let your thoughts drift by, and return to the breath.",
+      "You're doing beautifully.",
+    ],
+    outro: [
+      s("Wonderful work."),
       s("When you're ready, take a few natural breaths and gently return to your day."),
     ],
   },
   {
     name: "4-7-8 Breathing",
     description: "A calming technique: inhale for 4, hold for 7, exhale for 8. Perfect before sleep.",
-    segments: [
+    intro: [
       s("Welcome to the 4, 7, 8 breathing technique, designed to calm your mind and prepare your body for rest."),
       s("Find a comfortable position, seated or lying down."),
       s("Start by exhaling completely through your mouth, slow and soft."),
-      s("Now, close your mouth and inhale quietly through your nose."),
-      c(1, 4),
-      HOLD, c(1, 7),
-      EXHALE, c(1, 8),
-      s("Let's do that again."),
+      p(3000),
+    ],
+    cycle: [
       INHALE, c(1, 4),
       HOLD, c(1, 7),
       EXHALE, c(1, 8),
-      s("Continue with this rhythm."),
-      INHALE, c(1, 4),
-      HOLD, c(1, 7),
-      EXHALE, c(1, 8),
-      s("Feel the calm washing over you."),
+    ],
+    interludes: [
+      "Continue with this rhythm.",
+      "Feel the calm washing over you.",
+      "Let each exhale carry away a little more tension.",
+      "Your body is settling deeper into rest.",
+    ],
+    outro: [
       s("This technique is wonderful before bedtime."),
       s("When you're complete, take normal breaths and allow yourself to rest peacefully."),
     ],
@@ -118,7 +165,7 @@ const BREATHWORK_TYPES: { name: string; description: string; segments: ScriptSeg
   {
     name: "Alternate Nostril Breathing",
     description: "Balance your energy: alternate between breathing through left and right nostrils.",
-    segments: [
+    intro: [
       s("Welcome to alternate nostril breathing, a balancing technique that harmonizes your body and mind."),
       s("Sit comfortably with your spine straight."),
       s("Fold your index and middle fingers down, leaving your thumb and ring finger extended."),
@@ -126,20 +173,21 @@ const BREATHWORK_TYPES: { name: string; description: string; segments: ScriptSeg
       c(1, 4),
       s("Release your thumb, close your left nostril with your ring finger, and exhale through your right nostril."),
       c(1, 4),
-      s("Inhale through the right nostril."),
-      c(1, 4),
-      s("Switch, close your right nostril, and exhale through the left."),
-      c(1, 4),
-      s("That's one complete cycle. Let's continue."),
-      s("Inhale left."),
-      c(1, 4),
-      s("Switch, exhale right."),
-      c(1, 4),
-      s("Inhale right."),
-      c(1, 4),
-      s("Switch, exhale left."),
-      c(1, 4),
-      s("Wonderful. Feel yourself becoming more centered and calm."),
+      s("That's the pattern. Let's continue together."),
+    ],
+    cycle: [
+      s("Inhale left."), c(1, 4),
+      s("Switch, exhale right."), c(1, 4),
+      s("Inhale right."), c(1, 4),
+      s("Switch, exhale left."), c(1, 4),
+    ],
+    interludes: [
+      "Feel yourself becoming more centered with each cycle.",
+      "Keep your breath smooth and unhurried.",
+      "Beautiful. Stay with this gentle rhythm.",
+    ],
+    outro: [
+      s("Wonderful. Feel yourself centered and calm."),
       s("When you're ready, return to normal breathing with both nostrils."),
       s("You've completed your alternate nostril breathing."),
     ],
@@ -147,41 +195,49 @@ const BREATHWORK_TYPES: { name: string; description: string; segments: ScriptSeg
   {
     name: "Coherent Breathing",
     description: "5-second inhale, 5-second exhale. Synchronizes heart rate variability.",
-    segments: [
+    intro: [
       s("Welcome to coherent breathing, a gentle technique that brings your body into a state of balance and ease."),
       s("Find a comfortable position."),
       s("Let's begin with a few normal breaths to settle in."),
+      p(4000),
+    ],
+    cycle: [
       INHALE, c(1, 5),
       EXHALE, c(1, 5),
-      s("The breath is equal in and out, creating a beautiful rhythm."),
-      INHALE, c(1, 5),
-      EXHALE, c(1, 5),
-      s("This simple pattern has profound effects on your nervous system."),
-      INHALE, c(1, 5),
-      EXHALE, c(1, 5),
-      s("Feel your heart rate synchronizing with your breath. You're in perfect coherence."),
-      INHALE, c(1, 5),
-      EXHALE, c(1, 5),
-      s("This is your anchor, your place of calm."),
+    ],
+    interludes: [
+      "The breath is equal in and out, creating a beautiful rhythm.",
+      "This simple pattern has profound effects on your nervous system.",
+      "Feel your heart rate synchronizing with your breath.",
+      "This is your anchor, your place of calm.",
+      "Simply stay with the rhythm.",
+    ],
+    outro: [
+      s("You're in perfect coherence."),
       s("When you're ready, let your breath return to normal and rest in this peaceful state."),
     ],
   },
   {
     name: "Lion's Breath",
-    description: "Energizing exhale with open mouth and tongue out. Great for releasing tension.",
-    segments: [
+    description: "Energizing exhale with open mouth. Great for releasing tension.",
+    intro: [
       s("Welcome to Lion's Breath, a gentle yet invigorating technique that helps release tension."),
       s("Find a comfortable seated position."),
+      p(3000),
+    ],
+    cycle: [
       s("Take a slow breath in through your nose."),
+      p(4000),
       s("As you exhale, let the breath flow out gently through your mouth, releasing any tension in your jaw."),
-      s("Take another slow breath in through your nose."),
-      s("Open your mouth and let the breath release, soft and unhurried."),
-      s("Breathe in again, slowly."),
-      s("As you exhale, imagine you're releasing tension, releasing stress, releasing worry."),
-      s("Inhale once more, slowly."),
-      s("Exhale fully, with calm intention. Feel the tension melting away."),
-      s("One more time. Breathe in deeply."),
-      s("Exhale slowly, releasing everything you need to let go of."),
+      p(5000),
+    ],
+    interludes: [
+      "Imagine you're releasing tension, releasing stress, releasing worry.",
+      "Feel the tension melting away with every release.",
+      "Let each exhale be soft and unhurried.",
+      "Release everything you need to let go of.",
+    ],
+    outro: [
       s("Wonderful. After this practice, take some gentle, normal breaths."),
       s("Feel the calm settling into your body."),
       s("You've completed your Lion's Breath session."),
@@ -190,192 +246,197 @@ const BREATHWORK_TYPES: { name: string; description: string; segments: ScriptSeg
   {
     name: "Extended Exhale",
     description: "Longer exhales activate the parasympathetic nervous system for deep relaxation.",
-    segments: [
+    intro: [
       s("Welcome to extended exhale breathing, a deeply relaxing technique."),
       s("Find a comfortable position, sitting or lying down."),
       s("This practice uses a longer exhale than inhale, which naturally calms your nervous system."),
+      p(3000),
+    ],
+    cycle: [
       INHALE, c(1, 3),
       EXHALE, c(1, 6),
-      s("Feel your body relax as you extend the exhale."),
-      INHALE, c(1, 3),
-      EXHALE, c(1, 6),
-      s("As you exhale, let your shoulders drop and let your jaw relax."),
-      INHALE, c(1, 3),
-      EXHALE, c(1, 6),
-      s("Each exhale deepens your relaxation."),
-      INHALE, c(1, 3),
-      EXHALE, c(1, 6),
-      s("You're doing beautifully."),
+    ],
+    interludes: [
+      "Feel your body relax as you extend the exhale.",
+      "As you exhale, let your shoulders drop and let your jaw relax.",
+      "Each exhale deepens your relaxation.",
+      "You're doing beautifully.",
+      "Sink a little deeper with every breath.",
+    ],
+    outro: [
+      s("Wonderful work."),
       s("When you're ready, take normal breaths and rest in this peaceful state."),
     ],
   },
 ];
 
-// Nine distinct Deeper Session guide-voice scripts, one per stored session, so
-// every session has its own track instead of all nine sharing the same recording.
-const DEEPER_SESSION_GUIDES: ScriptSegment[][] = [
+// Nine distinct Deeper Session guides, one per stored session. Each is built
+// to the session's full stored duration via buildTimedSegments — previously
+// these were fixed ~1-minute scripts that the client looped, so members heard
+// the same welcome speech restart every minute. Cycles include a quiet
+// breathing-space pause so the longer sessions guide continuously without
+// feeling crowded.
+type SessionGuide = Omit<TimedBreathwork, "name" | "description">;
+
+const DEEPER_SESSION_GUIDES: SessionGuide[] = [
   // 1
-  [
-    s("Welcome to this guided breathing meditation."),
-    s("Find a comfortable position, seated or lying down, wherever feels supportive right now."),
-    s("Gently close your eyes, if that feels right, and take a moment to arrive in this space."),
-    INHALE, c(1, 4),
-    HOLD, c(1, 4),
-    EXHALE, c(1, 6),
-    s("Feel your shoulders soften with each exhale."),
-    INHALE, c(1, 4),
-    HOLD, c(1, 4),
-    EXHALE, c(1, 6),
-    s("With each breath, allow yourself to sink a little deeper into calm."),
-    INHALE, c(1, 4),
-    HOLD, c(1, 4),
-    EXHALE, c(1, 6),
-    s("There is nowhere else you need to be, nothing else you need to do, just this breath."),
-    INHALE, c(1, 4),
-    HOLD, c(1, 4),
-    EXHALE, c(1, 6),
-    s("Continue resting in this peaceful rhythm for as long as you'd like."),
-    s("You are safe. You are supported. You are exactly where you need to be."),
-  ],
+  {
+    intro: [
+      s("Welcome to this guided breathing meditation."),
+      s("Find a comfortable position, seated or lying down, wherever feels supportive right now."),
+      s("Gently close your eyes, if that feels right, and take a moment to arrive in this space."),
+      p(4000),
+    ],
+    cycle: [INHALE, c(1, 4), HOLD, c(1, 4), EXHALE, c(1, 6), p(3000)],
+    interludes: [
+      "Feel your shoulders soften with each exhale.",
+      "With each breath, allow yourself to sink a little deeper into calm.",
+      "There is nowhere else you need to be, nothing else you need to do, just this breath.",
+      "Let your thoughts pass like clouds, and come back to the rhythm.",
+    ],
+    outro: [
+      s("Continue resting in this peaceful rhythm for as long as you'd like."),
+      s("You are safe. You are supported. You are exactly where you need to be."),
+    ],
+  },
   // 2
-  [
-    s("Welcome back to your practice."),
-    s("Settle into a position that feels easy for your body, and let your eyes soften or close."),
-    s("We'll begin with a slow breath in through the nose."),
-    INHALE, c(1, 5),
-    EXHALE, c(1, 5),
-    s("Notice the quiet pause between each breath."),
-    INHALE, c(1, 5),
-    EXHALE, c(1, 5),
-    s("Let your jaw unclench, let your hands rest open."),
-    INHALE, c(1, 5),
-    EXHALE, c(1, 5),
-    s("Each breath is an invitation to release a little more."),
-    INHALE, c(1, 5),
-    EXHALE, c(1, 5),
-    s("There's nothing to fix here, only this rhythm, breath after breath."),
-    s("Stay here as long as feels good, returning to this pace whenever your mind wanders."),
-  ],
+  {
+    intro: [
+      s("Welcome back to your practice."),
+      s("Settle into a position that feels easy for your body, and let your eyes soften or close."),
+      s("We'll begin with a slow breath in through the nose."),
+      p(4000),
+    ],
+    cycle: [INHALE, c(1, 5), EXHALE, c(1, 5), p(3000)],
+    interludes: [
+      "Notice the quiet pause between each breath.",
+      "Let your jaw unclench, let your hands rest open.",
+      "Each breath is an invitation to release a little more.",
+      "There's nothing to fix here, only this rhythm, breath after breath.",
+    ],
+    outro: [
+      s("Stay here as long as feels good, returning to this pace whenever your mind wanders."),
+    ],
+  },
   // 3
-  [
-    s("Welcome. Let's spend this time together, slowing down."),
-    s("Find stillness in your body, and let your breath lead the way."),
-    INHALE, c(1, 4),
-    HOLD, c(1, 5),
-    EXHALE, c(1, 7),
-    s("Feel the natural pause after each release."),
-    INHALE, c(1, 4),
-    HOLD, c(1, 5),
-    EXHALE, c(1, 7),
-    s("Let go of anything you've been holding onto today."),
-    INHALE, c(1, 4),
-    HOLD, c(1, 5),
-    EXHALE, c(1, 7),
-    s("Your body already knows how to do this. Just let it happen."),
-    s("Continue at this gentle pace, allowing the quiet to settle in around you."),
-  ],
+  {
+    intro: [
+      s("Welcome. Let's spend this time together, slowing down."),
+      s("Find stillness in your body, and let your breath lead the way."),
+      p(4000),
+    ],
+    cycle: [INHALE, c(1, 4), HOLD, c(1, 5), EXHALE, c(1, 7), p(3000)],
+    interludes: [
+      "Feel the natural pause after each release.",
+      "Let go of anything you've been holding onto today.",
+      "Your body already knows how to do this. Just let it happen.",
+    ],
+    outro: [
+      s("Continue at this gentle pace, allowing the quiet to settle in around you."),
+    ],
+  },
   // 4
-  [
-    s("Welcome to this space of rest."),
-    s("Let your body be heavy, supported by whatever is beneath you."),
-    INHALE, c(1, 4),
-    EXHALE, c(1, 4),
-    s("A simple, even breath, in and out."),
-    INHALE, c(1, 4),
-    EXHALE, c(1, 4),
-    s("With every exhale, let a little more tension melt away."),
-    INHALE, c(1, 4),
-    EXHALE, c(1, 4),
-    s("Nothing to achieve here, only presence."),
-    INHALE, c(1, 4),
-    EXHALE, c(1, 4),
-    s("Let this rhythm carry you, breath by breath, for as long as you need."),
-  ],
+  {
+    intro: [
+      s("Welcome to this space of rest."),
+      s("Let your body be heavy, supported by whatever is beneath you."),
+      p(4000),
+    ],
+    cycle: [INHALE, c(1, 4), EXHALE, c(1, 4), p(3000)],
+    interludes: [
+      "A simple, even breath, in and out.",
+      "With every exhale, let a little more tension melt away.",
+      "Nothing to achieve here, only presence.",
+    ],
+    outro: [
+      s("Let this rhythm carry you, breath by breath, for as long as you need."),
+    ],
+  },
   // 5
-  [
-    s("Welcome. Take a moment to notice how you're feeling right now, without judgment."),
-    s("When you're ready, let's begin to slow the breath together."),
-    INHALE, c(1, 5),
-    HOLD, c(1, 3),
-    EXHALE, c(1, 6),
-    s("Feel your chest and belly rise and fall naturally."),
-    INHALE, c(1, 5),
-    HOLD, c(1, 3),
-    EXHALE, c(1, 6),
-    s("Each cycle brings you further into stillness."),
-    INHALE, c(1, 5),
-    HOLD, c(1, 3),
-    EXHALE, c(1, 6),
-    s("You don't have to do anything else right now. Just breathe."),
-    s("Stay with this rhythm, resting in the calm it creates."),
-  ],
+  {
+    intro: [
+      s("Welcome. Take a moment to notice how you're feeling right now, without judgment."),
+      s("When you're ready, let's begin to slow the breath together."),
+      p(4000),
+    ],
+    cycle: [INHALE, c(1, 5), HOLD, c(1, 3), EXHALE, c(1, 6), p(3000)],
+    interludes: [
+      "Feel your chest and belly rise and fall naturally.",
+      "Each cycle brings you further into stillness.",
+      "You don't have to do anything else right now. Just breathe.",
+    ],
+    outro: [
+      s("Stay with this rhythm, resting in the calm it creates."),
+    ],
+  },
   // 6
-  [
-    s("Welcome to this quiet moment."),
-    s("Let your shoulders drop away from your ears, and soften your face."),
-    INHALE, c(1, 4),
-    EXHALE, c(1, 8),
-    s("Notice how much longer the exhale is. That's intentional. It tells your body it's safe to relax."),
-    INHALE, c(1, 4),
-    EXHALE, c(1, 8),
-    s("Let each breath wash a little more calm through your body."),
-    INHALE, c(1, 4),
-    EXHALE, c(1, 8),
-    s("There's no rush here, only this slow unwinding."),
-    s("Continue breathing this way for as long as feels good."),
-  ],
+  {
+    intro: [
+      s("Welcome to this quiet moment."),
+      s("Let your shoulders drop away from your ears, and soften your face."),
+      p(4000),
+    ],
+    cycle: [INHALE, c(1, 4), EXHALE, c(1, 8), p(3000)],
+    interludes: [
+      "Notice how much longer the exhale is. That's intentional. It tells your body it's safe to relax.",
+      "Let each breath wash a little more calm through your body.",
+      "There's no rush here, only this slow unwinding.",
+    ],
+    outro: [
+      s("Continue breathing this way for as long as feels good."),
+    ],
+  },
   // 7
-  [
-    s("Welcome. Let's take this time to simply be."),
-    s("Find a position where your body feels supported and at ease."),
-    INHALE, c(1, 4),
-    HOLD, c(1, 4),
-    EXHALE, c(1, 4),
-    HOLD, c(1, 4),
-    s("This even, steady rhythm helps settle a busy mind."),
-    INHALE, c(1, 4),
-    HOLD, c(1, 4),
-    EXHALE, c(1, 4),
-    HOLD, c(1, 4),
-    s("Each pause is a small rest within the breath itself."),
-    INHALE, c(1, 4),
-    HOLD, c(1, 4),
-    EXHALE, c(1, 4),
-    HOLD, c(1, 4),
-    s("Continue this gentle square of breath, in your own time."),
-  ],
+  {
+    intro: [
+      s("Welcome. Let's take this time to simply be."),
+      s("Find a position where your body feels supported and at ease."),
+      p(4000),
+    ],
+    cycle: [INHALE, c(1, 4), HOLD, c(1, 4), EXHALE, c(1, 4), HOLD, c(1, 4), p(3000)],
+    interludes: [
+      "This even, steady rhythm helps settle a busy mind.",
+      "Each pause is a small rest within the breath itself.",
+      "Stay easy and unhurried within the square of the breath.",
+    ],
+    outro: [
+      s("Continue this gentle square of breath, in your own time."),
+    ],
+  },
   // 8
-  [
-    s("Welcome to your practice today."),
-    s("Let your attention come fully into your body, right here, right now."),
-    INHALE, c(1, 6),
-    EXHALE, c(1, 6),
-    s("An easy, balanced breath, equal in and equal out."),
-    INHALE, c(1, 6),
-    EXHALE, c(1, 6),
-    s("Let your thoughts drift by like clouds, without needing to follow them."),
-    INHALE, c(1, 6),
-    EXHALE, c(1, 6),
-    s("Simply return to the breath, again and again."),
-    s("Rest here in this steady, peaceful rhythm."),
-  ],
+  {
+    intro: [
+      s("Welcome to your practice today."),
+      s("Let your attention come fully into your body, right here, right now."),
+      p(4000),
+    ],
+    cycle: [INHALE, c(1, 6), EXHALE, c(1, 6), p(3000)],
+    interludes: [
+      "An easy, balanced breath, equal in and equal out.",
+      "Let your thoughts drift by like clouds, without needing to follow them.",
+      "Simply return to the breath, again and again.",
+    ],
+    outro: [
+      s("Rest here in this steady, peaceful rhythm."),
+    ],
+  },
   // 9
-  [
-    s("Welcome. This is your time to slow down completely."),
-    s("Let your whole body soften into stillness."),
-    INHALE, c(1, 4),
-    HOLD, c(1, 6),
-    EXHALE, c(1, 8),
-    s("Feel the calm that builds with every cycle."),
-    INHALE, c(1, 4),
-    HOLD, c(1, 6),
-    EXHALE, c(1, 8),
-    s("There's nowhere to be but here."),
-    INHALE, c(1, 4),
-    HOLD, c(1, 6),
-    EXHALE, c(1, 8),
-    s("Let this rhythm hold you, breath after breath, for as long as you'd like."),
-  ],
+  {
+    intro: [
+      s("Welcome. This is your time to slow down completely."),
+      s("Let your whole body soften into stillness."),
+      p(4000),
+    ],
+    cycle: [INHALE, c(1, 4), HOLD, c(1, 6), EXHALE, c(1, 8), p(3000)],
+    interludes: [
+      "Feel the calm that builds with every cycle.",
+      "There's nowhere to be but here.",
+      "Let the breath hold you, cycle after cycle.",
+    ],
+    outro: [
+      s("Let this rhythm hold you, breath after breath, for as long as you'd like."),
+    ],
+  },
 ];
 
 const BACKGROUND_SOUNDS = [
@@ -399,7 +460,7 @@ router.get("/today", async (req, res) => {
     res.json({
       title: todayBreathwork.name,
       description: todayBreathwork.description,
-      script: segmentsToDisplayText(todayBreathwork.segments),
+      script: segmentsToDisplayText([...todayBreathwork.intro, ...todayBreathwork.cycle, ...todayBreathwork.outro]),
       duration: 5,
       backgroundSound: bgSound.name,
       backgroundSoundUrl: bgSound.url,
@@ -423,7 +484,7 @@ async function generateDailyTTS(): Promise<Buffer> {
   const todayBreathwork = BREATHWORK_TYPES[breathworkIndex];
 
   console.log(`[BREATHWORK] Building TTS for ${todayBreathwork.name}...`);
-  const buffer = await buildScriptAudio(todayBreathwork.segments);
+  const buffer = await buildScriptAudio(buildTimedSegments(todayBreathwork, DAILY_TARGET_SECONDS));
   ttsCache.set(cacheKey, buffer);
   console.log(`[BREATHWORK] Built ${buffer.length} bytes of TTS audio`);
   return buffer;
@@ -456,16 +517,24 @@ router.get("/audio/daily", async (req, res): Promise<any> => {
   }
 });
 
-// Generate (and cache) the guide-voice track for a specific Deeper Session
-const sessionGuideCache = new Map<number, Buffer>();
+// Generate (and cache) the guide-voice track for a specific Deeper Session,
+// built out to the session's full stored duration so the client never needs
+// to loop the voice track.
+const sessionGuideCache = new Map<string, Buffer>();
 
-async function generateSessionGuideTTS(guideIndex: number): Promise<Buffer> {
-  if (sessionGuideCache.has(guideIndex)) return sessionGuideCache.get(guideIndex)!;
+async function generateSessionGuideTTS(guideIndex: number, durationMinutes: number): Promise<Buffer> {
+  const cacheKey = `${guideIndex}-${durationMinutes}`;
+  if (sessionGuideCache.has(cacheKey)) return sessionGuideCache.get(cacheKey)!;
 
-  console.log(`[BREATHWORK] Building Deeper Session guide voice #${guideIndex}...`);
-  const buffer = await buildScriptAudio(DEEPER_SESSION_GUIDES[guideIndex]);
-  sessionGuideCache.set(guideIndex, buffer);
-  console.log(`[BREATHWORK] Built ${buffer.length} bytes for guide #${guideIndex}`);
+  console.log(`[BREATHWORK] Building Deeper Session guide voice #${guideIndex} (${durationMinutes} min)...`);
+  const guide = DEEPER_SESSION_GUIDES[guideIndex];
+  const segments = buildTimedSegments(
+    { name: "", description: "", ...guide },
+    durationMinutes * 60
+  );
+  const buffer = await buildScriptAudio(segments);
+  sessionGuideCache.set(cacheKey, buffer);
+  console.log(`[BREATHWORK] Built ${buffer.length} bytes for guide #${guideIndex} (${durationMinutes} min)`);
   return buffer;
 }
 
@@ -478,7 +547,14 @@ router.get("/audio/session-guide/:id", async (req, res): Promise<any> => {
     }
     const sessionId = parseInt(req.params.id, 10) || 0;
     const guideIndex = sessionId % DEEPER_SESSION_GUIDES.length;
-    const audioBuffer = await generateSessionGuideTTS(guideIndex);
+
+    const { rows } = await pool.query(
+      "SELECT duration_minutes FROM guided_breathwork WHERE id = $1",
+      [sessionId]
+    );
+    const durationMinutes = Math.min(Math.max(Number(rows[0]?.duration_minutes) || 10, 5), 30);
+
+    const audioBuffer = await generateSessionGuideTTS(guideIndex, durationMinutes);
     res.setHeader("Content-Type", "audio/mpeg");
     res.setHeader("Cache-Control", "public, max-age=86400");
     res.send(audioBuffer);
