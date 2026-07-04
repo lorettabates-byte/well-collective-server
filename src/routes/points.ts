@@ -6,13 +6,20 @@ import { isUsdaConfigured, computeNutritionFromIngredients } from "../usda";
 
 const router = Router();
 
+// Milestone bonuses shown in the streak modal — kept as a single source of
+// truth so the popup and the actual point award never drift apart.
+export const STREAK_MILESTONES = [
+  { days: 2, bonus: 10 },
+  { days: 7, bonus: 20 },
+  { days: 14, bonus: 40 },
+  { days: 30, bonus: 80 },
+] as const;
+
 function streakBonusPoints(streak: number): number {
-  if (streak >= 30) return 100;
-  if (streak >= 14) return 50;
-  if (streak >= 7) return 25;
-  if (streak >= 4) return 10;
-  if (streak >= 2) return 5;
-  return 0;
+  // Only awarded on the exact day a milestone is hit, not every day after —
+  // a member logging in on day 8 shouldn't re-earn the day-7 bonus.
+  const hit = STREAK_MILESTONES.find((m) => m.days === streak);
+  return hit ? hit.bonus : 0;
 }
 
 async function updateLoginStreak(
@@ -631,18 +638,66 @@ router.get("/streak", async (req, res) => {
     if (rows.length === 0) return res.json({ streak: null });
 
     const n = rows[0].current_streak;
-    const bonus = n >= 30 ? 100 : n >= 14 ? 50 : n >= 7 ? 25 : n >= 4 ? 10 : n >= 2 ? 5 : 0;
     res.json({
       streak: {
         current_streak: n,
         longest_streak: rows[0].longest_streak,
         last_login_date: String(rows[0].last_login_date).slice(0, 10),
-        todays_bonus: bonus,
+        todays_bonus: streakBonusPoints(n),
       },
     });
   } catch (err) {
     console.error("Streak fetch error:", err);
     res.status(500).json({ error: "Failed to fetch streak" });
+  }
+});
+
+// Login streak detail for the Home page streak popup: current/longest streak,
+// which of the last 7 calendar days (member-facing timezone) had a login, and
+// progress toward the next milestone bonus.
+router.get("/streak/history", async (req, res) => {
+  const { email } = req.query as { email?: string };
+  if (!email) return res.status(400).json({ error: "email required" });
+
+  try {
+    const lower = email.toLowerCase();
+    const { rows: streakRows } = await pool.query(
+      `SELECT current_streak, longest_streak, last_login_date::text FROM login_streaks WHERE member_email = $1`,
+      [lower]
+    );
+
+    const todayStr = todayInTimezone();
+    const last7Dates = Array.from({ length: 7 }, (_, i) => addDays(todayStr, i - 6));
+
+    const { rows: loginRows } = await pool.query(
+      `SELECT DISTINCT (created_at AT TIME ZONE 'America/New_York')::date::text AS day
+       FROM activity_logs
+       WHERE member_email = $1 AND activity_type = 'app_open'
+         AND created_at >= now() - interval '7 days'`,
+      [lower]
+    );
+    const loggedInDays = new Set(loginRows.map((r) => r.day));
+
+    const history = last7Dates.map((date) => ({ date, loggedIn: loggedInDays.has(date) }));
+
+    const currentStreak = streakRows.length > 0 ? streakRows[0].current_streak : 0;
+    const longestStreak = streakRows.length > 0 ? streakRows[0].longest_streak : 0;
+
+    const milestones = STREAK_MILESTONES.map((m) => ({ ...m, reached: currentStreak >= m.days }));
+    const nextMilestone = STREAK_MILESTONES.find((m) => m.days > currentStreak) ?? null;
+
+    res.json({
+      currentStreak,
+      longestStreak,
+      history,
+      milestones,
+      nextMilestone: nextMilestone
+        ? { days: nextMilestone.days, bonus: nextMilestone.bonus, daysRemaining: nextMilestone.days - currentStreak }
+        : null,
+    });
+  } catch (err) {
+    console.error("Streak history fetch error:", err);
+    res.status(500).json({ error: "Failed to fetch streak history" });
   }
 });
 
