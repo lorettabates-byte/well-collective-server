@@ -686,6 +686,23 @@ export async function initDb(): Promise<void> {
     );
   `);
 
+  // Saved meals for quick reuse in nutrition tracking
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS saved_meals (
+      id SERIAL PRIMARY KEY,
+      member_email TEXT NOT NULL REFERENCES members(email) ON DELETE CASCADE,
+      name TEXT NOT NULL,
+      meal_type TEXT NOT NULL,
+      estimated_calories INT,
+      estimated_protein_g NUMERIC,
+      estimated_carbs_g NUMERIC,
+      estimated_fat_g NUMERIC,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      UNIQUE(member_email, name, meal_type)
+    );
+  `);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_saved_meals_email ON saved_meals (member_email);`);
+
   // ── COUPON SEEDS ──────────────────────────────────────────────────────────
   // 50 WELL Escape access coupons (free admission, single-use)
   for (let i = 1; i <= 50; i++) {
