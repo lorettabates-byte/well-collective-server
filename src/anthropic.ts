@@ -330,6 +330,34 @@ Respond with ONLY a JSON object, no other text, in this exact shape:
   return parsed;
 }
 
+export interface GeneratedSimpleRecipe {
+  name: string;
+  description: string;
+  ingredients: string[];
+  steps: string[];
+}
+
+// Used by the admin "suggest a food type" recipe generator — a simpler,
+// on-demand counterpart to generateRecipe() above (which is for the
+// automated daily schedule and needs the fuller imageCategory/nutrition
+// shape). This just needs name/description/ingredients/steps to populate
+// the admin form fields.
+export async function generateRecipeFromSuggestion(suggestion: string): Promise<GeneratedSimpleRecipe> {
+  const prompt = `Generate a healthy, realistic recipe for the WELL Collective wellness community based on this suggestion: "${suggestion}".
+
+Keep it realistic for a home cook: 5-8 ingredients, 4-6 short steps.
+
+Respond with ONLY a JSON object, no other text, in this exact shape:
+{"name": "recipe name", "description": "1-2 short sentences", "ingredients": ["...", "..."], "steps": ["...", "..."]}`;
+
+  const text = await callClaude(prompt, 800);
+  const parsed = extractJson(text) as GeneratedSimpleRecipe;
+  if (!parsed.name || !Array.isArray(parsed.ingredients) || !Array.isArray(parsed.steps)) {
+    throw new Error("AI recipe response missing required fields");
+  }
+  return parsed;
+}
+
 export async function generateNutritionTip(): Promise<string> {
   const prompt = `Write one short, practical nutrition tip of the day (1-2 sentences, under 200 characters) for the WELL Collective women's wellness community. Make it specific and actionable, not generic.
 
