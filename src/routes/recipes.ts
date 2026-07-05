@@ -213,4 +213,44 @@ router.delete("/meal-plan/:id", async (req, res) => {
   }
 });
 
+// Generate a recipe suggestion based on a food type
+router.post("/recipes/generate", async (req, res) => {
+  const { suggestion } = req.body as { suggestion?: string };
+  if (!suggestion?.trim()) {
+    return res.status(400).json({ error: "suggestion required" });
+  }
+
+  try {
+    const Anthropic = require("@anthropic-ai/sdk");
+    const client = new Anthropic.default();
+
+    const message = await client.messages.create({
+      model: "claude-opus-4-1",
+      max_tokens: 1024,
+      messages: [
+        {
+          role: "user",
+          content: `Generate a healthy recipe for: ${suggestion.trim()}\n\nRespond with ONLY valid JSON (no markdown, no code blocks) in this exact format:\n{\n  "name": "Recipe name",\n  "description": "Short description",\n  "ingredients": ["ingredient 1", "ingredient 2", ...],\n  "steps": ["step 1", "step 2", ...]\n}`,
+        },
+      ],
+    });
+
+    const content = message.content[0];
+    if (content.type !== "text") {
+      return res.status(500).json({ error: "Unexpected response format" });
+    }
+
+    const recipe = JSON.parse(content.text);
+    res.json({
+      name: recipe.name || "",
+      description: recipe.description || "",
+      ingredients: Array.isArray(recipe.ingredients) ? recipe.ingredients : [],
+      steps: Array.isArray(recipe.steps) ? recipe.steps : [],
+    });
+  } catch (err) {
+    console.error("Generate recipe error:", err);
+    res.status(500).json({ error: "Failed to generate recipe" });
+  }
+});
+
 export default router;
