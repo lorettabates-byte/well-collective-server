@@ -344,35 +344,27 @@ export interface GeneratedSimpleRecipe {
 // shape). This just needs name/description/ingredients/steps to populate
 // the admin form fields.
 export async function generateRecipeFromSuggestion(suggestion: string): Promise<GeneratedSimpleRecipe> {
-  const categories = VALID_IMAGE_CATEGORIES.join('", "');
   const prompt = `Generate a healthy, realistic recipe for the WELL Collective wellness community based on this suggestion: "${suggestion}".
 
 Keep it realistic for a home cook: 5-8 ingredients, 4-6 short steps.
 
-Choose ONE imageCategory from: "${categories}"
+Also provide a working Unsplash image URL that matches this recipe. Use format: https://images.unsplash.com/photo-<id>?w=500&h=300&fit=crop or a direct search-based Unsplash URL.
 
 Respond with ONLY a JSON object, no other text, in this exact shape:
-{"name": "recipe name", "description": "1-2 short sentences", "ingredients": ["...", "..."], "steps": ["...", "..."], "imageCategory": "category_name"}`;
+{"name": "recipe name", "description": "1-2 short sentences", "ingredients": ["...", "..."], "steps": ["...", "..."], "image": "https://..."}`;
 
-  const text = await callClaude(prompt, 800);
-  const parsed = extractJson(text) as GeneratedSimpleRecipe & { imageCategory?: string };
+  const text = await callClaude(prompt, 1000);
+  const parsed = extractJson(text) as GeneratedSimpleRecipe;
   if (!parsed.name || !Array.isArray(parsed.ingredients) || !Array.isArray(parsed.steps)) {
     throw new Error("AI recipe response missing required fields");
   }
 
-  // Validate and set imageCategory
-  let imageCategory = parsed.imageCategory || "general_healthy";
-  if (!VALID_IMAGE_CATEGORIES.includes(imageCategory)) {
-    imageCategory = "general_healthy";
+  // If Claude didn't provide a valid image URL, use a fallback
+  if (!parsed.image || !parsed.image.startsWith("http")) {
+    parsed.image = `https://images.unsplash.com/photo-1495521821757-a1efb6729352?w=500&h=300&fit=crop`;
   }
 
-  // Generate Unsplash image URL based on category using source.unsplash.com redirect service
-  const imageUrl = `https://source.unsplash.com/500x300/?${encodeURIComponent(imageCategory)}`;
-
-  return {
-    ...parsed,
-    image: imageUrl,
-  };
+  return parsed;
 }
 
 export async function generateNutritionTip(): Promise<string> {
