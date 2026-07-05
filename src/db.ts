@@ -322,6 +322,7 @@ export async function initDb(): Promise<void> {
   await pool.query(`ALTER TABLE members ADD COLUMN IF NOT EXISTS weight_kg NUMERIC;`);
   await pool.query(`ALTER TABLE members ADD COLUMN IF NOT EXISTS age INT;`);
   await pool.query(`ALTER TABLE members ADD COLUMN IF NOT EXISTS gender TEXT;`);
+  await pool.query(`ALTER TABLE members ADD COLUMN IF NOT EXISTS health_sync_enabled BOOLEAN NOT NULL DEFAULT FALSE;`);
 
   await pool.query(`
     CREATE TABLE IF NOT EXISTS app_settings (
