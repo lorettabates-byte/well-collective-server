@@ -343,19 +343,35 @@ export interface GeneratedSimpleRecipe {
 // shape). This just needs name/description/ingredients/steps to populate
 // the admin form fields.
 export async function generateRecipeFromSuggestion(suggestion: string): Promise<GeneratedSimpleRecipe> {
+  const categories = VALID_IMAGE_CATEGORIES.join('", "');
   const prompt = `Generate a healthy, realistic recipe for the WELL Collective wellness community based on this suggestion: "${suggestion}".
 
 Keep it realistic for a home cook: 5-8 ingredients, 4-6 short steps.
 
+Choose ONE imageCategory from: "${categories}"
+
 Respond with ONLY a JSON object, no other text, in this exact shape:
-{"name": "recipe name", "description": "1-2 short sentences", "ingredients": ["...", "..."], "steps": ["...", "..."]}`;
+{"name": "recipe name", "description": "1-2 short sentences", "ingredients": ["...", "..."], "steps": ["...", "..."], "imageCategory": "category_name"}`;
 
   const text = await callClaude(prompt, 800);
-  const parsed = extractJson(text) as GeneratedSimpleRecipe;
+  const parsed = extractJson(text) as GeneratedSimpleRecipe & { imageCategory?: string };
   if (!parsed.name || !Array.isArray(parsed.ingredients) || !Array.isArray(parsed.steps)) {
     throw new Error("AI recipe response missing required fields");
   }
-  return parsed;
+
+  // Validate and set imageCategory
+  let imageCategory = parsed.imageCategory || "general_healthy";
+  if (!VALID_IMAGE_CATEGORIES.includes(imageCategory)) {
+    imageCategory = "general_healthy";
+  }
+
+  // Generate Unsplash image URL based on category
+  const imageUrl = `https://images.unsplash.com/random?query=${encodeURIComponent(imageCategory)}&w=500&h=300&fit=crop`;
+
+  return {
+    ...parsed,
+    image: imageUrl,
+  };
 }
 
 export async function generateNutritionTip(): Promise<string> {
