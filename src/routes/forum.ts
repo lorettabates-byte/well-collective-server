@@ -1,8 +1,9 @@
 import { Router } from "express";
 import { pool } from "../db";
 import { requireAdmin } from "../middleware/adminAuth";
-import { broadcastNotification } from "../push";
+import { broadcastNotification, sendNotificationToUser } from "../push";
 import { awardPoints } from "./points";
+import { extractMentions } from "../utils/mentions";
 
 const router = Router();
 
@@ -220,6 +221,42 @@ router.post("/threads/:threadId/messages", async (req, res) => {
       tag: "community",
       url: deepLinkUrl,
     }).catch((err) => console.error("Failed to send community notification:", err));
+
+    // Handle @mentions — extract usernames and send notifications to mentioned users
+    if (text) {
+      const mentionedUsernames = extractMentions(text);
+      if (mentionedUsernames.length > 0) {
+        try {
+          // Get user emails for mentioned usernames
+          const { rows: mentionedUsers } = await pool.query(
+            `SELECT id, email FROM members WHERE name = ANY($1::text[])`,
+            [mentionedUsernames]
+          );
+
+          for (const mentionedUser of mentionedUsers) {
+            if (mentionedUser.email === authorEmail) continue; // Don't notify self
+
+            // Check if user has mention notifications enabled
+            const { rows: settingsRows } = await pool.query(
+              `SELECT mentions FROM notification_settings WHERE member_email = $1`,
+              [mentionedUser.email]
+            );
+
+            const mentionsEnabled = settingsRows.length === 0 || settingsRows[0].mentions !== false;
+            if (mentionsEnabled) {
+              sendNotificationToUser(mentionedUser.email, {
+                title: `${authorName} mentioned you`,
+                body: `in "${threadTitle}" — ${text.substring(0, 80)}`,
+                tag: "mention",
+                url: deepLinkUrl,
+              }).catch((err) => console.error("Failed to send mention notification:", err));
+            }
+          }
+        } catch (err) {
+          console.error("Failed to process mentions:", err);
+        }
+      }
+    }
 
     if (authorEmail) {
       awardPoints(authorEmail.toLowerCase(), "forum_comment", { threadId: req.params.threadId })
