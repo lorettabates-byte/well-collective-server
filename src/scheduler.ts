@@ -311,6 +311,38 @@ async function sendDailyInspiration(): Promise<void> {
   await markSent(date, "dailyInspiration");
 }
 
+async function sendMotivationBoost(): Promise<void> {
+  const date = todayInTimezone();
+  console.log(`[SCHEDULER] Motivation boost check for ${date}`);
+
+  if (await alreadySent(date, "motivationBoost")) {
+    console.log(`[SCHEDULER] Motivation boost already sent for ${date}`);
+    return;
+  }
+
+  const { rows } = await pool.query(
+    "SELECT motivation_boost FROM content_schedule WHERE date = $1",
+    [date]
+  );
+  const row = rows[0] as { motivation_boost?: { title?: string; body?: string } } | undefined;
+  const boost = row?.motivation_boost;
+
+  if (!boost?.title || !boost?.body) {
+    console.log(`[SCHEDULER] No motivation boost found in content_schedule for ${date}`);
+    return;
+  }
+
+  console.log(`[SCHEDULER] Sending motivation boost: "${boost.title}"`);
+  const result = await broadcastNotification({
+    title: boost.title,
+    body: boost.body,
+    tag: "motivation-boost",
+    url: "/inspirations",
+  });
+  console.log(`[SCHEDULER] Motivation boost result:`, result);
+  await markSent(date, "motivationBoost");
+}
+
 async function sendLivestreamReminder(): Promise<void> {
   const date = todayInTimezone();
   if (await alreadySent(date, "livestreamReminder")) return;
@@ -660,6 +692,11 @@ export function startScheduler(): void {
   // Daily inspiration: every day at 7:00am
   cron.schedule("0 7 * * *", () => {
     sendDailyInspiration().catch((err) => console.error("Daily inspiration send failed:", err));
+  }, { timezone: TIMEZONE });
+
+  // Motivation boost: every day at 3:00pm (15:00)
+  cron.schedule("0 15 * * *", () => {
+    sendMotivationBoost().catch((err) => console.error("Motivation boost send failed:", err));
   }, { timezone: TIMEZONE });
 
   // Livestream reminder: every Tuesday at 8:00am (1 hour before 9am livestream)
