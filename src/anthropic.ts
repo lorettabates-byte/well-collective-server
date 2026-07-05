@@ -366,8 +366,8 @@ Respond with ONLY a JSON object, no other text, in this exact shape:
     imageCategory = "general_healthy";
   }
 
-  // Generate Unsplash image URL based on category
-  const imageUrl = `https://images.unsplash.com/random?query=${encodeURIComponent(imageCategory)}&w=500&h=300&fit=crop`;
+  // Generate Unsplash image URL based on category using source.unsplash.com redirect service
+  const imageUrl = `https://source.unsplash.com/500x300/?${encodeURIComponent(imageCategory)}`;
 
   return {
     ...parsed,
