@@ -220,6 +220,28 @@ export async function initDb(): Promise<void> {
     await pool.query(`INSERT INTO seed_migrations (id) VALUES ($1)`, [seedSongCategoriesId]);
   }
 
+  // Seed trending posts (pin first 2 threads as trending) — only runs once.
+  // If no threads exist yet or they're all unpinned, this seeding won't find
+  // any to pin; that's fine — admins can manually pin threads later.
+  const seedTrendingPostsId = "seed_trending_posts_v1";
+  const { rows: trendingCheck } = await pool.query(`SELECT id FROM seed_migrations WHERE id = $1`, [seedTrendingPostsId]);
+
+  if (trendingCheck.length === 0) {
+    // Get first 2 threads by creation date to pin as trending
+    const { rows: threadsToPinRows } = await pool.query(
+      `SELECT id FROM forum_threads ORDER BY created_at ASC LIMIT 2`
+    );
+
+    for (const thread of threadsToPinRows) {
+      await pool.query(
+        `UPDATE forum_threads SET pinned_at = now() WHERE id = $1`,
+        [thread.id]
+      );
+    }
+
+    await pool.query(`INSERT INTO seed_migrations (id) VALUES ($1)`, [seedTrendingPostsId]);
+  }
+
   await pool.query(`
     CREATE TABLE IF NOT EXISTS forum_categories (
       id TEXT PRIMARY KEY,
