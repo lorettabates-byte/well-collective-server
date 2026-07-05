@@ -91,6 +91,9 @@ export async function initDb(): Promise<void> {
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_recipient ON messages (recipient_id);`);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_conversation ON messages (sender_id, recipient_id);`);
 
+  // Add likes column for private message reactions (array of user IDs who liked)
+  await pool.query(`ALTER TABLE messages ADD COLUMN IF NOT EXISTS likes TEXT[] DEFAULT '{}'::TEXT[];`);
+
   await pool.query(`
     CREATE TABLE IF NOT EXISTS songs (
       id SERIAL PRIMARY KEY,

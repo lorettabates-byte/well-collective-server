@@ -221,4 +221,29 @@ router.put("/:messageId", async (req, res) => {
   }
 });
 
+// Toggle like on a message (add/remove liker's ID from likes array)
+router.post("/:messageId/like", async (req, res) => {
+  const { userId } = req.body as { userId?: string };
+  if (!userId) {
+    return res.status(400).json({ error: "userId required" });
+  }
+
+  try {
+    const { rows } = await pool.query("SELECT likes FROM messages WHERE id = $1", [req.params.messageId]);
+    if (rows.length === 0) return res.status(404).json({ error: "Message not found" });
+
+    const currentLikes = rows[0].likes || [];
+    const isLiked = currentLikes.includes(userId);
+    const updatedLikes = isLiked
+      ? currentLikes.filter((id: string) => id !== userId)
+      : [...currentLikes, userId];
+
+    await pool.query("UPDATE messages SET likes = $1 WHERE id = $2", [updatedLikes, req.params.messageId]);
+    res.json({ liked: !isLiked });
+  } catch (err) {
+    console.error("Like message error:", err);
+    res.status(500).json({ error: "Failed to toggle like" });
+  }
+});
+
 export default router;
