@@ -335,6 +335,7 @@ export interface GeneratedSimpleRecipe {
   description: string;
   ingredients: string[];
   steps: string[];
+  image?: string;
 }
 
 // Used by the admin "suggest a food type" recipe generator — a simpler,
