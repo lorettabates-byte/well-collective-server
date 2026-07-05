@@ -130,6 +130,15 @@ export async function initDb(): Promise<void> {
     );
   `);
 
+  // Track which seeds have been run — prevents seeded categories from being
+  // re-created after deletion. When a seed is run, we record it here.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS seed_migrations (
+      id TEXT PRIMARY KEY,
+      run_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    );
+  `);
+
   // One-time rename: this category started out as "Royalty & Divine
   // Feminine" — Loretta asked to align it with her "Made Magnificent"
   // seminar instead. Existing song_category_links keep working since they
@@ -137,68 +146,78 @@ export async function initDb(): Promise<void> {
   // matches if the old name is still there.
   await pool.query(`UPDATE song_categories SET name = 'MADE MAGNIFICENT' WHERE name = 'Royalty & Divine Feminine'`);
 
-  // Seeded once — admin can rename/delete/add more from the Music admin
-  // page afterward, this just gives every song a starting home so the
-  // playlist isn't uncategorized on day one.
-  const SEED_CATEGORIES = [
-    "Self-Worth & Affirmation",
-    "Body Positivity & Self-Acceptance",
-    "Resilience & Strength",
-    "New Beginnings & Courage",
-    "Healing & Wellness",
-    "Ambition & Success",
-    "Sisterhood & Community",
-    "MADE MAGNIFICENT",
-    "MADE TO BE DIFFERENT",
-  ];
-  for (let i = 0; i < SEED_CATEGORIES.length; i++) {
-    await pool.query(
-      `INSERT INTO song_categories (name, sort_order) VALUES ($1, $2) ON CONFLICT (name) DO NOTHING`,
-      [SEED_CATEGORIES[i], i]
-    );
-  }
+  // Seed categories only once. After this seed runs, admins can freely
+  // add/rename/delete categories without them being re-created on deploy.
+  const seedCategoriesId = "seed_song_categories_v1";
+  const { rows: seedCheck } = await pool.query(`SELECT id FROM seed_migrations WHERE id = $1`, [seedCategoriesId]);
 
-  // One-time backfill assigning each of the original 24 songs to a starting
-  // category, keyed by song id (not title, since titles can have stray
-  // whitespace/punctuation that's risky to match exactly). ON CONFLICT DO
-  // NOTHING makes this safe to run on every deploy.
-  const SONG_CATEGORY_SEED: Record<number, string[]> = {
-    1: ["New Beginnings & Courage"],
-    2: ["New Beginnings & Courage"],
-    3: ["Healing & Wellness"],
-    4: ["Self-Worth & Affirmation", "MADE MAGNIFICENT"],
-    5: ["Self-Worth & Affirmation", "MADE MAGNIFICENT"],
-    6: ["Healing & Wellness"],
-    7: ["Ambition & Success"],
-    8: ["Body Positivity & Self-Acceptance", "MADE TO BE DIFFERENT"],
-    9: ["Resilience & Strength", "New Beginnings & Courage", "MADE MAGNIFICENT"],
-    10: ["Resilience & Strength"],
-    11: ["New Beginnings & Courage"],
-    12: ["Sisterhood & Community"],
-    13: ["MADE MAGNIFICENT"],
-    14: ["MADE MAGNIFICENT"],
-    16: ["Body Positivity & Self-Acceptance", "MADE TO BE DIFFERENT"],
-    18: ["Healing & Wellness"],
-    19: ["Resilience & Strength"],
-    20: ["New Beginnings & Courage"],
-    21: ["Ambition & Success", "MADE MAGNIFICENT"],
-    22: ["MADE MAGNIFICENT"],
-    23: ["MADE MAGNIFICENT", "Body Positivity & Self-Acceptance", "MADE TO BE DIFFERENT"],
-    24: ["Ambition & Success"],
-    25: ["Self-Worth & Affirmation", "MADE TO BE DIFFERENT"],
-    26: ["Resilience & Strength", "MADE MAGNIFICENT"],
-  };
-  const { rows: categoryRows } = await pool.query(`SELECT id, name FROM song_categories`);
-  const categoryIdByName = new Map(categoryRows.map((r) => [r.name, r.id]));
-  for (const [songId, categoryNames] of Object.entries(SONG_CATEGORY_SEED)) {
-    for (const name of categoryNames) {
-      const categoryId = categoryIdByName.get(name);
-      if (!categoryId) continue;
+  if (seedCheck.length === 0) {
+    const SEED_CATEGORIES = [
+      "Self-Worth & Affirmation",
+      "Body Positivity & Self-Acceptance",
+      "Resilience & Strength",
+      "New Beginnings & Courage",
+      "Healing & Wellness",
+      "Ambition & Success",
+      "Sisterhood & Community",
+      "MADE MAGNIFICENT",
+      "MADE TO BE DIFFERENT",
+    ];
+    for (let i = 0; i < SEED_CATEGORIES.length; i++) {
       await pool.query(
-        `INSERT INTO song_category_links (song_id, category_id) VALUES ($1, $2) ON CONFLICT DO NOTHING`,
-        [Number(songId), categoryId]
+        `INSERT INTO song_categories (name, sort_order) VALUES ($1, $2) ON CONFLICT (name) DO NOTHING`,
+        [SEED_CATEGORIES[i], i]
       );
     }
+    await pool.query(`INSERT INTO seed_migrations (id) VALUES ($1)`, [seedCategoriesId]);
+  }
+
+  // One-time backfill assigning each of the original 24 songs to starting
+  // categories, keyed by song id (not title). Only run once to prevent
+  // re-linking songs after categories or links are deleted.
+  const seedSongCategoriesId = "seed_song_category_links_v1";
+  const { rows: seedSongCheck } = await pool.query(`SELECT id FROM seed_migrations WHERE id = $1`, [seedSongCategoriesId]);
+
+  if (seedSongCheck.length === 0) {
+    const SONG_CATEGORY_SEED: Record<number, string[]> = {
+      1: ["New Beginnings & Courage"],
+      2: ["New Beginnings & Courage"],
+      3: ["Healing & Wellness"],
+      4: ["Self-Worth & Affirmation", "MADE MAGNIFICENT"],
+      5: ["Self-Worth & Affirmation", "MADE MAGNIFICENT"],
+      6: ["Healing & Wellness"],
+      7: ["Ambition & Success"],
+      8: ["Body Positivity & Self-Acceptance", "MADE TO BE DIFFERENT"],
+      9: ["Resilience & Strength", "New Beginnings & Courage", "MADE MAGNIFICENT"],
+      10: ["Resilience & Strength"],
+      11: ["New Beginnings & Courage"],
+      12: ["Sisterhood & Community"],
+      13: ["MADE MAGNIFICENT"],
+      14: ["MADE MAGNIFICENT"],
+      16: ["Body Positivity & Self-Acceptance", "MADE TO BE DIFFERENT"],
+      18: ["Healing & Wellness"],
+      19: ["Resilience & Strength"],
+      20: ["New Beginnings & Courage"],
+      21: ["Ambition & Success", "MADE MAGNIFICENT"],
+      22: ["MADE MAGNIFICENT"],
+      23: ["MADE MAGNIFICENT", "Body Positivity & Self-Acceptance", "MADE TO BE DIFFERENT"],
+      24: ["Ambition & Success"],
+      25: ["Self-Worth & Affirmation", "MADE TO BE DIFFERENT"],
+      26: ["Resilience & Strength", "MADE MAGNIFICENT"],
+    };
+    const { rows: categoryRows } = await pool.query(`SELECT id, name FROM song_categories`);
+    const categoryIdByName = new Map(categoryRows.map((r) => [r.name, r.id]));
+    for (const [songId, categoryNames] of Object.entries(SONG_CATEGORY_SEED)) {
+      for (const name of categoryNames) {
+        const categoryId = categoryIdByName.get(name);
+        if (!categoryId) continue;
+        await pool.query(
+          `INSERT INTO song_category_links (song_id, category_id) VALUES ($1, $2) ON CONFLICT DO NOTHING`,
+          [Number(songId), categoryId]
+        );
+      }
+    }
+    await pool.query(`INSERT INTO seed_migrations (id) VALUES ($1)`, [seedSongCategoriesId]);
   }
 
   await pool.query(`
