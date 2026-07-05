@@ -25,38 +25,10 @@ async function findEmailByMemberId(memberId: string): Promise<string | null> {
   return null;
 }
 
-// Get conversation with a user
-router.get("/:userId", async (req, res) => {
-  const { userId } = req.params;
-  const currentUserId = req.query.currentUserId as string;
-
-  if (!currentUserId) {
-    return res.status(400).json({ error: "currentUserId required" });
-  }
-
-  try {
-    const { rows } = await pool.query(
-      `SELECT id, sender_id, recipient_id, body, read, created_at, edited_at
-       FROM messages
-       WHERE (sender_id = $1 AND recipient_id = $2) OR (sender_id = $2 AND recipient_id = $1)
-       ORDER BY created_at ASC`,
-      [currentUserId, userId]
-    );
-
-    // Mark messages as read
-    await pool.query(
-      `UPDATE messages SET read = true WHERE recipient_id = $1 AND sender_id = $2`,
-      [currentUserId, userId]
-    );
-
-    res.json({ messages: rows });
-  } catch (err) {
-    console.error("Fetch messages error:", err);
-    res.status(500).json({ error: "Failed to fetch messages" });
-  }
-});
-
 // Get unread message count by email
+// NOTE: this and the other literal-path routes below must stay ahead of the
+// "/:userId" wildcard route — otherwise Express matches "/unread-count" as
+// userId="unread-count" and the badge fetch always 400s.
 router.get("/unread-count", async (req, res) => {
   const email = req.query.email as string;
 
@@ -147,6 +119,37 @@ router.get("/", async (req, res) => {
   } catch (err) {
     console.error("Fetch inbox error:", err);
     res.status(500).json({ error: "Failed to fetch inbox" });
+  }
+});
+
+// Get conversation with a user
+router.get("/:userId", async (req, res) => {
+  const { userId } = req.params;
+  const currentUserId = req.query.currentUserId as string;
+
+  if (!currentUserId) {
+    return res.status(400).json({ error: "currentUserId required" });
+  }
+
+  try {
+    const { rows } = await pool.query(
+      `SELECT id, sender_id, recipient_id, body, read, created_at, edited_at
+       FROM messages
+       WHERE (sender_id = $1 AND recipient_id = $2) OR (sender_id = $2 AND recipient_id = $1)
+       ORDER BY created_at ASC`,
+      [currentUserId, userId]
+    );
+
+    // Mark messages as read
+    await pool.query(
+      `UPDATE messages SET read = true WHERE recipient_id = $1 AND sender_id = $2`,
+      [currentUserId, userId]
+    );
+
+    res.json({ messages: rows });
+  } catch (err) {
+    console.error("Fetch messages error:", err);
+    res.status(500).json({ error: "Failed to fetch messages" });
   }
 });
 
