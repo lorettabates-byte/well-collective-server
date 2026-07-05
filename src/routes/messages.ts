@@ -56,7 +56,31 @@ router.get("/:userId", async (req, res) => {
   }
 });
 
-// Get unread message count
+// Get unread message count by email
+router.get("/unread-count", async (req, res) => {
+  const email = req.query.email as string;
+
+  if (!email) {
+    return res.status(400).json({ error: "email required" });
+  }
+
+  try {
+    // Derive the member ID from email
+    const memberId = deriveMemberId(email.toLowerCase());
+
+    const { rows } = await pool.query(
+      `SELECT COUNT(*)::int as count FROM messages WHERE recipient_id = $1 AND read = false`,
+      [memberId]
+    );
+
+    res.json({ count: rows[0]?.count || 0 });
+  } catch (err) {
+    console.error("Fetch unread count error:", err);
+    res.status(500).json({ error: "Failed to fetch unread count" });
+  }
+});
+
+// Get unread message count (legacy: by currentUserId)
 router.get("/count/unread", async (req, res) => {
   const currentUserId = req.query.currentUserId as string;
 
@@ -66,11 +90,11 @@ router.get("/count/unread", async (req, res) => {
 
   try {
     const { rows } = await pool.query(
-      `SELECT COUNT(*) as count FROM messages WHERE recipient_id = $1 AND read = false`,
+      `SELECT COUNT(*)::int as count FROM messages WHERE recipient_id = $1 AND read = false`,
       [currentUserId]
     );
 
-    res.json({ unreadCount: parseInt(rows[0].count) });
+    res.json({ unreadCount: rows[0]?.count || 0 });
   } catch (err) {
     console.error("Fetch unread count error:", err);
     res.status(500).json({ error: "Failed to fetch unread count" });
