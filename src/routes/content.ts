@@ -245,6 +245,38 @@ router.delete("/content-schedule/:date", requireAdmin, async (req, res) => {
   res.json({ ok: true });
 });
 
+router.put("/content-schedule/:date", requireAdmin, async (req, res) => {
+  const { date } = req.params;
+  const entry = req.body as ContentBatchEntry;
+
+  if (!entry.date || !/^\d{4}-\d{2}-\d{2}$/.test(entry.date)) {
+    return res.status(400).json({ error: `Invalid date: ${entry.date}` });
+  }
+
+  if (entry.date !== date) {
+    return res.status(400).json({ error: "Date in URL must match date in body" });
+  }
+
+  await pool.query(
+    `INSERT INTO content_schedule (date, weekly_theme, daily_inspiration, well_activity, recipe)
+     VALUES ($1, $2, $3, $4, $5)
+     ON CONFLICT (date) DO UPDATE SET
+       weekly_theme = COALESCE($2, content_schedule.weekly_theme),
+       daily_inspiration = COALESCE($3, content_schedule.daily_inspiration),
+       well_activity = COALESCE($4, content_schedule.well_activity),
+       recipe = COALESCE($5, content_schedule.recipe)`,
+    [
+      entry.date,
+      entry.weeklyTheme ? JSON.stringify(entry.weeklyTheme) : null,
+      entry.dailyInspiration ? JSON.stringify(entry.dailyInspiration) : null,
+      entry.wellActivity ? JSON.stringify(entry.wellActivity) : null,
+      entry.recipe ? JSON.stringify(entry.recipe) : null,
+    ]
+  );
+
+  res.json({ ok: true });
+});
+
 router.post("/send-test", requireAdmin, async (req, res) => {
   try {
     const { title, body } = req.body as { title?: string; body?: string };
