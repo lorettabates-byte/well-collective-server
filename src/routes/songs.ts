@@ -356,9 +356,13 @@ router.put("/song-categories/:id", requireAdmin, async (req, res) => {
 router.delete("/song-categories/:id", requireAdmin, async (req, res) => {
   const categoryId = Number(req.params.id);
   try {
-    // Remove the category ID from all songs that reference it
-    await pool.query("UPDATE songs SET category_ids = array_remove(category_ids, $1)", [categoryId]);
-    // Then delete the category itself
+    // song_category_links.category_id has ON DELETE CASCADE (see db.ts),
+    // so deleting the category automatically removes every song's link to
+    // it — no separate cleanup query needed. category_ids on a song is
+    // never stored directly; it's computed at read time via array_agg over
+    // song_category_links (see the GET /songs query), so once the cascade
+    // removes the link row, the category simply stops appearing for that
+    // song on the next fetch.
     await pool.query("DELETE FROM song_categories WHERE id = $1", [categoryId]);
     res.json({ ok: true });
   } catch (err) {
