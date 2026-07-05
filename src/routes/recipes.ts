@@ -227,11 +227,18 @@ router.post("/recipes/generate", async (req, res) => {
   }
 
   try {
+    console.log(`[Recipe] Generating recipe from suggestion: "${suggestion.trim()}"`);
     const recipe = await generateRecipeFromSuggestion(suggestion.trim());
+    console.log(`[Recipe] Generated recipe:`, recipe);
+    if (!recipe || typeof recipe !== "object") {
+      console.error(`[Recipe] Invalid recipe object:`, recipe);
+      return res.status(500).json({ error: "Recipe generation returned invalid data" });
+    }
     res.json(recipe);
   } catch (err) {
-    console.error("Generate recipe error:", err);
-    res.status(500).json({ error: "Failed to generate recipe" });
+    const errorMessage = err instanceof Error ? err.message : String(err);
+    console.error(`[Recipe] Error generating recipe for "${suggestion.trim()}":`, errorMessage);
+    res.status(500).json({ error: `Recipe generation failed: ${errorMessage}` });
   }
 });
 
