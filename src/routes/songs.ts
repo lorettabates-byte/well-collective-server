@@ -354,8 +354,15 @@ router.put("/song-categories/:id", requireAdmin, async (req, res) => {
 });
 
 router.delete("/song-categories/:id", requireAdmin, async (req, res) => {
+  const categoryId = Number(req.params.id);
   try {
-    await pool.query("DELETE FROM song_categories WHERE id = $1", [req.params.id]);
+    // Remove the category ID from all songs that reference it
+    await pool.query(
+      "UPDATE songs SET category_ids = array_remove(category_ids, $1) WHERE category_ids @> ARRAY[$1]",
+      [categoryId]
+    );
+    // Then delete the category itself
+    await pool.query("DELETE FROM song_categories WHERE id = $1", [categoryId]);
     res.json({ ok: true });
   } catch (err) {
     console.error("Delete song category error:", err);
