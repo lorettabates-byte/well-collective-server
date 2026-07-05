@@ -6,6 +6,7 @@ import type { ContentBatchEntry } from "../types";
 import { parseIngredientsForNutritionLookup } from "../anthropic";
 import { computeNutritionFromIngredients } from "../usda";
 import { PHOTOS, resolveCategory } from "../recipePhotos";
+import { generateAIContentForUpcomingWeek } from "../scheduler";
 
 const router = Router();
 
@@ -238,6 +239,20 @@ router.post("/content-schedule", requireAdmin, async (req, res) => {
   );
 
   res.status(201).json({ ok: true, count: entries.length });
+});
+
+// Manually kick off the same "generate the next 7 days" job the 5:30am
+// cron runs, so admins don't have to wait until tomorrow morning to see a
+// week of AI content appear for editing (e.g. right after configuring the
+// Anthropic key for the first time, or to backfill after a missed run).
+router.post("/content-schedule/generate-week", requireAdmin, async (_req, res) => {
+  try {
+    await generateAIContentForUpcomingWeek();
+    res.json({ ok: true });
+  } catch (err) {
+    console.error("Manual week generation error:", err);
+    res.status(500).json({ error: "Failed to generate upcoming week's content" });
+  }
 });
 
 router.delete("/content-schedule/:date", requireAdmin, async (req, res) => {
