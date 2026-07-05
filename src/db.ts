@@ -464,6 +464,16 @@ export async function initDb(): Promise<void> {
     );
   `);
 
+  // RSVP tracking for events imported from lorettabates.com (identified by
+  // an external event ID rather than a row in the local `events` table), so
+  // "going" counts can show on those cue cards too.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS live_event_rsvps (
+      event_id TEXT PRIMARY KEY,
+      rsvps TEXT[] NOT NULL DEFAULT '{}'
+    );
+  `);
+
   // Member-created folders for organizing saved recipes (e.g. "Breakfast",
   // "Meal Prep"). Recipes themselves are snapshotted as JSONB at save time
   // (see saved_recipes below) rather than re-fetched from content_schedule,
