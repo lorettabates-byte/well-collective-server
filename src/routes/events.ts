@@ -241,4 +241,57 @@ router.post("/events/:id/rsvp", async (req, res) => {
   }
 });
 
+// Toggle RSVP for live events (from lorettabates.com)
+router.post("/live-events/:eventId/rsvp", async (req, res) => {
+  const { memberId, memberEmail } = req.body as { memberId?: string; memberEmail?: string };
+  const eventId = req.params.eventId;
+
+  if (!memberId) return res.status(400).json({ error: "memberId required" });
+
+  try {
+    // Try to fetch existing RSVPs
+    const { rows } = await pool.query<{ rsvps: string[] }>(
+      "SELECT rsvps FROM live_event_rsvps WHERE event_id = $1",
+      [eventId]
+    );
+
+    let rsvps = rows.length > 0 ? (rows[0].rsvps ?? []) : [];
+    const isRemoving = rsvps.includes(memberId);
+    const updated = isRemoving ? rsvps.filter((r) => r !== memberId) : [...rsvps, memberId];
+
+    // Insert or update
+    if (rows.length === 0) {
+      await pool.query(
+        "INSERT INTO live_event_rsvps (event_id, rsvps) VALUES ($1, $2)",
+        [eventId, updated]
+      );
+    } else {
+      await pool.query("UPDATE live_event_rsvps SET rsvps = $2 WHERE event_id = $1", [eventId, updated]);
+    }
+
+    res.json({ ok: true, rsvps: updated });
+  } catch (err) {
+    console.error("Live event RSVP error:", err);
+    res.status(500).json({ error: "Failed to update RSVP" });
+  }
+});
+
+// Get RSVPs for live events
+router.get("/live-events/rsvps/:eventId", async (req, res) => {
+  const eventId = req.params.eventId;
+
+  try {
+    const { rows } = await pool.query<{ rsvps: string[] }>(
+      "SELECT rsvps FROM live_event_rsvps WHERE event_id = $1",
+      [eventId]
+    );
+
+    const rsvps = rows.length > 0 ? (rows[0].rsvps ?? []) : [];
+    res.json({ rsvps });
+  } catch (err) {
+    console.error("Fetch live event RSVPs error:", err);
+    res.status(500).json({ error: "Failed to fetch RSVPs" });
+  }
+});
+
 export default router;
