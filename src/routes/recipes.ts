@@ -220,9 +220,15 @@ router.post("/recipes/generate", async (req, res) => {
     return res.status(400).json({ error: "suggestion required" });
   }
 
+  const apiKey = process.env.ANTHROPIC_API_KEY;
+  if (!apiKey) {
+    console.error("ANTHROPIC_API_KEY not set");
+    return res.status(500).json({ error: "Recipe generation not configured" });
+  }
+
   try {
     const Anthropic = require("@anthropic-ai/sdk");
-    const client = new Anthropic.default();
+    const client = new Anthropic.default({ apiKey });
 
     const message = await client.messages.create({
       model: "claude-opus-4-1",
