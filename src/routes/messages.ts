@@ -1,29 +1,9 @@
 import { Router } from "express";
 import { pool } from "../db";
 import { sendNotificationToUser } from "../push";
+import { deriveMemberId, findEmailByMemberId } from "../utils/memberUtils";
 
 const router = Router();
-
-// Mirrors deriveMemberId() in members.ts/AppContext.tsx. Message sender/
-// recipient ids are always derived member ids (e.g. "m_8vwxqg"), never raw
-// emails, so push notifications need this to resolve an id back to the
-// email that push_subscriptions are keyed on.
-function deriveMemberId(email: string): string {
-  let hash = 0;
-  for (let i = 0; i < email.length; i++) {
-    hash = (hash << 5) - hash + email.charCodeAt(i);
-    hash |= 0;
-  }
-  return `m_${Math.abs(hash).toString(36)}`;
-}
-
-async function findEmailByMemberId(memberId: string): Promise<string | null> {
-  const { rows } = await pool.query("SELECT email FROM members");
-  for (const row of rows) {
-    if (deriveMemberId(row.email) === memberId) return row.email;
-  }
-  return null;
-}
 
 // Get unread message count by email
 // NOTE: this and the other literal-path routes below must stay ahead of the

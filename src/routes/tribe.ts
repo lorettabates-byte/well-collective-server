@@ -3,6 +3,7 @@ import { pool } from "../db";
 import { sendNotificationToUser } from "../push";
 import { computeBonusBadges, computeLevelBadge } from "../badges";
 import { awardPoints } from "./points";
+import { deriveMemberId, findEmailByMemberId } from "../utils/memberUtils";
 
 const router = Router();
 
@@ -14,25 +15,6 @@ const TRIBE_CHEER_LABELS: Record<string, string> = {
   "proud-of-you": "🎉 Proud of You!",
   "keep-going": "💪 Keep Going!",
 };
-
-// Mirrors deriveMemberId() in members.ts/messages.ts/AppContext.tsx — tribe
-// members are referenced by id on the client, never raw email.
-function deriveMemberId(email: string): string {
-  let hash = 0;
-  for (let i = 0; i < email.length; i++) {
-    hash = (hash << 5) - hash + email.charCodeAt(i);
-    hash |= 0;
-  }
-  return `m_${Math.abs(hash).toString(36)}`;
-}
-
-async function findEmailByMemberId(memberId: string): Promise<string | null> {
-  const { rows } = await pool.query("SELECT email FROM members");
-  for (const row of rows) {
-    if (deriveMemberId(row.email) === memberId) return row.email;
-  }
-  return null;
-}
 
 // Get a member's WELL Tribe
 router.get("/tribe", async (req, res) => {
