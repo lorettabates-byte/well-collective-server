@@ -10,11 +10,14 @@ const BRAND_COLOR = "#0191CE";
 // that gets admin-only notifications like "a new user joined".
 export const ADMIN_NOTIFY_EMAIL = (process.env.ADMIN_NOTIFY_EMAIL || "loretta@lorettabates.com").toLowerCase();
 
-webpush.setVapidDetails(
-  process.env.VAPID_SUBJECT || "mailto:loretta@lorettabates.com",
-  process.env.VAPID_PUBLIC_KEY || "",
-  process.env.VAPID_PRIVATE_KEY || ""
-);
+// Only set VAPID details if keys are available (required for production, optional for dev/testing)
+if (process.env.VAPID_PUBLIC_KEY && process.env.VAPID_PRIVATE_KEY) {
+  webpush.setVapidDetails(
+    process.env.VAPID_SUBJECT || "mailto:loretta@lorettabates.com",
+    process.env.VAPID_PUBLIC_KEY,
+    process.env.VAPID_PRIVATE_KEY
+  );
+}
 
 export interface NotificationPayload {
   title: string;
@@ -83,6 +86,12 @@ export async function sendNotificationToUser(
   email: string,
   payload: NotificationPayload
 ): Promise<{ sent: number; removed: number; blocked: number }> {
+  // Skip if VAPID keys not configured (e.g., dev/test environment)
+  if (!process.env.VAPID_PUBLIC_KEY || !process.env.VAPID_PRIVATE_KEY) {
+    console.log(`[PUSH] Skipping notification to ${email} - VAPID keys not configured`);
+    return { sent: 0, removed: 0, blocked: 0 };
+  }
+
   console.log(`[PUSH] Sending notification to ${email}: "${payload.title}"`);
 
   if (email.toLowerCase() !== ADMIN_NOTIFY_EMAIL) {
@@ -151,6 +160,12 @@ export async function broadcastNotification(
   payload: NotificationPayload,
   options?: { contentPublishedAt?: Date }
 ): Promise<{ sent: number; removed: number; blocked: number }> {
+  // Skip if VAPID keys not configured (e.g., dev/test environment)
+  if (!process.env.VAPID_PUBLIC_KEY || !process.env.VAPID_PRIVATE_KEY) {
+    console.log(`[PUSH] Skipping broadcast - VAPID keys not configured`);
+    return { sent: 0, removed: 0, blocked: 0 };
+  }
+
   console.log(`[PUSH] Broadcasting notification: "${payload.title}"`);
 
   const { rows } = await pool.query<{ endpoint: string; p256dh: string; auth: string; user_email: string | null }>(

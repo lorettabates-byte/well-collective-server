@@ -5,7 +5,7 @@ import os from "os";
 import path from "path";
 import OpenAI from "openai";
 
-const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+const openai = process.env.OPENAI_API_KEY ? new OpenAI({ apiKey: process.env.OPENAI_API_KEY }) : null;
 const FFMPEG = ffmpegPath as unknown as string;
 
 export type ScriptSegment =
@@ -81,6 +81,9 @@ async function synthesizeElevenLabs(text: string): Promise<Buffer> {
 async function synthesizeRaw(text: string, isNumber = false): Promise<Buffer> {
   if (ELEVENLABS_API_KEY) {
     return synthesizeElevenLabs(text);
+  }
+  if (!openai) {
+    throw new Error("TTS service unavailable - no API keys configured");
   }
   const mp3 = await openai.audio.speech.create({
     model: "gpt-4o-mini-tts",
