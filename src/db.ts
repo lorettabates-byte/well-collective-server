@@ -781,6 +781,27 @@ export async function initDb(): Promise<void> {
     );
   }
 
+  // Referral codes — each member gets a unique code to share with friends.
+  // Friends who sign up with a code get a 1-month trial (instead of 1 week).
+  // The referrer gets 25 points when the friend signs up, and both get 50
+  // points if the friend later converts to a paid member.
+  await pool.query(`ALTER TABLE members ADD COLUMN IF NOT EXISTS membership_status TEXT DEFAULT 'trial';`);
+  await pool.query(`ALTER TABLE members ADD COLUMN IF NOT EXISTS referral_code TEXT UNIQUE;`);
+  await pool.query(`ALTER TABLE members ADD COLUMN IF NOT EXISTS referred_by TEXT;`);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS referrals (
+      id SERIAL PRIMARY KEY,
+      referrer_email TEXT NOT NULL REFERENCES members(email) ON DELETE CASCADE,
+      referred_email TEXT NOT NULL REFERENCES members(email) ON DELETE CASCADE,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      converted_at TIMESTAMPTZ,
+      referrer_signup_bonus_awarded BOOLEAN NOT NULL DEFAULT FALSE,
+      conversion_bonus_awarded BOOLEAN NOT NULL DEFAULT FALSE,
+      UNIQUE(referrer_email, referred_email)
+    );
+  `);
+
   // Seed yesterday's WELL CUP winner if none exists yet (first-run bootstrap).
   // The midnight cron takes over from today onward; ON CONFLICT keeps this safe
   // to run on every startup without clobbering real winners.

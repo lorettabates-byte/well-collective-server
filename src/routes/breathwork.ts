@@ -15,7 +15,9 @@ function etDayOfWeek(): number {
   return idx >= 0 ? idx : new Date().getDay();
 }
 
-// Cache for generated TTS audio (key -> buffer)
+// Cache for generated TTS audio (key -> buffer).
+// Bump CACHE_VERSION after changing scripts to force regeneration.
+const CACHE_VERSION = 2;
 const ttsCache = new Map<string, Buffer>();
 
 const s = (text: string): ScriptSegment => ({ type: "speech", text });
@@ -64,7 +66,7 @@ function buildTimedSegments(t: TimedBreathwork, targetSeconds: number): ScriptSe
     segments.push(...t.cycle);
     cyclesSinceInterlude++;
     if (
-      cyclesSinceInterlude >= 3 &&
+      cyclesSinceInterlude >= 2 &&
       t.interludes.length > 0 &&
       estimateSeconds(segments) + outroSeconds + 8 < targetSeconds
     ) {
@@ -103,6 +105,11 @@ const BREATHWORK_TYPES: TimedBreathwork[] = [
       "Each breath is bringing you deeper into calm.",
       "Let your shoulders soften.",
       "You're doing beautifully.",
+      "Notice how your body is settling in.",
+      "There's nothing you need to do right now but breathe.",
+      "Feel the rhythm becoming more natural with every cycle.",
+      "Let any tension in your face melt away.",
+      "You're giving yourself a gift right now.",
     ],
     outro: [
       s("Beautiful. Each breath has brought you deeper into calm."),
@@ -131,6 +138,11 @@ const BREATHWORK_TYPES: TimedBreathwork[] = [
       "Feel yourself becoming more and more relaxed with each breath.",
       "Let your thoughts drift by, and return to the breath.",
       "You're doing beautifully.",
+      "Notice your belly rising and falling, like gentle waves.",
+      "Each breath is a small act of self-care.",
+      "Let your hands rest open and your arms feel heavy.",
+      "You deserve this quiet moment.",
+      "Feel the warmth spreading through your body.",
     ],
     outro: [
       s("Wonderful work."),
@@ -156,6 +168,11 @@ const BREATHWORK_TYPES: TimedBreathwork[] = [
       "Feel the calm washing over you.",
       "Let each exhale carry away a little more tension.",
       "Your body is settling deeper into rest.",
+      "This technique is perfect for winding down before sleep.",
+      "Let your eyelids feel heavy and your breath carry you.",
+      "You're doing wonderful.",
+      "Each cycle brings you closer to deep, restful calm.",
+      "Allow the long exhale to empty everything you don't need.",
     ],
     outro: [
       s("This technique is wonderful before bedtime."),
@@ -185,6 +202,11 @@ const BREATHWORK_TYPES: TimedBreathwork[] = [
       "Feel yourself becoming more centered with each cycle.",
       "Keep your breath smooth and unhurried.",
       "Beautiful. Stay with this gentle rhythm.",
+      "Notice how balanced you feel, left side and right side finding harmony.",
+      "This ancient technique has been calming minds for thousands of years.",
+      "Let each nostril carry a different quality of calm.",
+      "You're creating balance with every breath.",
+      "Feel the stillness growing inside you.",
     ],
     outro: [
       s("Wonderful. Feel yourself centered and calm."),
@@ -211,6 +233,11 @@ const BREATHWORK_TYPES: TimedBreathwork[] = [
       "Feel your heart rate synchronizing with your breath.",
       "This is your anchor, your place of calm.",
       "Simply stay with the rhythm.",
+      "Your body is finding its natural resonance.",
+      "In and out, like the tide, steady and sure.",
+      "Let this become effortless.",
+      "You're exactly where you need to be right now.",
+      "Feel the peace that comes from this simple, steady rhythm.",
     ],
     outro: [
       s("You're in perfect coherence."),
@@ -236,6 +263,11 @@ const BREATHWORK_TYPES: TimedBreathwork[] = [
       "Feel the tension melting away with every release.",
       "Let each exhale be soft and unhurried.",
       "Release everything you need to let go of.",
+      "With every breath out, imagine letting go of something heavy.",
+      "Feel your jaw relax, your forehead smooth.",
+      "You're creating space inside yourself.",
+      "Let the release feel satisfying, like setting down something heavy.",
+      "Your body already knows how to let go. Trust it.",
     ],
     outro: [
       s("Wonderful. After this practice, take some gentle, normal breaths."),
@@ -262,6 +294,11 @@ const BREATHWORK_TYPES: TimedBreathwork[] = [
       "Each exhale deepens your relaxation.",
       "You're doing beautifully.",
       "Sink a little deeper with every breath.",
+      "The longer exhale is telling your nervous system it's safe to rest.",
+      "Let gravity do the work. Just melt.",
+      "Notice how much calmer you feel already.",
+      "Every breath is a wave of relaxation through your body.",
+      "You're worth this time. Let yourself have it fully.",
     ],
     outro: [
       s("Wonderful work."),
@@ -293,6 +330,10 @@ const DEEPER_SESSION_GUIDES: SessionGuide[] = [
       "With each breath, allow yourself to sink a little deeper into calm.",
       "There is nowhere else you need to be, nothing else you need to do, just this breath.",
       "Let your thoughts pass like clouds, and come back to the rhythm.",
+      "Notice the stillness growing inside you.",
+      "You're doing something truly beautiful for yourself right now.",
+      "Let your whole body feel supported and held.",
+      "Each cycle is a gentle wave, washing calm through every part of you.",
     ],
     outro: [
       s("Continue resting in this peaceful rhythm for as long as you'd like."),
@@ -313,6 +354,10 @@ const DEEPER_SESSION_GUIDES: SessionGuide[] = [
       "Let your jaw unclench, let your hands rest open.",
       "Each breath is an invitation to release a little more.",
       "There's nothing to fix here, only this rhythm, breath after breath.",
+      "Feel the weight of your body being fully supported.",
+      "Every exhale is a gentle letting go.",
+      "You are giving yourself the gift of stillness.",
+      "Let this rhythm carry you, like floating on calm water.",
     ],
     outro: [
       s("Stay here as long as feels good, returning to this pace whenever your mind wanders."),
@@ -330,6 +375,11 @@ const DEEPER_SESSION_GUIDES: SessionGuide[] = [
       "Feel the natural pause after each release.",
       "Let go of anything you've been holding onto today.",
       "Your body already knows how to do this. Just let it happen.",
+      "Notice how each hold creates a moment of perfect stillness.",
+      "You are safe in this space.",
+      "Let the rhythm become effortless, like breathing in your sleep.",
+      "Feel gratitude for this moment you've given yourself.",
+      "The world can wait. Right now, there is only the breath.",
     ],
     outro: [
       s("Continue at this gentle pace, allowing the quiet to settle in around you."),
@@ -347,6 +397,11 @@ const DEEPER_SESSION_GUIDES: SessionGuide[] = [
       "A simple, even breath, in and out.",
       "With every exhale, let a little more tension melt away.",
       "Nothing to achieve here, only presence.",
+      "Let your body feel heavier with each breath.",
+      "This is your time. You earned it.",
+      "Feel the calm spreading from your center outward.",
+      "Simply be here, breath after gentle breath.",
+      "You are exactly where you need to be.",
     ],
     outro: [
       s("Let this rhythm carry you, breath by breath, for as long as you need."),
@@ -364,6 +419,11 @@ const DEEPER_SESSION_GUIDES: SessionGuide[] = [
       "Feel your chest and belly rise and fall naturally.",
       "Each cycle brings you further into stillness.",
       "You don't have to do anything else right now. Just breathe.",
+      "Your breath is your anchor. Come back to it whenever your mind wanders.",
+      "Notice how much softer your body feels now.",
+      "This practice is building resilience, breath by breath.",
+      "Let every inhale fill you with fresh energy.",
+      "And every exhale release what no longer serves you.",
     ],
     outro: [
       s("Stay with this rhythm, resting in the calm it creates."),
@@ -381,6 +441,11 @@ const DEEPER_SESSION_GUIDES: SessionGuide[] = [
       "Notice how much longer the exhale is. That's intentional. It tells your body it's safe to relax.",
       "Let each breath wash a little more calm through your body.",
       "There's no rush here, only this slow unwinding.",
+      "Your nervous system is responding to this long, slow exhale.",
+      "Feel yourself becoming softer, lighter, calmer.",
+      "This is deep relaxation happening in real time.",
+      "Let yourself receive this peace fully.",
+      "You're doing something so good for yourself right now.",
     ],
     outro: [
       s("Continue breathing this way for as long as feels good."),
@@ -398,6 +463,11 @@ const DEEPER_SESSION_GUIDES: SessionGuide[] = [
       "This even, steady rhythm helps settle a busy mind.",
       "Each pause is a small rest within the breath itself.",
       "Stay easy and unhurried within the square of the breath.",
+      "Four equal sides, like a perfect square of calm.",
+      "Feel the symmetry settling your thoughts.",
+      "You're building a container of peace, breath by breath.",
+      "Let the holds be moments of pure stillness.",
+      "This is your meditation. This is your time.",
     ],
     outro: [
       s("Continue this gentle square of breath, in your own time."),
@@ -415,6 +485,11 @@ const DEEPER_SESSION_GUIDES: SessionGuide[] = [
       "An easy, balanced breath, equal in and equal out.",
       "Let your thoughts drift by like clouds, without needing to follow them.",
       "Simply return to the breath, again and again.",
+      "This longer count gives your body time to truly settle.",
+      "Feel the rhythm becoming as natural as your heartbeat.",
+      "You are creating deep calm with every cycle.",
+      "Let your whole being rest in this steady flow.",
+      "There's nowhere else you need to be. Just here. Just breathing.",
     ],
     outro: [
       s("Rest here in this steady, peaceful rhythm."),
@@ -432,6 +507,11 @@ const DEEPER_SESSION_GUIDES: SessionGuide[] = [
       "Feel the calm that builds with every cycle.",
       "There's nowhere to be but here.",
       "Let the breath hold you, cycle after cycle.",
+      "The long hold is where the magic happens. Sink into it.",
+      "Feel yourself dissolving into pure stillness.",
+      "Your body is deeply grateful for this practice.",
+      "Each breath cycle is a gift to your nervous system.",
+      "Rest in the rhythm. Let it carry everything.",
     ],
     outro: [
       s("Let this rhythm hold you, breath after breath, for as long as you'd like."),
@@ -474,7 +554,7 @@ router.get("/today", async (req, res) => {
 // Generate TTS audio for daily breathwork
 async function generateDailyTTS(): Promise<Buffer> {
   const dayOfWeek = etDayOfWeek();
-  const cacheKey = `day-${dayOfWeek}`;
+  const cacheKey = `v${CACHE_VERSION}-day-${dayOfWeek}`;
 
   if (ttsCache.has(cacheKey)) {
     return ttsCache.get(cacheKey)!;
@@ -541,7 +621,7 @@ const SESSION_WRAP_UP: ScriptSegment[] = [
 const WIND_DOWN_RESERVED_SECONDS = 75; // wrap-up speech + trailing quiet
 
 async function generateSessionGuideTTS(guideIndex: number, durationMinutes: number): Promise<Buffer> {
-  const cacheKey = `${guideIndex}-${durationMinutes}`;
+  const cacheKey = `v${CACHE_VERSION}-${guideIndex}-${durationMinutes}`;
   if (sessionGuideCache.has(cacheKey)) return sessionGuideCache.get(cacheKey)!;
 
   console.log(`[BREATHWORK] Building Deeper Session guide voice #${guideIndex} (${durationMinutes} min)...`);

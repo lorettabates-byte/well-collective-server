@@ -39,6 +39,9 @@ const TAG_TO_CATEGORY: Record<string, string> = {
   "new-event": "newEvents",
   "new-video": "general",
   "new-song": "newSongs",
+  "motivation-boost": "dailyInspiration",
+  "well-check": "general",
+  "scheduled-notification": "general",
   message: "replies",
   tribe: "mentions",
 };

@@ -114,7 +114,7 @@ router.post("/member-login", async (req, res) => {
 // their name/email here is logged back into their existing trial (same
 // trialEndsAt) instead of being rejected or having the clock reset.
 router.post("/start-trial", async (req, res) => {
-  const { email, name } = req.body as { email?: string; name?: string };
+  const { email, name, referralCode } = req.body as { email?: string; name?: string; referralCode?: string };
   if (!email?.trim()) {
     return res.status(400).json({ error: "Email is required" });
   }
@@ -148,24 +148,67 @@ router.post("/start-trial", async (req, res) => {
 
     const isFirstTimeJoin = rows.length === 0;
 
+    // Validate referral code (if provided) and extend trial to 30 days
+    let validReferrer: string | null = null;
+    let trialDays = 7;
+    if (referralCode?.trim()) {
+      const { rows: refRows } = await pool.query(
+        "SELECT email FROM members WHERE referral_code = $1",
+        [referralCode.trim().toUpperCase()]
+      );
+      if (refRows.length > 0 && refRows[0].email !== normalizedEmail) {
+        validReferrer = refRows[0].email;
+        trialDays = 30;
+      }
+    }
+
     const trialEnd = new Date();
-    trialEnd.setDate(trialEnd.getDate() + 7);
+    trialEnd.setDate(trialEnd.getDate() + trialDays);
     const trialEndsAt = trialEnd.toISOString().slice(0, 10);
 
     await pool.query(
-      `INSERT INTO members (email, name, trial_started_at, trial_ends_at)
-       VALUES ($1, $2, now(), $3)
+      `INSERT INTO members (email, name, trial_started_at, trial_ends_at, referred_by)
+       VALUES ($1, $2, now(), $3, $4)
        ON CONFLICT (email) DO UPDATE SET
          trial_started_at = now(),
          trial_ends_at = $3,
-         name = COALESCE(members.name, $2)`,
-      [normalizedEmail, name.trim(), trialEndsAt]
+         name = COALESCE(members.name, $2),
+         referred_by = COALESCE(members.referred_by, $4)`,
+      [normalizedEmail, name.trim(), trialEndsAt, validReferrer]
     );
 
+    // Apply referral bonus asynchronously
+    if (validReferrer) {
+      (async () => {
+        await pool.query(
+          `INSERT INTO referrals (referrer_email, referred_email)
+           VALUES ($1, $2) ON CONFLICT (referrer_email, referred_email) DO NOTHING`,
+          [validReferrer, normalizedEmail]
+        );
+        await pool.query(
+          `INSERT INTO activity_logs (member_email, activity_type, points, metadata)
+           VALUES ($1, 'referral_signup', 25, $2)`,
+          [validReferrer, JSON.stringify({ friendEmail: normalizedEmail })]
+        );
+        await pool.query(
+          `UPDATE referrals SET referrer_signup_bonus_awarded = TRUE
+           WHERE referrer_email = $1 AND referred_email = $2`,
+          [validReferrer, normalizedEmail]
+        );
+        await sendNotificationToUser(validReferrer!, {
+          title: "Your friend joined! 🎉",
+          body: `${name!.trim()} used your referral code and you earned 25 points!`,
+          tag: "referral",
+          url: "/profile",
+        });
+      })().catch((err) => console.error("Referral bonus error:", err));
+    }
+
     if (isFirstTimeJoin && normalizedEmail !== ADMIN_NOTIFY_EMAIL) {
+      const referralNote = validReferrer ? ` (referred by ${validReferrer})` : "";
       sendNotificationToUser(ADMIN_NOTIFY_EMAIL, {
         title: "New WELL Collective signup",
-        body: `${name.trim()} (${normalizedEmail}) just joined as a Free Trial member.`,
+        body: `${name.trim()} (${normalizedEmail}) just joined as a Free Trial member${referralNote}.`,
         tag: "new-signup",
         url: "/admin",
       }).catch((err) => console.error("Admin signup notification failed:", err));
@@ -174,7 +217,7 @@ router.post("/start-trial", async (req, res) => {
         .catch((err) => console.error("Brevo trial sync failed:", err));
     }
 
-    res.json({ trialEndsAt });
+    res.json({ trialEndsAt, referralApplied: !!validReferrer, trialDays });
   } catch (err) {
     console.error("Start trial error:", err);
     res.status(500).json({ error: "Failed to start trial" });

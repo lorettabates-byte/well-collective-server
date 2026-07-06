@@ -17,7 +17,7 @@ import { computeNutritionFromIngredients, isUsdaConfigured } from "./usda";
 import { addTrialContactToBrevo, moveTrialContactToCompleted, sendMidTrialEmail, sendTrialExpiredEmail } from "./brevo";
 import { awardPoints } from "./routes/points";
 import { TIMEZONE, todayInTimezone, addDays, SQL_DAY_START, SQL_MONTH_START } from "./dateUtils";
-import { scheduleTimezoneNotifications } from "./scheduledNotifications";
+// scheduledNotifications import removed — it duplicated content-driven sends
 
 // Weekly themes are only stored on the Monday row, so to find "this week's"
 // theme from any day we scan backward up to 7 days for the most recent one.
@@ -690,8 +690,9 @@ export function startScheduler(): void {
     sendWeeklyTheme().catch((err) => console.error("Weekly theme send failed:", err));
   }, { timezone: TIMEZONE });
 
-  // Daily inspiration: every day at 7:00am
-  cron.schedule("0 7 * * *", () => {
+  // Daily inspiration: every day EXCEPT Monday at 7:00am
+  // (Monday morning only sends the weekly theme to avoid notification overload)
+  cron.schedule("0 7 * * 0,2-6", () => {
     sendDailyInspiration().catch((err) => console.error("Daily inspiration send failed:", err));
   }, { timezone: TIMEZONE });
 
@@ -805,8 +806,9 @@ export function startScheduler(): void {
     }
   });
 
-  // TIMEZONE NOTIFICATIONS: hourly check for 7am/3pm/9pm sends in user's local timezone
-  scheduleTimezoneNotifications();
+  // NOTE: scheduledNotifications.ts (timezone 7am/3pm/9pm) is intentionally
+  // disabled — it duplicated the content-driven sends above with generic
+  // messages, causing members to receive 2-3 notifications at once.
 
   // Run immediately on startup: create/populate both Brevo lists.
   syncMembersToBrevoLists().catch((err) => console.error("Brevo startup sync failed:", err));
