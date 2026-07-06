@@ -122,23 +122,45 @@ router.post("/members/sync", async (req, res) => {
 // full profile sync — and so broadcastNotification/sendNotificationToUser in
 // push.ts can actually filter sends by what each member has opted into.
 router.put("/members/notification-settings", async (req, res) => {
-  const { email, notificationSettings } = req.body as {
+  const { email, notificationSettings, timezone, notificationSchedule } = req.body as {
     email?: string;
     notificationSettings?: Record<string, boolean>;
+    timezone?: string;
+    notificationSchedule?: { send7am?: boolean; send3pm?: boolean; send9pm?: boolean };
   };
 
-  if (!email || !notificationSettings) {
-    return res.status(400).json({ error: "email and notificationSettings required" });
+  if (!email) {
+    return res.status(400).json({ error: "email required" });
   }
 
   const normalizedEmail = email.toLowerCase();
 
   try {
+    // Build update fields dynamically — only update provided fields
+    let updateFields = ["updated_at = now()"];
+    const params: any[] = [normalizedEmail];
+
+    if (notificationSettings) {
+      updateFields.push(`notification_settings = $${params.length + 1}`);
+      params.push(JSON.stringify(notificationSettings));
+    }
+
+    if (timezone) {
+      updateFields.push(`timezone = $${params.length + 1}`);
+      params.push(timezone);
+    }
+
+    if (notificationSchedule) {
+      updateFields.push(`notification_schedule = $${params.length + 1}`);
+      params.push(JSON.stringify(notificationSchedule));
+    }
+
+    const updateClause = updateFields.join(", ");
+
     await pool.query(
-      `INSERT INTO members (email, name, notification_settings, updated_at)
-       VALUES ($1, $1, $2, now())
-       ON CONFLICT (email) DO UPDATE SET notification_settings = $2, updated_at = now()`,
-      [normalizedEmail, JSON.stringify(notificationSettings)]
+      `INSERT INTO members (email, name, updated_at) VALUES ($1, $1, now())
+       ON CONFLICT (email) DO UPDATE SET ${updateClause}`,
+      params
     );
     res.json({ ok: true });
   } catch (err) {

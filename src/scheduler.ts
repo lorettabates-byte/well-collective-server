@@ -17,6 +17,7 @@ import { computeNutritionFromIngredients, isUsdaConfigured } from "./usda";
 import { addTrialContactToBrevo, moveTrialContactToCompleted, sendMidTrialEmail, sendTrialExpiredEmail } from "./brevo";
 import { awardPoints } from "./routes/points";
 import { TIMEZONE, todayInTimezone, addDays, SQL_DAY_START, SQL_MONTH_START } from "./dateUtils";
+import { scheduleTimezoneNotifications } from "./scheduledNotifications";
 
 // Weekly themes are only stored on the Monday row, so to find "this week's"
 // theme from any day we scan backward up to 7 days for the most recent one.
@@ -803,6 +804,9 @@ export function startScheduler(): void {
       console.error("Scheduled notification dispatch error:", err);
     }
   });
+
+  // TIMEZONE NOTIFICATIONS: hourly check for 7am/3pm/9pm sends in user's local timezone
+  scheduleTimezoneNotifications();
 
   // Run immediately on startup: create/populate both Brevo lists.
   syncMembersToBrevoLists().catch((err) => console.error("Brevo startup sync failed:", err));

@@ -348,6 +348,10 @@ export async function initDb(): Promise<void> {
   await pool.query(`ALTER TABLE members ADD COLUMN IF NOT EXISTS age INT;`);
   await pool.query(`ALTER TABLE members ADD COLUMN IF NOT EXISTS gender TEXT;`);
   await pool.query(`ALTER TABLE members ADD COLUMN IF NOT EXISTS health_sync_enabled BOOLEAN NOT NULL DEFAULT FALSE;`);
+  // Timezone for local push notification scheduling (7am/3pm/9pm in user's timezone)
+  await pool.query(`ALTER TABLE members ADD COLUMN IF NOT EXISTS timezone TEXT DEFAULT 'America/New_York';`);
+  // Push notification time preferences: {send7am: bool, send3pm: bool, send9pm: bool}
+  await pool.query(`ALTER TABLE members ADD COLUMN IF NOT EXISTS notification_schedule JSONB;`);
 
   await pool.query(`
     CREATE TABLE IF NOT EXISTS app_settings (
