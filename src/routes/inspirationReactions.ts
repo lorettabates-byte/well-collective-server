@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { pool } from "../db";
-import { deriveMemberId } from "../memberId";
+import { deriveMemberId } from "../utils/memberUtils";
 
 const router = Router();
 
