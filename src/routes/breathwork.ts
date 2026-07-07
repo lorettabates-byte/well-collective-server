@@ -1,8 +1,39 @@
-import { Router } from "express";
+import { Request, Response, Router } from "express";
 import { pool } from "../db";
 import { buildScriptAudio, estimateSeconds, isTtsConfigured, type ScriptSegment } from "../utils/ttsAudioBuilder";
 
 const router = Router();
+
+// iOS (WKWebView) audio elements require real HTTP Range support to seek —
+// without a 206 Partial Content response, setting `.currentTime` in JS
+// silently fails even though the UI slider updates optimistically. Serving
+// the whole buffer via res.send() (no Accept-Ranges) is what caused the
+// "scrubber moves but the audio doesn't" bug on longer sessions.
+function sendAudioBuffer(req: Request, res: Response, buffer: Buffer): void {
+  const range = req.headers.range;
+  const total = buffer.length;
+
+  res.setHeader("Content-Type", "audio/mpeg");
+  res.setHeader("Cache-Control", "public, max-age=86400");
+  res.setHeader("Accept-Ranges", "bytes");
+
+  if (!range) {
+    res.setHeader("Content-Length", total);
+    res.end(buffer);
+    return;
+  }
+
+  const match = /bytes=(\d*)-(\d*)/.exec(range);
+  const start = match?.[1] ? parseInt(match[1], 10) : 0;
+  const end = match?.[2] ? parseInt(match[2], 10) : total - 1;
+  const chunkStart = Math.max(0, Math.min(start, total - 1));
+  const chunkEnd = Math.max(chunkStart, Math.min(end, total - 1));
+
+  res.status(206);
+  res.setHeader("Content-Range", `bytes ${chunkStart}-${chunkEnd}/${total}`);
+  res.setHeader("Content-Length", chunkEnd - chunkStart + 1);
+  res.end(buffer.subarray(chunkStart, chunkEnd + 1));
+}
 
 // Returns 0-6 (Sun-Sat) using Eastern Time so breathwork switches at midnight
 // ET, not midnight UTC (which would be 7-8 hours too early for members).
@@ -587,9 +618,7 @@ router.get("/audio/daily", async (req, res): Promise<any> => {
 
     try {
       const audioBuffer = await generateDailyTTS();
-      res.setHeader("Content-Type", "audio/mpeg");
-      res.setHeader("Cache-Control", "public, max-age=86400"); // Cache for 24 hours
-      res.send(audioBuffer);
+      sendAudioBuffer(req, res, audioBuffer);
     } catch (ttsErr) {
       console.error("[BREATHWORK] TTS generation failed, falling back to background sound:", ttsErr);
       const dayOfWeek = etDayOfWeek();
@@ -657,9 +686,7 @@ router.get("/audio/session-guide/:id", async (req, res): Promise<any> => {
     const durationMinutes = Math.min(Math.max(Number(rows[0]?.duration_minutes) || 10, 5), 30);
 
     const audioBuffer = await generateSessionGuideTTS(guideIndex, durationMinutes);
-    res.setHeader("Content-Type", "audio/mpeg");
-    res.setHeader("Cache-Control", "public, max-age=86400");
-    res.send(audioBuffer);
+    sendAudioBuffer(req, res, audioBuffer);
   } catch (err) {
     console.error("[BREATHWORK] Session guide TTS generation failed:", err);
     res.status(500).json({ error: "Failed to generate guide audio" });
