@@ -248,7 +248,7 @@ router.post("/content-schedule", requireAdmin, async (req, res) => {
 // Used when the Monday scheduler already ran but the theme wasn't set yet.
 router.post("/content-schedule/broadcast-theme", requireAdmin, async (req, res) => {
   try {
-    const { title, body } = req.body as { title?: string; body?: string };
+    const { title, body, broadcast = true } = req.body as { title?: string; body?: string; broadcast?: boolean };
     if (!title?.trim() || !body?.trim()) {
       return res.status(400).json({ error: "title and body are required" });
     }
@@ -274,15 +274,18 @@ router.post("/content-schedule/broadcast-theme", requireAdmin, async (req, res) 
       [thisMonday, JSON.stringify({ title: title.trim(), body: body.trim() })]
     );
 
-    // Broadcast push to all members
-    const result = await broadcastNotification({
-      title: `This Week's Theme: ${title.trim()}`,
-      body: body.trim(),
-      tag: "weekly-theme",
-      url: "/inspirations",
-    });
+    // Optionally broadcast push to all members
+    let pushResult = null;
+    if (broadcast) {
+      pushResult = await broadcastNotification({
+        title: `This Week's Theme: ${title.trim()}`,
+        body: body.trim(),
+        tag: "weekly-theme",
+        url: "/inspirations",
+      });
+    }
 
-    res.json({ ok: true, monday: thisMonday, push: result });
+    res.json({ ok: true, monday: thisMonday, broadcast, push: pushResult });
   } catch (err) {
     console.error("Broadcast theme error:", err);
     res.status(500).json({ error: "Failed to broadcast theme" });
