@@ -2,6 +2,7 @@ import { Router } from "express";
 import { pool } from "../db";
 import { awardPoints, POINT_VALUES } from "./points";
 import { sendNotificationToUser } from "../push";
+import { requireAdmin } from "../middleware/adminAuth";
 import crypto from "crypto";
 
 const router = Router();
@@ -156,6 +157,43 @@ router.post("/apply", async (req, res) => {
   } catch (err) {
     console.error("[REFERRALS] Apply error:", err);
     res.status(500).json({ error: "Failed to apply referral" });
+  }
+});
+
+// GET /api/referrals/admin/list — admin view of every referral record
+router.get("/admin/list", requireAdmin, async (_req, res) => {
+  try {
+    const { rows } = await pool.query(
+      `SELECT
+         r.referrer_email,
+         referrer.name AS referrer_name,
+         r.referred_email,
+         referred.name AS referred_name,
+         r.created_at,
+         r.converted_at,
+         r.referrer_signup_bonus_awarded,
+         r.conversion_bonus_awarded
+       FROM referrals r
+       LEFT JOIN members referrer ON referrer.email = r.referrer_email
+       LEFT JOIN members referred ON referred.email = r.referred_email
+       ORDER BY r.created_at DESC`
+    );
+
+    res.json({
+      referrals: rows.map((r) => ({
+        referrerEmail: r.referrer_email,
+        referrerName: r.referrer_name,
+        referredEmail: r.referred_email,
+        referredName: r.referred_name,
+        createdAt: r.created_at,
+        convertedAt: r.converted_at,
+        signupBonusAwarded: r.referrer_signup_bonus_awarded,
+        conversionBonusAwarded: r.conversion_bonus_awarded,
+      })),
+    });
+  } catch (err) {
+    console.error("[REFERRALS] Admin list error:", err);
+    res.status(500).json({ error: "Failed to fetch referrals" });
   }
 });
 
