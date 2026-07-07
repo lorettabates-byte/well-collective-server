@@ -24,6 +24,7 @@ import analyticsRouter from "./routes/analytics";
 import pointsRouter from "./routes/points";
 import scheduledNotificationsRouter from "./routes/scheduledNotifications";
 import referralsRouter from "./routes/referrals";
+import ssoRouter from "./routes/sso";
 import tribeRouter from "./routes/tribe";
 import videoNotificationsRouter from "./routes/video-notifications";
 import { startScheduler } from "./scheduler";
@@ -82,6 +83,7 @@ app.use("/api", analyticsRouter);
 app.use("/api", pointsRouter);
 app.use("/api", scheduledNotificationsRouter);
 app.use("/api/referrals", referralsRouter);
+app.use("/api/sso", ssoRouter);
 
 async function main() {
   await initDb();

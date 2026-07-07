@@ -62,7 +62,7 @@ export async function generateMotivationBoost(
     ? ` Today's daily inspiration is titled "${dailyInspirationTitle}".`
     : "";
 
-  const prompt = `You are writing a short, warm "Motivation Boost" message for the WELL Collective, a women's wellness community app run by Loretta Bates. ${themeContext}${dailyContext}
+  const prompt = `You are writing a short, warm "Motivation Boost" message for the WELL Collective, a wellness community app run by Loretta Bates. The community is predominantly women, but not exclusively — use gender-neutral language throughout (e.g. "you," "someone," "they/them"); never assume the reader is a woman or use "she"/"her"/"woman." ${themeContext}${dailyContext}
 
 Write one brand-new motivation boost that complements (does not repeat) the above. It should feel like an encouraging friend, not a generic quote account. Avoid cliches like "you got this."
 
@@ -146,7 +146,7 @@ export async function generateRecipe(
     : "";
   const allowedCategories = VALID_IMAGE_CATEGORIES.filter((c) => !blockedCategories.has(c));
 
-  const prompt = `You are writing a simple, healthy recipe for the WELL Collective, a women's wellness community app. ${themeContext}${avoidContext}${hardLimitContext}
+  const prompt = `You are writing a simple, healthy recipe for the WELL Collective, a wellness community app (predominantly women, but not exclusively — keep any commentary gender-neutral). ${themeContext}${avoidContext}${hardLimitContext}
 
 Write one recipe that ties into that theme (e.g. comforting, energizing, calming, restorative — whatever fits). Keep it realistic for a home cook: 5-8 ingredients, 4-6 short steps. Favor whole foods (vegetables, whole grains, legumes, lean protein, fruit) over the same handful of breakfast staples — across a week, recipes should span breakfast, lunch, dinner, and snacks, not cluster around one meal type.
 
@@ -261,7 +261,7 @@ export async function generateDailyInspiration(
     ? ` Do not repeat or closely resemble yesterday's daily inspiration, titled "${avoidTitle}" — write something distinct.`
     : "";
 
-  const prompt = `You are writing today's "Daily Inspiration" message for the WELL Collective, a women's wellness community app run by Loretta Bates. ${themeContext}${avoidContext}
+  const prompt = `You are writing today's "Daily Inspiration" message for the WELL Collective, a wellness community app run by Loretta Bates. The community is predominantly women, but not exclusively — use gender-neutral language throughout (e.g. "you," "someone," "they/them"); never assume the reader is a woman or use "she"/"her"/"woman." ${themeContext}${avoidContext}
 
 Write one short daily inspiration message that ties into that theme. Warm, grounded, and specific — not a generic quote.
 
@@ -286,7 +286,7 @@ export async function generateWeeklyTheme(recentThemes: string[] = []): Promise<
     ? ` Recent themes, most recent first: ${recentThemes.map((t) => `"${t}"`).join(", ")}. Pick something clearly different from ALL of these — not just a different word for the same idea (e.g. "Rest" and "Slowing Down" are too similar to use back to back).`
     : "";
 
-  const prompt = `You are setting this week's wellness theme for the WELL Collective, a women's wellness community app run by Loretta Bates. Pick a single grounded, encouraging theme (e.g. rest, boundaries, gentle consistency, self-compassion, movement, connection, gratitude, joy, resilience) that the rest of the week's content can build on.${avoidContext}
+  const prompt = `You are setting this week's wellness theme for the WELL Collective, a wellness community app run by Loretta Bates. The community is predominantly women, but not exclusively — use gender-neutral language throughout (e.g. "you," "someone," "they/them"); never assume the reader is a woman or use "she"/"her"/"woman." Pick a single grounded, encouraging theme (e.g. rest, boundaries, gentle consistency, self-compassion, movement, connection, gratitude, joy, resilience) that the rest of the week's content can build on.${avoidContext}
 
 Respond with ONLY a JSON object, no other text, in this exact shape:
 {"title": "a short theme title, under 6 words", "body": "2-3 sentences introducing the theme for the week"}`;
@@ -315,7 +315,7 @@ export async function generateWellActivity(
     ? ` Do not repeat yesterday's activity, "${avoidTitle}" — suggest something clearly different.`
     : "";
 
-  const prompt = `You are suggesting today's "WELL Activity" — a short mental-health or self-care activity — for the WELL Collective, a women's wellness community app run by Loretta Bates. ${themeContext}${avoidContext}
+  const prompt = `You are suggesting today's "WELL Activity" — a short mental-health or self-care activity — for the WELL Collective, a wellness community app run by Loretta Bates. The community is predominantly women, but not exclusively — use gender-neutral language throughout (e.g. "you," "someone," "they/them"); never assume the reader is a woman or use "she"/"her"/"woman." ${themeContext}${avoidContext}
 
 Suggest one simple, doable-today activity that ties into that theme (e.g. take a bath, call a friend, write three things you're grateful for, take a 10-minute walk without your phone). Keep it concrete and achievable in one sitting.
 
@@ -368,7 +368,7 @@ Respond with ONLY a JSON object, no other text, in this exact shape:
 }
 
 export async function generateNutritionTip(): Promise<string> {
-  const prompt = `Write one short, practical nutrition tip of the day (1-2 sentences, under 200 characters) for the WELL Collective women's wellness community. Make it specific and actionable, not generic.
+  const prompt = `Write one short, practical nutrition tip of the day (1-2 sentences, under 200 characters) for the WELL Collective wellness community (predominantly women, but not exclusively — keep it gender-neutral). Make it specific and actionable, not generic.
 
 Respond with ONLY the tip text, no quotes, no JSON, no extra commentary.`;
 
