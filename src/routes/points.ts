@@ -3,6 +3,7 @@ import { pool } from "../db";
 import { todayInTimezone, addDays, SQL_DAY_START, SQL_MONTH_START, SQL_YEAR_START, sqlSameDay } from "../dateUtils";
 import { isAnthropicConfigured, parseMealDescriptionForNutritionLookup } from "../anthropic";
 import { isUsdaConfigured, computeNutritionFromIngredients } from "../usda";
+import { requireAdmin } from "../middleware/adminAuth";
 
 const router = Router();
 
@@ -105,6 +106,7 @@ const DAILY_CAPS: Record<string, number> = {
   sleep_log: 1,
   song_play: 5,
   class_watch: 1,
+  meal_log: 4,
   tribe_add: 5,
   cardio: 1,
   daily_challenge_accept: 3,
@@ -756,6 +758,39 @@ router.get("/sleep/today", async (req, res) => {
 // Point values guide (public — shown on profiles and in the app).
 router.get("/points/guide", async (_req, res) => {
   res.json({ pointValues: POINT_VALUES, dailyCaps: DAILY_CAPS });
+});
+
+// Admin: manually award points to any member.
+router.post("/points/admin-award", requireAdmin, async (req, res) => {
+  const { memberEmail, points, reason } = req.body as {
+    memberEmail?: string;
+    points?: number;
+    reason?: string;
+  };
+
+  if (!memberEmail || !points || !reason) {
+    return res.status(400).json({ error: "memberEmail, points, and reason are required" });
+  }
+  const pts = Math.round(Number(points));
+  if (isNaN(pts) || pts === 0) {
+    return res.status(400).json({ error: "points must be a non-zero integer" });
+  }
+
+  try {
+    await pool.query(
+      `INSERT INTO activity_logs (member_email, activity_type, points_awarded, metadata)
+       VALUES ($1, 'admin_award', $2, $3::jsonb)`,
+      [memberEmail.toLowerCase(), pts, JSON.stringify({ reason })]
+    );
+    await pool.query(
+      `UPDATE members SET well_cup_points = COALESCE(well_cup_points, 0) + $2 WHERE email = $1`,
+      [memberEmail.toLowerCase(), pts]
+    );
+    res.json({ awarded: true, points: pts });
+  } catch (err) {
+    console.error("Admin award points error:", err);
+    res.status(500).json({ error: "Failed to award points" });
+  }
 });
 
 export default router;

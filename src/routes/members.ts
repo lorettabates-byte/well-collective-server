@@ -332,7 +332,7 @@ router.post("/admin/members/:email/badges", requireAdmin, async (req, res) => {
 router.get("/admin/members", requireAdmin, async (_req, res) => {
   try {
     const { rows } = await pool.query(
-      "SELECT email, name, avatar, trial_started_at, trial_ends_at, updated_at FROM members ORDER BY updated_at DESC"
+      "SELECT email, name, avatar, trial_started_at, trial_ends_at, updated_at, COALESCE(well_cup_points, 0) AS well_cup_points FROM members ORDER BY updated_at DESC"
     );
     const { rows: badgeRows } = await pool.query("SELECT member_email, badge_id FROM member_badges");
     const badgesByEmail = new Map<string, string[]>();
@@ -352,6 +352,7 @@ router.get("/admin/members", requireAdmin, async (_req, res) => {
         trialEndsAt: row.trial_ends_at ? row.trial_ends_at.toISOString().slice(0, 10) : undefined,
         updatedAt: row.updated_at,
         grantedBadges: badgesByEmail.get(row.email) ?? [],
+        well_cup_points: Number(row.well_cup_points),
       })),
     });
   } catch (err) {
