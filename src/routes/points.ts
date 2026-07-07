@@ -778,13 +778,9 @@ router.post("/points/admin-award", requireAdmin, async (req, res) => {
 
   try {
     await pool.query(
-      `INSERT INTO activity_logs (member_email, activity_type, points_awarded, metadata)
+      `INSERT INTO activity_logs (member_email, activity_type, points, metadata)
        VALUES ($1, 'admin_award', $2, $3::jsonb)`,
       [memberEmail.toLowerCase(), pts, JSON.stringify({ reason })]
-    );
-    await pool.query(
-      `UPDATE members SET well_cup_points = COALESCE(well_cup_points, 0) + $2 WHERE email = $1`,
-      [memberEmail.toLowerCase(), pts]
     );
     res.json({ awarded: true, points: pts });
   } catch (err) {
