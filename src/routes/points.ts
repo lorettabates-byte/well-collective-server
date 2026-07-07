@@ -101,10 +101,10 @@ export const POINT_VALUES: Record<string, number> = {
 // Max times a given activity type can earn points in one calendar day (member-facing timezone) per member.
 const DAILY_CAPS: Record<string, number> = {
   app_open: 1,
-  blog_open: 5,
+  blog_open: 2,
   sleep_log: 1,
   song_play: 5,
-  class_watch: 3,
+  class_watch: 1,
   tribe_add: 5,
   cardio: 1,
   daily_challenge_accept: 3,
