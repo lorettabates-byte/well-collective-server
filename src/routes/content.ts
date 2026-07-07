@@ -48,13 +48,16 @@ router.get("/content-today", async (_req, res) => {
 
     let weeklyTheme: { title: string; body: string } | undefined = rows[0]?.weekly_theme ?? undefined;
     if (!weeklyTheme) {
-      for (let i = 1; i < 7 && !weeklyTheme; i++) {
-        const d = new Date(`${today}T00:00:00Z`);
-        d.setUTCDate(d.getUTCDate() - i);
-        const checkDate = d.toISOString().slice(0, 10);
-        const { rows: themeRows } = await pool.query("SELECT weekly_theme FROM content_schedule WHERE date = $1", [
-          checkDate,
-        ]);
+      // Find this week's Monday (the most recent Monday ≤ today) and look there only.
+      // Rolling day-by-day lookback would find last week's theme when this week has none.
+      const todayDate = new Date(`${today}T00:00:00`);
+      const dow = todayDate.getDay(); // 0=Sun,1=Mon,...,6=Sat
+      const daysToMon = dow === 0 ? 6 : dow - 1;
+      const monDate = new Date(todayDate);
+      monDate.setDate(todayDate.getDate() - daysToMon);
+      const thisMonday = `${monDate.getFullYear()}-${String(monDate.getMonth() + 1).padStart(2, "0")}-${String(monDate.getDate()).padStart(2, "0")}`;
+      if (thisMonday !== today) {
+        const { rows: themeRows } = await pool.query("SELECT weekly_theme FROM content_schedule WHERE date = $1", [thisMonday]);
         weeklyTheme = themeRows[0]?.weekly_theme ?? undefined;
       }
     }
@@ -239,6 +242,51 @@ router.post("/content-schedule", requireAdmin, async (req, res) => {
   );
 
   res.status(201).json({ ok: true, count: entries.length });
+});
+
+// Admin: save the weekly theme for this week's Monday and broadcast a push to all members.
+// Used when the Monday scheduler already ran but the theme wasn't set yet.
+router.post("/content-schedule/broadcast-theme", requireAdmin, async (req, res) => {
+  try {
+    const { title, body } = req.body as { title?: string; body?: string };
+    if (!title?.trim() || !body?.trim()) {
+      return res.status(400).json({ error: "title and body are required" });
+    }
+
+    // Compute this week's Monday in the schedule timezone
+    const formatter = new Intl.DateTimeFormat("en-CA", {
+      timeZone: process.env.SCHEDULE_TIMEZONE || "America/New_York",
+      year: "numeric", month: "2-digit", day: "2-digit",
+    });
+    const today = formatter.format(new Date());
+    const todayDate = new Date(`${today}T00:00:00`);
+    const dow = todayDate.getDay();
+    const daysToMon = dow === 0 ? 6 : dow - 1;
+    const monDate = new Date(todayDate);
+    monDate.setDate(todayDate.getDate() - daysToMon);
+    const thisMonday = `${monDate.getFullYear()}-${String(monDate.getMonth() + 1).padStart(2, "0")}-${String(monDate.getDate()).padStart(2, "0")}`;
+
+    // Upsert the weekly_theme for this Monday
+    await pool.query(
+      `INSERT INTO content_schedule (date, weekly_theme)
+       VALUES ($1, $2)
+       ON CONFLICT (date) DO UPDATE SET weekly_theme = $2`,
+      [thisMonday, JSON.stringify({ title: title.trim(), body: body.trim() })]
+    );
+
+    // Broadcast push to all members
+    const result = await broadcastNotification({
+      title: `This Week's Theme: ${title.trim()}`,
+      body: body.trim(),
+      tag: "weekly-theme",
+      url: "/inspirations",
+    });
+
+    res.json({ ok: true, monday: thisMonday, push: result });
+  } catch (err) {
+    console.error("Broadcast theme error:", err);
+    res.status(500).json({ error: "Failed to broadcast theme" });
+  }
 });
 
 // Manually kick off the same "generate the next 7 days" job the 5:30am
