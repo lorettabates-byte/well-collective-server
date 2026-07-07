@@ -14,7 +14,7 @@ import { checkForNewVideos } from "./routes/video-notifications";
 import { pool } from "./db";
 import { broadcastNotification, sendNotificationToUser } from "./push";
 import { computeNutritionFromIngredients, isUsdaConfigured } from "./usda";
-import { addTrialContactToBrevo, moveTrialContactToCompleted, sendMidTrialEmail, sendTrialExpiredEmail } from "./brevo";
+import { addTrialContactToBrevo, moveTrialContactToCompleted, sendMidTrialEmail, sendTrialExpiredEmail, sendReferralWeek1Email, sendReferralWinbackEmail } from "./brevo";
 import { awardPoints } from "./routes/points";
 import { TIMEZONE, todayInTimezone, addDays, SQL_DAY_START, SQL_MONTH_START } from "./dateUtils";
 // scheduledNotifications import removed — it duplicated content-driven sends
@@ -546,6 +546,59 @@ export async function sendDay3EmailBlast(): Promise<{ trial: number; full: numbe
   return { trial: trialSent, full: fullSent, total: trialSent + fullSent };
 }
 
+async function sendReferralWeek1Emails(): Promise<void> {
+  // Referred members (referred_by IS NOT NULL) who joined 7-8 days ago,
+  // haven't received the week-1 email, and haven't converted to paid.
+  const { rows } = await pool.query(
+    `SELECT email, name FROM members
+     WHERE referred_by IS NOT NULL
+       AND created_at >= now() - INTERVAL '8 days'
+       AND created_at <  now() - INTERVAL '7 days'
+       AND referral_week1_email_sent = FALSE
+       AND (membership_status IS NULL OR membership_status != 'active')`
+  );
+  if (rows.length === 0) return;
+
+  console.log(`[BREVO] Sending referral week-1 emails to ${rows.length} member(s)`);
+  for (const row of rows) {
+    try {
+      await sendReferralWeek1Email(row.email, row.name);
+      await pool.query(
+        "UPDATE members SET referral_week1_email_sent = TRUE WHERE email = $1",
+        [row.email]
+      );
+    } catch (err) {
+      console.error(`[BREVO] Referral week-1 email failed for ${row.email}:`, err);
+    }
+  }
+}
+
+async function sendReferralWinbackEmails(): Promise<void> {
+  // Referred members whose trial has ended, who haven't converted, and
+  // who haven't received the winback email yet.
+  const { rows } = await pool.query(
+    `SELECT email, name FROM members
+     WHERE referred_by IS NOT NULL
+       AND trial_ends_at IS NOT NULL AND trial_ends_at < CURRENT_DATE
+       AND referral_winback_sent = FALSE
+       AND (membership_status IS NULL OR membership_status != 'active')`
+  );
+  if (rows.length === 0) return;
+
+  console.log(`[BREVO] Sending referral winback emails to ${rows.length} member(s)`);
+  for (const row of rows) {
+    try {
+      await sendReferralWinbackEmail(row.email, row.name);
+      await pool.query(
+        "UPDATE members SET referral_winback_sent = TRUE WHERE email = $1",
+        [row.email]
+      );
+    } catch (err) {
+      console.error(`[BREVO] Referral winback email failed for ${row.email}:`, err);
+    }
+  }
+}
+
 async function sendMidTrialEmailBlast(): Promise<void> {
   await sendDay3EmailBlast();
 }
@@ -751,6 +804,18 @@ export function startScheduler(): void {
     sendTrialWinbackEmails().catch((err) => console.error("Trial win-back emails failed:", err));
   }, { timezone: TIMEZONE });
 
+  // REFERRAL WEEK-1 EMAIL: 9am ET — sent to referred members (30-day trial)
+  // who joined exactly 7 days ago and haven't converted yet.
+  cron.schedule("0 9 * * *", () => {
+    sendReferralWeek1Emails().catch((err) => console.error("Referral week-1 emails failed:", err));
+  }, { timezone: TIMEZONE });
+
+  // REFERRAL WINBACK EMAIL: 9am ET — sent to referred members whose 30-day
+  // trial has ended and who haven't converted to a paid membership.
+  cron.schedule("0 9 * * *", () => {
+    sendReferralWinbackEmails().catch((err) => console.error("Referral winback emails failed:", err));
+  }, { timezone: TIMEZONE });
+
   // WELL CHECK: every evening at 9pm ET, personalized per-member.
   cron.schedule("0 21 * * *", () => {
     sendPersonalizedWellChecks().catch((err) => console.error("Well Check notifications failed:", err));
@@ -812,8 +877,6 @@ export function startScheduler(): void {
 
   // Run immediately on startup: create/populate both Brevo lists.
   syncMembersToBrevoLists().catch((err) => console.error("Brevo startup sync failed:", err));
-  // Immediately send mid-trial email to any existing trial members who haven't received it.
-  sendMidTrialEmailBlast().catch((err) => console.error("Mid-trial startup blast failed:", err));
 
   console.log(`Scheduler started (timezone: ${TIMEZONE})`);
 }
