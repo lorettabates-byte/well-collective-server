@@ -446,7 +446,7 @@ export async function sendReferralWeek1Email(
           <tr>
             <td style="padding:40px 40px 32px;">
               <p style="margin:0 0 24px;font-size:18px;color:#e8e8e8;">Hey ${firstName},</p>
-              <p style="margin:0 0 20px;font-size:15px;line-height:1.7;color:#c8cdd6;">You've been inside the WELL Collective for a week now, and I am <em>so</em> glad you're here! A friend vouched for you, and that means the world to me — because this community is built on exactly that kind of connection.</p>
+              <p style="margin:0 0 20px;font-size:15px;line-height:1.7;color:#c8cdd6;">You've been inside the WELL Collective for a week now, and I am <em>so</em> glad you're here! A friend vouched for you, and that means the world to me — because this community is built on exactly that kind of connection!</p>
               <p style="margin:0 0 28px;font-size:15px;line-height:1.7;color:#c8cdd6;">You still have three weeks left on your trial, and I want to make sure you are getting the absolute most out of every single day. Here are the things I don't want you to miss:</p>
               <table width="100%" cellpadding="0" cellspacing="0" style="margin:0 0 20px;">
                 <tr><td style="background:#0a1520;border:1px solid #1e2a3a;border-radius:12px;padding:20px 24px;">
@@ -463,7 +463,7 @@ export async function sendReferralWeek1Email(
               <table width="100%" cellpadding="0" cellspacing="0" style="margin:0 0 20px;">
                 <tr><td style="background:#0a1520;border:1px solid #1e2a3a;border-radius:12px;padding:20px 24px;">
                   <p style="margin:0 0 6px;font-size:16px;font-weight:bold;color:#4db8e8;">🥗 Nutrition</p>
-                  <p style="margin:0;font-size:14px;line-height:1.7;color:#c8cdd6;">A new recipe every day, a built-in meal planner, and an automatic shopping list. Log your meals, track your nutrition, and nourish yourself intentionally.</p>
+                  <p style="margin:0;font-size:14px;line-height:1.7;color:#c8cdd6;">A new recipe every day, built-in meal planner, automatic shopping list. Be sure to add your meals for information on your energy balance — and all while earning points!</p>
                 </td></tr>
               </table>
               <table width="100%" cellpadding="0" cellspacing="0" style="margin:0 0 28px;">
@@ -475,7 +475,7 @@ export async function sendReferralWeek1Email(
               <p style="margin:0 0 28px;font-size:15px;line-height:1.7;color:#c8cdd6;">You are here for a reason. I believe that. Now let's make these 30 days count!</p>
               <table width="100%" cellpadding="0" cellspacing="0">
                 <tr><td align="center">
-                  <a href="https://app.lorettabates.com" style="display:inline-block;background:linear-gradient(135deg,#1a6fb8,#4db8e8);color:#ffffff;font-family:Arial,sans-serif;font-size:15px;font-weight:bold;text-decoration:none;padding:16px 40px;border-radius:50px;letter-spacing:0.5px;">Open the App →</a>
+                  <a href="https://lorettabates.com/videolibrary.lorettabates.com/subscription-plan/" style="display:inline-block;background:linear-gradient(135deg,#1a6fb8,#4db8e8);color:#ffffff;font-family:Arial,sans-serif;font-size:15px;font-weight:bold;text-decoration:none;padding:16px 40px;border-radius:50px;letter-spacing:0.5px;">Join the WELL Collective →</a>
                 </td></tr>
               </table>
             </td>
@@ -497,18 +497,18 @@ export async function sendReferralWeek1Email(
 
   const textContent = `Hey ${firstName},
 
-You've been inside the WELL Collective for a week now, and I am so glad you're here! A friend vouched for you, and that means the world to me.
+You've been inside the WELL Collective for a week now, and I am so glad you're here! A friend vouched for you, and that means the world to me — because this community is built on exactly that kind of connection!
 
 You still have three weeks left on your trial — here's what I don't want you to miss:
 
 🏆 THE WELL CUP — earn points for everything in the app. Monthly winners get a free month; the year-end WELL Crown winner gets a free WELL ESCAPE!
 🎥 LIVE CLASSES + VIDEO LIBRARY — new classes weekly, all saved in the library.
-🥗 NUTRITION — daily recipes, meal planner, automatic shopping list.
+🥗 NUTRITION — daily recipes, meal planner, automatic shopping list. Be sure to add your meals for information on your energy balance and all while earning points!
 💬 COMMUNITY — post a win, cheer someone on, connect with people on the same journey.
 
 You are here for a reason. Let's make these 30 days count!
 
-Open the App: https://app.lorettabates.com
+Join the WELL Collective: https://lorettabates.com/videolibrary.lorettabates.com/subscription-plan/
 
 With love,
 Loretta`;
@@ -575,17 +575,16 @@ export async function sendReferralWinbackEmail(
             <td style="padding:40px 40px 32px;">
               <p style="margin:0 0 8px;font-size:22px;font-weight:bold;color:#ffffff;font-family:'Poppins',Arial,sans-serif;">We miss you — and we mean it</p>
               <p style="margin:0 0 24px;font-size:18px;color:#e8e8e8;">Hi ${firstName},</p>
-              <p style="margin:0 0 20px;font-size:15px;line-height:1.7;color:#c8cdd6;">Your trial in the WELL Collective has come to an end, and I want you to know — your presence in this community genuinely mattered. The fact that a friend thought of you and wanted you here says everything about who you are.</p>
-              <p style="margin:0 0 20px;font-size:15px;line-height:1.7;color:#c8cdd6;">I truly believe that the people who are transforming inside the WELL Collective are the ones who decide that <strong style="color:#4db8e8;">they are worth showing up for</strong> — day after day, workout after workout, meal after meal.</p>
+              <p style="margin:0 0 20px;font-size:15px;line-height:1.7;color:#c8cdd6;">Your trial in the WELL Collective has come to an end, and I want you to know that your presence in this community genuinely mattered. The fact that a friend thought of you and wanted you here says everything about who you are.</p>
+              <p style="margin:0 0 20px;font-size:15px;line-height:1.7;color:#c8cdd6;">I truly believe that the people who are transforming inside the WELL Collective are the ones who decide that <strong style="color:#4db8e8;">they are worth showing up for. Every.Single.Day.</strong></p>
               <table width="100%" cellpadding="0" cellspacing="0" style="margin:28px 0;">
                 <tr>
                   <td style="border-left:3px solid #4db8e8;padding:16px 20px;background:#0a1520;border-radius:0 8px 8px 0;">
                     <p style="margin:0;font-size:16px;font-style:italic;color:#4db8e8;line-height:1.6;">"The community is here. The classes are here. The inspiration is here. The only thing missing is you."</p>
-                    <p style="margin:8px 0 0;font-size:12px;color:#6b7280;">— Loretta</p>
                   </td>
                 </tr>
               </table>
-              <p style="margin:0 0 28px;font-size:15px;line-height:1.7;color:#c8cdd6;">Come back as a full member. Join us for the Tuesday livestream. Post in the Community. Cheer on someone. Start a streak. Give this community everything you've got — and watch it pour right back into you.</p>
+              <p style="margin:0 0 28px;font-size:15px;line-height:1.7;color:#c8cdd6;">${firstName}, come back as a full member. Join us for the Tuesday livestream. Post in the Community. Cheer someone on. Start a streak. Let's do this together!</p>
               <table width="100%" cellpadding="0" cellspacing="0">
                 <tr><td align="center">
                   <a href="https://lorettabates.com/videolibrary.lorettabates.com/subscription-plan/" style="display:inline-block;background:linear-gradient(135deg,#1a6fb8,#4db8e8);color:#ffffff;font-family:Arial,sans-serif;font-size:15px;font-weight:bold;text-decoration:none;padding:16px 40px;border-radius:50px;letter-spacing:0.5px;">Join the WELL Collective →</a>
@@ -612,14 +611,13 @@ export async function sendReferralWinbackEmail(
 
 Hi ${firstName},
 
-Your trial in the WELL Collective has come to an end, and I want you to know — your presence in this community genuinely mattered. The fact that a friend thought of you and wanted you here says everything about who you are.
+Your trial in the WELL Collective has come to an end, and I want you to know that your presence in this community genuinely mattered. The fact that a friend thought of you and wanted you here says everything about who you are.
 
-I truly believe that the people who are transforming inside the WELL Collective are the ones who decide that they are worth showing up for.
+I truly believe that the people who are transforming inside the WELL Collective are the ones who decide that they are worth showing up for. Every.Single.Day.
 
 "The community is here. The classes are here. The inspiration is here. The only thing missing is you."
-— Loretta
 
-Come back as a full member. Join us for the Tuesday livestream. Post in the Community. Cheer on someone. Start a streak.
+${firstName}, come back as a full member. Join us for the Tuesday livestream. Post in the Community. Cheer someone on. Start a streak. Let's do this together!
 
 Join the WELL Collective: https://lorettabates.com/videolibrary.lorettabates.com/subscription-plan/
 

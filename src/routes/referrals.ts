@@ -134,10 +134,17 @@ router.post("/apply", async (req, res) => {
     );
 
     if (bonusCheck.length > 0 && !bonusCheck[0].referrer_signup_bonus_awarded) {
+      // 25 pts to the referrer
       await pool.query(
         `INSERT INTO activity_logs (member_email, activity_type, points, metadata)
          VALUES ($1, 'referral_signup', $2, $3)`,
         [referrerEmail, REFERRAL_BONUS_POINTS, JSON.stringify({ friendEmail: email })]
+      );
+      // 25 pts to the referred member
+      await pool.query(
+        `INSERT INTO activity_logs (member_email, activity_type, points, metadata)
+         VALUES ($1, 'referral_signup', $2, $3)`,
+        [email, REFERRAL_BONUS_POINTS, JSON.stringify({ referredBy: referrerEmail })]
       );
       await pool.query(
         `UPDATE referrals SET referrer_signup_bonus_awarded = TRUE
@@ -150,6 +157,13 @@ router.post("/apply", async (req, res) => {
         body: `Someone used your referral code and you earned ${REFERRAL_BONUS_POINTS} points!`,
         tag: "referral",
         url: "/profile",
+      }).catch(() => {});
+
+      sendNotificationToUser(email, {
+        title: "Referral bonus applied! 🎉",
+        body: `You earned ${REFERRAL_BONUS_POINTS} bonus points for joining with a referral code. Welcome!`,
+        tag: "referral",
+        url: "/well-cup",
       }).catch(() => {});
     }
 
