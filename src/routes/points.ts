@@ -1,11 +1,31 @@
 import { Router } from "express";
 import { pool } from "../db";
-import { todayInTimezone, addDays, SQL_DAY_START, SQL_MONTH_START, SQL_YEAR_START, sqlSameDay } from "../dateUtils";
+import { todayInTimezone, addDays, SQL_DAY_START, SQL_MONTH_START, SQL_YEAR_START, sqlSameDay, TIMEZONE } from "../dateUtils";
 import { isAnthropicConfigured, parseMealDescriptionForNutritionLookup } from "../anthropic";
 import { isUsdaConfigured, computeNutritionFromIngredients } from "../usda";
 import { requireAdmin } from "../middleware/adminAuth";
 
 const router = Router();
+
+// Returns the member's stored IANA timezone, falling back to the server default.
+async function getMemberTimezone(memberEmail: string): Promise<string> {
+  try {
+    const { rows } = await pool.query(
+      "SELECT timezone FROM members WHERE email = $1",
+      [memberEmail]
+    );
+    return rows[0]?.timezone || TIMEZONE;
+  } catch {
+    return TIMEZONE;
+  }
+}
+
+// Builds a SQL day-start expression in an arbitrary IANA timezone.
+// Sanitized to only allow valid IANA characters (letters, digits, /, _, +, -).
+function sqlDayStartFor(tz: string): string {
+  const safe = tz.replace(/[^A-Za-z0-9/_+\-]/g, "");
+  return `date_trunc('day', now() AT TIME ZONE '${safe}') AT TIME ZONE '${safe}'`;
+}
 
 // Milestone bonuses shown in the streak modal — kept as a single source of
 // truth so the popup and the actual point award never drift apart.
@@ -129,10 +149,14 @@ export async function awardPoints(
 
   const cap = DAILY_CAPS[activityType];
   if (cap !== undefined) {
+    // Use the member's own timezone so their "day" matches their local clock,
+    // not the server's Eastern timezone.
+    const memberTz = await getMemberTimezone(memberEmail);
+    const dayStart = sqlDayStartFor(memberTz);
     const { rows } = await pool.query(
       `SELECT COUNT(*) AS count FROM activity_logs
        WHERE member_email = $1 AND activity_type = $2
-         AND created_at >= ${SQL_DAY_START}`,
+         AND created_at >= ${dayStart}`,
       [memberEmail, activityType]
     );
     if (Number(rows[0].count) >= cap) return { awarded: false, points: 0 };
@@ -260,7 +284,15 @@ router.get("/leaderboard/yearly", async (_req, res) => {
       ORDER BY total_points DESC
       LIMIT 1
     `);
-    res.json({ leader: rows[0] ? { name: rows[0].name, avatar: rows[0].avatar ?? null, total_points: Number(rows[0].total_points) } : null });
+    // Compute next Jan 1 midnight in the server timezone so the client can
+    // show a countdown to the yearly reset.
+    const { rows: resetRows } = await pool.query(
+      `SELECT date_trunc('year', now() AT TIME ZONE '${TIMEZONE}') AT TIME ZONE '${TIMEZONE}' + INTERVAL '1 year' AS year_reset_at`
+    );
+    res.json({
+      leader: rows[0] ? { name: rows[0].name, avatar: rows[0].avatar ?? null, total_points: Number(rows[0].total_points) } : null,
+      yearResetAt: new Date(resetRows[0].year_reset_at).toISOString(),
+    });
   } catch (err) {
     console.error("Yearly leader error:", err);
     res.status(500).json({ error: "Failed to fetch yearly leader" });
