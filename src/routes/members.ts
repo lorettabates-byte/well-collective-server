@@ -408,7 +408,10 @@ router.get("/members", async (req, res) => {
 
   try {
     const { rows } = await pool.query(
-      "SELECT email, name, avatar, workout_log, featured_badge, created_at FROM members WHERE email != $1 ORDER BY name ASC",
+      `SELECT email, name, avatar, workout_log, featured_badge, created_at FROM members
+       WHERE email != $1
+         AND (trial_ends_at IS NULL OR trial_ends_at >= CURRENT_DATE)
+       ORDER BY name ASC`,
       [excludeEmail || ""]
     );
 
