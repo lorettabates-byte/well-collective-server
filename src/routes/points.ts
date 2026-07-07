@@ -4,6 +4,7 @@ import { todayInTimezone, addDays, SQL_DAY_START, SQL_MONTH_START, SQL_YEAR_STAR
 import { isAnthropicConfigured, parseMealDescriptionForNutritionLookup } from "../anthropic";
 import { isUsdaConfigured, computeNutritionFromIngredients } from "../usda";
 import { requireAdmin } from "../middleware/adminAuth";
+import { sendNotificationToUser } from "../push";
 
 const router = Router();
 
@@ -809,11 +810,18 @@ router.post("/points/admin-award", requireAdmin, async (req, res) => {
   }
 
   try {
+    const email = memberEmail.toLowerCase();
     await pool.query(
       `INSERT INTO activity_logs (member_email, activity_type, points, metadata)
        VALUES ($1, 'admin_award', $2, $3::jsonb)`,
-      [memberEmail.toLowerCase(), pts, JSON.stringify({ reason })]
+      [email, pts, JSON.stringify({ reason })]
     );
+    sendNotificationToUser(email, {
+      title: `You earned ${pts} points! 🎉`,
+      body: reason,
+      tag: "admin-award",
+      url: "/well-cup",
+    }).catch(() => {});
     res.json({ awarded: true, points: pts });
   } catch (err) {
     console.error("Admin award points error:", err);
