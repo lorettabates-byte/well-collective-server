@@ -744,9 +744,9 @@ router.post("/sleep", async (req, res) => {
     quality?: string;
   };
 
-  const VALID_QUALITIES = ["not_enough", "enough", "needed_more"];
+  const VALID_QUALITIES = ["not_enough", "enough", "needed_more", "feel_great"];
   if (!memberEmail || hours === undefined || !quality || !VALID_QUALITIES.includes(quality)) {
-    return res.status(400).json({ error: "memberEmail, hours, and quality (not_enough|enough|needed_more) required" });
+    return res.status(400).json({ error: "memberEmail, hours, and quality (not_enough|enough|needed_more|feel_great) required" });
   }
 
   const email = memberEmail.toLowerCase();
