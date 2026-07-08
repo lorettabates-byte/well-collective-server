@@ -172,6 +172,36 @@ export async function awardPoints(
   return { awarded: true, points };
 }
 
+// Removes the most recent today's activity log entry for the given type (undo accidental check-in).
+router.delete("/activity", async (req, res) => {
+  const { memberEmail, type } = req.body as { memberEmail?: string; type?: string };
+  if (!memberEmail || !type) {
+    return res.status(400).json({ error: "memberEmail and type required" });
+  }
+  if (!POINT_VALUES[type]) {
+    return res.status(400).json({ error: "Unknown activity type" });
+  }
+  try {
+    const memberTz = await getMemberTimezone(memberEmail.toLowerCase());
+    const dayStart = sqlDayStartFor(memberTz);
+    await pool.query(
+      `DELETE FROM activity_logs
+       WHERE id = (
+         SELECT id FROM activity_logs
+         WHERE member_email = $1 AND activity_type = $2
+           AND created_at >= ${dayStart}
+         ORDER BY created_at DESC
+         LIMIT 1
+       )`,
+      [memberEmail.toLowerCase(), type]
+    );
+    res.json({ ok: true });
+  } catch (err) {
+    console.error("Unlog activity error:", err);
+    res.status(500).json({ error: "Failed to unlog activity" });
+  }
+});
+
 // Client calls this for activities that happen in the browser:
 // app_open, song_play, blog_open, class_watch, breathwork, stretching,
 // resistance_training, sleep_log, well_activity, event_attend, well_escape.
