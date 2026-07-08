@@ -811,6 +811,8 @@ export async function initDb(): Promise<void> {
 
   await pool.query(`ALTER TABLE members ADD COLUMN IF NOT EXISTS breathwork_log TEXT[];`);
   await pool.query(`ALTER TABLE members ADD COLUMN IF NOT EXISTS well_activity_log TEXT[];`);
+  await pool.query(`ALTER TABLE members ADD COLUMN IF NOT EXISTS resistance_log TEXT[];`);
+  await pool.query(`ALTER TABLE members ADD COLUMN IF NOT EXISTS stretching_log TEXT[];`);
 
   await pool.query(`
     CREATE TABLE IF NOT EXISTS referrals (
