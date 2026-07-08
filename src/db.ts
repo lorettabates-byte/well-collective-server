@@ -93,6 +93,20 @@ export async function initDb(): Promise<void> {
 
   // Add likes column for private message reactions (array of user IDs who liked)
   await pool.query(`ALTER TABLE messages ADD COLUMN IF NOT EXISTS likes TEXT[] DEFAULT '{}'::TEXT[];`);
+  await pool.query(`ALTER TABLE messages ADD COLUMN IF NOT EXISTS edited_at TIMESTAMPTZ;`);
+  // Photo sharing: base64 image + pending/approved status
+  await pool.query(`ALTER TABLE messages ADD COLUMN IF NOT EXISTS image TEXT;`);
+  await pool.query(`ALTER TABLE messages ADD COLUMN IF NOT EXISTS image_status TEXT DEFAULT 'pending';`);
+
+  // User blocking: silent — blocked person doesn't know; their posts/DMs are hidden
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS user_blocks (
+      blocker_id TEXT NOT NULL,
+      blocked_id TEXT NOT NULL,
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      PRIMARY KEY (blocker_id, blocked_id)
+    );
+  `);
 
   await pool.query(`
     CREATE TABLE IF NOT EXISTS songs (
