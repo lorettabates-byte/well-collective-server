@@ -10,7 +10,7 @@ import { deriveMemberId, findEmailByMemberId } from "../utils/memberUtils";
 const router = Router();
 
 router.post("/members/sync", async (req, res) => {
-  const { email, name, avatar, bio, birthday, showBirthdayOnCalendar, workoutLog, savedInspirationIds, likedInspirationIds, favoriteSongIds, heightCm, weightKg, age, gender, healthSyncEnabled } = req.body as {
+  const { email, name, avatar, bio, birthday, showBirthdayOnCalendar, workoutLog, savedInspirationIds, likedInspirationIds, favoriteSongIds, heightCm, weightKg, age, gender, healthSyncEnabled, breathworkLog, wellActivityLog } = req.body as {
     email?: string;
     name?: string;
     avatar?: string;
@@ -26,6 +26,8 @@ router.post("/members/sync", async (req, res) => {
     age?: number;
     gender?: string;
     healthSyncEnabled?: boolean;
+    breathworkLog?: string[];
+    wellActivityLog?: string[];
   };
 
   if (!email || !name) {
@@ -45,8 +47,8 @@ router.post("/members/sync", async (req, res) => {
     // still empty. However, saved/liked inspiration IDs should always be updated
     // from the client since they reflect current user interactions.
     await pool.query(
-      `INSERT INTO members (email, name, avatar, bio, birthday, show_birthday_on_calendar, workout_log, saved_inspiration_ids, liked_inspiration_ids, favorite_song_ids, height_cm, weight_kg, age, gender, health_sync_enabled, updated_at)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, now())
+      `INSERT INTO members (email, name, avatar, bio, birthday, show_birthday_on_calendar, workout_log, saved_inspiration_ids, liked_inspiration_ids, favorite_song_ids, height_cm, weight_kg, age, gender, health_sync_enabled, breathwork_log, well_activity_log, updated_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, now())
        ON CONFLICT (email) DO UPDATE SET
          name = $2,
          avatar = COALESCE($3, members.avatar),
@@ -62,6 +64,8 @@ router.post("/members/sync", async (req, res) => {
          age = COALESCE($13, members.age),
          gender = COALESCE($14, members.gender),
          health_sync_enabled = $15,
+         breathwork_log = COALESCE($16, members.breathwork_log),
+         well_activity_log = COALESCE($17, members.well_activity_log),
          updated_at = now()`,
       [
         normalizedEmail,
@@ -79,6 +83,8 @@ router.post("/members/sync", async (req, res) => {
         age ?? null,
         gender || null,
         !!healthSyncEnabled,
+        breathworkLog && breathworkLog.length > 0 ? breathworkLog : null,
+        wellActivityLog && wellActivityLog.length > 0 ? wellActivityLog : null,
       ]
     );
 
@@ -164,7 +170,7 @@ router.get("/members/me", async (req, res) => {
 
   try {
     const { rows } = await pool.query(
-      `SELECT name, avatar, bio, birthday, show_birthday_on_calendar, workout_log, featured_badge, created_at, saved_inspiration_ids, liked_inspiration_ids, favorite_song_ids, show_on_leaderboard, height_cm, weight_kg, age, gender, health_sync_enabled
+      `SELECT name, avatar, bio, birthday, show_birthday_on_calendar, workout_log, featured_badge, created_at, saved_inspiration_ids, liked_inspiration_ids, favorite_song_ids, show_on_leaderboard, height_cm, weight_kg, age, gender, health_sync_enabled, breathwork_log, well_activity_log
        FROM members WHERE email = $1`,
       [email]
     );
@@ -206,6 +212,8 @@ router.get("/members/me", async (req, res) => {
         age: row.age != null ? Number(row.age) : undefined,
         gender: row.gender ?? undefined,
         healthSyncEnabled: row.health_sync_enabled ?? false,
+        breathworkLog: row.breathwork_log ?? [],
+        wellActivityLog: row.well_activity_log ?? [],
         tribeConnections: Number(tribeAddedRows.rows[0].count),
         addedByCount: Number(tribeAddedByRows.rows[0].count),
         allTimePoints: Number(totalPtsRows.rows[0].total),

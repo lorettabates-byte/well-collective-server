@@ -809,6 +809,9 @@ export async function initDb(): Promise<void> {
   await pool.query(`ALTER TABLE members ADD COLUMN IF NOT EXISTS referral_week1_email_sent BOOLEAN NOT NULL DEFAULT FALSE;`);
   await pool.query(`ALTER TABLE members ADD COLUMN IF NOT EXISTS referral_winback_sent BOOLEAN NOT NULL DEFAULT FALSE;`);
 
+  await pool.query(`ALTER TABLE members ADD COLUMN IF NOT EXISTS breathwork_log TEXT[];`);
+  await pool.query(`ALTER TABLE members ADD COLUMN IF NOT EXISTS well_activity_log TEXT[];`);
+
   await pool.query(`
     CREATE TABLE IF NOT EXISTS referrals (
       id SERIAL PRIMARY KEY,
