@@ -871,6 +871,38 @@ export function startScheduler(): void {
     }
   });
 
+  // Re-engagement push: members who haven't opened the app in 7 or 14 days.
+  // Fires at 11am daily. Targets exactly 7-day and 14-day lapsed members
+  // (one nudge per threshold) who have an active push subscription.
+  cron.schedule("0 11 * * *", async () => {
+    try {
+      const { rows } = await pool.query<{ email: string; name: string; days_since: number }>(`
+        SELECT DISTINCT ls.member_email AS email, m.name,
+          (CURRENT_DATE - ls.last_login_date)::int AS days_since
+        FROM login_streaks ls
+        JOIN members m ON m.email = ls.member_email
+        JOIN push_subscriptions ps ON ps.user_email = ls.member_email
+        WHERE (CURRENT_DATE - ls.last_login_date) IN (7, 14)
+      `);
+      for (const row of rows) {
+        const msg7 = row.days_since === 7;
+        await sendNotificationToUser(row.email, {
+          title: msg7
+            ? `We miss you, ${row.name.split(" ")[0]}! 💙`
+            : `Come back to WELL Collective 🌟`,
+          body: msg7
+            ? "It's been a week — your tribe is still here. Log in to keep your streak alive!"
+            : "14 days away is too long! New classes, inspiration, and community are waiting for you.",
+          tag: "well-check",
+          url: "/",
+        });
+        console.log(`[RE-ENGAGE] Sent ${row.days_since}-day nudge to ${row.email}`);
+      }
+    } catch (err) {
+      console.error("Re-engagement push error:", err);
+    }
+  }, { timezone: TIMEZONE });
+
   // NOTE: scheduledNotifications.ts (timezone 7am/3pm/9pm) is intentionally
   // disabled — it duplicated the content-driven sends above with generic
   // messages, causing members to receive 2-3 notifications at once.
