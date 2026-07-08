@@ -1,6 +1,6 @@
 import { Request, Response, Router } from "express";
 import { pool } from "../db";
-import { buildScriptAudio, estimateSeconds, isTtsConfigured, type ScriptSegment } from "../utils/ttsAudioBuilder";
+import { buildScriptAudio, estimateSeconds, getSpeechClip, isTtsConfigured, type ScriptSegment } from "../utils/ttsAudioBuilder";
 
 const router = Router();
 
@@ -559,6 +559,25 @@ const BACKGROUND_SOUNDS = [
   { day: 5, name: "Forest Breeze", url: "https://WELLCOLLECTIVESOUNDTRACK.b-cdn.net/Peaceful%20Sounds/LDj_Audio_ForestLightBreezeAmbience_V1.wav" },
   { day: 6, name: "Soothing Tones", url: "https://WELLCOLLECTIVESOUNDTRACK.b-cdn.net/Peaceful%20Sounds/mp3/main%20track.mp3" },
 ];
+
+// Serve a single calm-toolkit voice cue using the same ElevenLabs/OpenAI TTS
+// pipeline as the breathwork guided sessions, so quality is identical.
+router.get("/calm-cue", async (req, res): Promise<any> => {
+  const text = (req.query.text as string | undefined)?.trim();
+  if (!text || text.length > 600) {
+    return res.status(400).json({ error: "text query param required (max 600 chars)" });
+  }
+  if (!isTtsConfigured()) {
+    return res.status(503).json({ error: "TTS not configured" });
+  }
+  try {
+    const buffer = await getSpeechClip(text);
+    sendAudioBuffer(req, res, buffer);
+  } catch (err) {
+    console.error("[CALM-CUE] TTS error:", err);
+    res.status(500).json({ error: "Failed to generate audio" });
+  }
+});
 
 // Get today's breathwork script
 router.get("/today", async (req, res) => {

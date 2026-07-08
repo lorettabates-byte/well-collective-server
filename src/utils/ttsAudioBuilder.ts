@@ -204,7 +204,7 @@ async function getNumberClip(n: number): Promise<Buffer> {
 
 const speechCache = new Map<string, Buffer>();
 
-async function getSpeechClip(text: string): Promise<Buffer> {
+export async function getSpeechClip(text: string): Promise<Buffer> {
   if (speechCache.has(text)) return speechCache.get(text)!;
   const raw = await synthesizeRaw(text);
   const warmed = await warmAndClean(raw);
