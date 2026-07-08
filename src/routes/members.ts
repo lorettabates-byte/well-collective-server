@@ -2,7 +2,7 @@ import { Router } from "express";
 import { pool } from "../db";
 import { requireAdmin } from "../middleware/adminAuth";
 import { computeBonusBadges, computeLevelBadge, SPECIAL_BADGE_IDS } from "../badges";
-import { ADMIN_NOTIFY_EMAIL, sendNotificationToUser } from "../push";
+import { ADMIN_NOTIFY_EMAIL, ADMIN_NOTIFY_EMAILS, sendNotificationToUser } from "../push";
 import { addTrialContactToBrevo } from "../brevo";
 import { sendDay3EmailBlast } from "../scheduler";
 import { deriveMemberId, findEmailByMemberId } from "../utils/memberUtils";
@@ -94,13 +94,15 @@ router.post("/members/sync", async (req, res) => {
       ]
     );
 
-    if (isFirstTimeJoin && normalizedEmail !== ADMIN_NOTIFY_EMAIL) {
-      sendNotificationToUser(ADMIN_NOTIFY_EMAIL, {
-        title: "New WELL Collective signup",
-        body: `${name} (${normalizedEmail}) just joined as a paid member.`,
-        tag: "new-signup",
-        url: "/admin",
-      }).catch((err) => console.error("Admin signup notification failed:", err));
+    if (isFirstTimeJoin && !ADMIN_NOTIFY_EMAILS.includes(normalizedEmail)) {
+      for (const adminEmail of ADMIN_NOTIFY_EMAILS) {
+        sendNotificationToUser(adminEmail, {
+          title: "New WELL Collective signup",
+          body: `${name} (${normalizedEmail}) just joined as a paid member.`,
+          tag: "new-signup",
+          url: "/admin",
+        }).catch((err) => console.error("Admin signup notification failed:", err));
+      }
     }
 
     res.json({ ok: true });

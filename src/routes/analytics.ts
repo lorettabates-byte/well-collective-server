@@ -85,11 +85,11 @@ router.get("/analytics/dashboard", requireAdmin, async (_req, res) => {
     const { rows: tutorialStepRows } = await pool.query(`
       SELECT
         (metadata->>'step')::int AS step,
-        metadata->>'slide_title' AS slide_title,
+        (array_agg(metadata->>'slide_title' ORDER BY created_at DESC))[1] AS slide_title,
         COUNT(DISTINCT member_email) AS users
       FROM analytics_events
       WHERE event_type = 'tutorial_step'
-      GROUP BY step, slide_title
+      GROUP BY step
       ORDER BY step
     `);
 

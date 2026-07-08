@@ -6,9 +6,12 @@ const LOGO_URL = "https://app.lorettabates.com/icons/notification-icon-v2.png";
 const BADGE_URL = "https://app.lorettabates.com/icons/notification-badge-v2.png";
 const BRAND_COLOR = "#0191CE";
 
-// Matches the frontend's FOUNDER_EMAIL (AppContext.tsx) — the single account
-// that gets admin-only notifications like "a new user joined".
+// All admin accounts that should receive admin-only notifications (e.g. new signups).
+// Comma-separated in ADMIN_NOTIFY_EMAIL env var; defaults cover both of Loretta's login emails.
 export const ADMIN_NOTIFY_EMAIL = (process.env.ADMIN_NOTIFY_EMAIL || "loretta@lorettabates.com").toLowerCase();
+export const ADMIN_NOTIFY_EMAILS: string[] = (
+  process.env.ADMIN_NOTIFY_EMAILS || "loretta@lorettabates.com,lorettabates@gmail.com"
+).toLowerCase().split(",").map((e) => e.trim()).filter(Boolean);
 
 // Only set VAPID details if keys are available (required for production, optional for dev/testing)
 if (process.env.VAPID_PUBLIC_KEY && process.env.VAPID_PRIVATE_KEY) {
