@@ -74,6 +74,28 @@ router.put("/peaceful-sounds/reorder", requireAdmin, async (req, res) => {
   }
 });
 
+router.put("/peaceful-sounds/:id", requireAdmin, async (req, res) => {
+  const { title, icon, url, sortOrder } = req.body as Partial<PeacefulSoundInput>;
+  try {
+    const { rows } = await pool.query(
+      `UPDATE peaceful_sounds
+       SET title = COALESCE($1, title),
+           icon  = COALESCE($2, icon),
+           url   = COALESCE($3, url),
+           sort_order = COALESCE($4, sort_order)
+       WHERE id = $5
+       RETURNING id, title, icon, url, sort_order`,
+      [title ?? null, icon ?? null, url ?? null, sortOrder ?? null, req.params.id]
+    );
+    if (rows.length === 0) return res.status(404).json({ error: "Not found" });
+    const row = rows[0];
+    res.json({ sound: { id: row.id, title: row.title, icon: row.icon, url: row.url, sortOrder: row.sort_order } });
+  } catch (err) {
+    console.error("Update peaceful sound error:", err);
+    res.status(500).json({ error: "Failed to update peaceful sound" });
+  }
+});
+
 router.delete("/peaceful-sounds/:id", requireAdmin, async (req, res) => {
   try {
     await pool.query("DELETE FROM peaceful_sounds WHERE id = $1", [req.params.id]);
