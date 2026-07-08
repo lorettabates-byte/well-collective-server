@@ -192,6 +192,7 @@ router.get("/members/me", async (req, res) => {
         bio: row.bio ?? undefined,
         birthday: row.birthday ?? undefined,
         showBirthdayOnCalendar: row.show_birthday_on_calendar,
+        workoutLog: row.workout_log ?? [],
         levelBadge: computeLevelBadge(messageCount, (row.workout_log ?? []).length),
         bonusBadges: computeBonusBadges(row.created_at, messageCount, Number(cheerRows.rows[0].count)),
         grantedBadges: badgeRows.rows.map((b) => b.badge_id),
