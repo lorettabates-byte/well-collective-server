@@ -686,6 +686,7 @@ export async function initDb(): Promise<void> {
   `);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_sleep_entries_email_day
     ON sleep_entries (member_email, logged_at);`);
+  await pool.query(`ALTER TABLE members ADD COLUMN IF NOT EXISTS favorite_song_ids INTEGER[]`);
   // Extend quality check to include feel_great (added when "Needed more" label changed)
   await pool.query(`ALTER TABLE sleep_entries DROP CONSTRAINT IF EXISTS sleep_entries_quality_check`);
   await pool.query(`ALTER TABLE sleep_entries ADD CONSTRAINT sleep_entries_quality_check CHECK (quality IN ('not_enough', 'enough', 'needed_more', 'feel_great'))`);

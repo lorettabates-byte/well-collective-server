@@ -10,7 +10,7 @@ import { deriveMemberId, findEmailByMemberId } from "../utils/memberUtils";
 const router = Router();
 
 router.post("/members/sync", async (req, res) => {
-  const { email, name, avatar, bio, birthday, showBirthdayOnCalendar, workoutLog, savedInspirationIds, likedInspirationIds, heightCm, weightKg, age, gender, healthSyncEnabled } = req.body as {
+  const { email, name, avatar, bio, birthday, showBirthdayOnCalendar, workoutLog, savedInspirationIds, likedInspirationIds, favoriteSongIds, heightCm, weightKg, age, gender, healthSyncEnabled } = req.body as {
     email?: string;
     name?: string;
     avatar?: string;
@@ -20,6 +20,7 @@ router.post("/members/sync", async (req, res) => {
     workoutLog?: string[];
     savedInspirationIds?: string[];
     likedInspirationIds?: string[];
+    favoriteSongIds?: number[];
     heightCm?: number;
     weightKg?: number;
     age?: number;
@@ -44,8 +45,8 @@ router.post("/members/sync", async (req, res) => {
     // still empty. However, saved/liked inspiration IDs should always be updated
     // from the client since they reflect current user interactions.
     await pool.query(
-      `INSERT INTO members (email, name, avatar, bio, birthday, show_birthday_on_calendar, workout_log, saved_inspiration_ids, liked_inspiration_ids, height_cm, weight_kg, age, gender, health_sync_enabled, updated_at)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, now())
+      `INSERT INTO members (email, name, avatar, bio, birthday, show_birthday_on_calendar, workout_log, saved_inspiration_ids, liked_inspiration_ids, favorite_song_ids, height_cm, weight_kg, age, gender, health_sync_enabled, updated_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, now())
        ON CONFLICT (email) DO UPDATE SET
          name = $2,
          avatar = COALESCE($3, members.avatar),
@@ -55,11 +56,12 @@ router.post("/members/sync", async (req, res) => {
          workout_log = COALESCE($7, members.workout_log),
          saved_inspiration_ids = COALESCE($8, members.saved_inspiration_ids),
          liked_inspiration_ids = COALESCE($9, members.liked_inspiration_ids),
-         height_cm = COALESCE($10, members.height_cm),
-         weight_kg = COALESCE($11, members.weight_kg),
-         age = COALESCE($12, members.age),
-         gender = COALESCE($13, members.gender),
-         health_sync_enabled = $14,
+         favorite_song_ids = COALESCE($10, members.favorite_song_ids),
+         height_cm = COALESCE($11, members.height_cm),
+         weight_kg = COALESCE($12, members.weight_kg),
+         age = COALESCE($13, members.age),
+         gender = COALESCE($14, members.gender),
+         health_sync_enabled = $15,
          updated_at = now()`,
       [
         normalizedEmail,
@@ -71,6 +73,7 @@ router.post("/members/sync", async (req, res) => {
         workoutLog && workoutLog.length > 0 ? workoutLog : null,
         savedInspirationIds && savedInspirationIds.length > 0 ? savedInspirationIds : null,
         likedInspirationIds && likedInspirationIds.length > 0 ? likedInspirationIds : null,
+        favoriteSongIds && favoriteSongIds.length > 0 ? favoriteSongIds : null,
         heightCm ?? null,
         weightKg ?? null,
         age ?? null,
@@ -161,7 +164,7 @@ router.get("/members/me", async (req, res) => {
 
   try {
     const { rows } = await pool.query(
-      `SELECT name, avatar, bio, birthday, show_birthday_on_calendar, workout_log, featured_badge, created_at, saved_inspiration_ids, liked_inspiration_ids, show_on_leaderboard, height_cm, weight_kg, age, gender, health_sync_enabled
+      `SELECT name, avatar, bio, birthday, show_birthday_on_calendar, workout_log, featured_badge, created_at, saved_inspiration_ids, liked_inspiration_ids, favorite_song_ids, show_on_leaderboard, height_cm, weight_kg, age, gender, health_sync_enabled
        FROM members WHERE email = $1`,
       [email]
     );
@@ -195,6 +198,7 @@ router.get("/members/me", async (req, res) => {
         featuredBadge: row.featured_badge ?? undefined,
         savedInspirationIds: row.saved_inspiration_ids ?? undefined,
         likedInspirationIds: row.liked_inspiration_ids ?? undefined,
+        favoriteSongIds: row.favorite_song_ids ?? undefined,
         showOnLeaderboard: row.show_on_leaderboard ?? true,
         heightCm: row.height_cm != null ? Number(row.height_cm) : undefined,
         weightKg: row.weight_kg != null ? Number(row.weight_kg) : undefined,
