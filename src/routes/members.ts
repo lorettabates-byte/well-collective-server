@@ -49,8 +49,8 @@ router.post("/members/sync", async (req, res) => {
     // still empty. However, saved/liked inspiration IDs should always be updated
     // from the client since they reflect current user interactions.
     await pool.query(
-      `INSERT INTO members (email, name, avatar, bio, birthday, show_birthday_on_calendar, workout_log, saved_inspiration_ids, liked_inspiration_ids, favorite_song_ids, height_cm, weight_kg, age, gender, health_sync_enabled, breathwork_log, well_activity_log, resistance_log, stretching_log, updated_at)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, now())
+      `INSERT INTO members (email, name, avatar, bio, birthday, show_birthday_on_calendar, workout_log, saved_inspiration_ids, liked_inspiration_ids, favorite_song_ids, height_cm, weight_kg, age, gender, health_sync_enabled, breathwork_log, well_activity_log, resistance_log, stretching_log, goal_plan, notification_tone, movement_target, goals_completed, updated_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, now())
        ON CONFLICT (email) DO UPDATE SET
          name = $2,
          avatar = COALESCE($3, members.avatar),
@@ -70,6 +70,10 @@ router.post("/members/sync", async (req, res) => {
          well_activity_log = COALESCE($17, members.well_activity_log),
          resistance_log = COALESCE($18, members.resistance_log),
          stretching_log = COALESCE($19, members.stretching_log),
+         goal_plan = COALESCE($20, members.goal_plan),
+         notification_tone = COALESCE($21, members.notification_tone),
+         movement_target = COALESCE($22, members.movement_target),
+         goals_completed = CASE WHEN $23 THEN TRUE ELSE members.goals_completed END,
          updated_at = now()`,
       [
         normalizedEmail,
@@ -91,6 +95,10 @@ router.post("/members/sync", async (req, res) => {
         wellActivityLog && wellActivityLog.length > 0 ? wellActivityLog : null,
         resistanceLog && resistanceLog.length > 0 ? resistanceLog : null,
         stretchingLog && stretchingLog.length > 0 ? stretchingLog : null,
+        (req.body as Record<string, unknown>).goalPlan || null,
+        (req.body as Record<string, unknown>).notificationTone || null,
+        (req.body as Record<string, unknown>).movementTarget || null,
+        !!(req.body as Record<string, unknown>).goalsCompleted,
       ]
     );
 
@@ -178,7 +186,7 @@ router.get("/members/me", async (req, res) => {
 
   try {
     const { rows } = await pool.query(
-      `SELECT name, avatar, bio, birthday, show_birthday_on_calendar, workout_log, featured_badge, created_at, saved_inspiration_ids, liked_inspiration_ids, favorite_song_ids, show_on_leaderboard, height_cm, weight_kg, age, gender, health_sync_enabled, breathwork_log, well_activity_log, resistance_log, stretching_log
+      `SELECT name, avatar, bio, birthday, show_birthday_on_calendar, workout_log, featured_badge, created_at, saved_inspiration_ids, liked_inspiration_ids, favorite_song_ids, show_on_leaderboard, height_cm, weight_kg, age, gender, health_sync_enabled, breathwork_log, well_activity_log, resistance_log, stretching_log, goal_plan, notification_tone, movement_target, goals_completed
        FROM members WHERE email = $1`,
       [email]
     );
@@ -224,6 +232,10 @@ router.get("/members/me", async (req, res) => {
         wellActivityLog: row.well_activity_log ?? [],
         resistanceLog: row.resistance_log ?? [],
         stretchingLog: row.stretching_log ?? [],
+        goalPlan: row.goal_plan ?? undefined,
+        notificationTone: row.notification_tone ?? undefined,
+        movementTarget: row.movement_target ?? undefined,
+        goalsCompleted: row.goals_completed ?? false,
         tribeConnections: Number(tribeAddedRows.rows[0].count),
         addedByCount: Number(tribeAddedByRows.rows[0].count),
         allTimePoints: Number(totalPtsRows.rows[0].total),

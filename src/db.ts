@@ -827,6 +827,12 @@ export async function initDb(): Promise<void> {
     );
   `);
 
+  // Goal questionnaire answers (post-download onboarding)
+  await pool.query(`ALTER TABLE members ADD COLUMN IF NOT EXISTS goal_plan TEXT;`);
+  await pool.query(`ALTER TABLE members ADD COLUMN IF NOT EXISTS notification_tone TEXT;`);
+  await pool.query(`ALTER TABLE members ADD COLUMN IF NOT EXISTS movement_target TEXT;`);
+  await pool.query(`ALTER TABLE members ADD COLUMN IF NOT EXISTS goals_completed BOOLEAN NOT NULL DEFAULT FALSE;`);
+
   // Seed yesterday's WELL CUP winner if none exists yet (first-run bootstrap).
   // The midnight cron takes over from today onward; ON CONFLICT keeps this safe
   // to run on every startup without clobbering real winners.
