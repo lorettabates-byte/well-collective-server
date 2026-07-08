@@ -333,4 +333,40 @@ router.get("/analytics/dashboard", requireAdmin, async (_req, res) => {
   }
 });
 
+// Quick stats card for the Admin home page — cheap aggregate queries only.
+// MRR is estimated from paid member count × monthly price from env var
+// (MEMBERSHIP_MONTHLY_PRICE, defaults to 29).
+router.get("/analytics/admin-stats", requireAdmin, async (_req, res) => {
+  try {
+    const price = Number(process.env.MEMBERSHIP_MONTHLY_PRICE || 29);
+
+    const { rows } = await pool.query(`
+      SELECT
+        COUNT(*) FILTER (WHERE trial_ends_at IS NULL) AS paid_members,
+        COUNT(*) FILTER (WHERE trial_ends_at IS NOT NULL AND trial_ends_at >= CURRENT_DATE) AS active_trials,
+        COUNT(*) FILTER (WHERE created_at >= DATE_TRUNC('month', CURRENT_DATE)) AS new_this_month,
+        COUNT(*) AS total_members
+      FROM members
+    `);
+
+    const { rows: activeRows } = await pool.query(`
+      SELECT COUNT(DISTINCT member_email) AS active_today
+      FROM login_streaks
+      WHERE last_login_date = CURRENT_DATE
+    `);
+
+    const paid = Number(rows[0].paid_members);
+    const activeTrials = Number(rows[0].active_trials);
+    const newThisMonth = Number(rows[0].new_this_month);
+    const totalMembers = Number(rows[0].total_members);
+    const activeToday = Number(activeRows[0].active_today);
+    const mrr = paid * price;
+
+    res.json({ paid, activeTrials, newThisMonth, totalMembers, activeToday, mrr, price });
+  } catch (err) {
+    console.error("Admin stats error:", err);
+    res.status(500).json({ error: "Failed to load stats" });
+  }
+});
+
 export default router;
