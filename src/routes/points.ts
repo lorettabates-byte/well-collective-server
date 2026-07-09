@@ -147,6 +147,68 @@ const DAILY_CAPS: Record<string, number> = {
   add_to_homescreen: 1,
 };
 
+const HISTORY_ACTIVITY_MET: Record<string, { met: number; minutes: number }> = {
+  resistance_training: { met: 5.0, minutes: 40 },
+  cardio: { met: 7.0, minutes: 30 },
+  class_watch: { met: 6.5, minutes: 40 },
+  breathwork: { met: 1.3, minutes: 10 },
+  stretching: { met: 2.3, minutes: 15 },
+  well_activity: { met: 2.8, minutes: 20 },
+};
+
+const HISTORY_KCAL_PER_STEP_PER_KG = 0.00057;
+
+const HISTORY_CHECKIN_GRID = [
+  ["resistance_training", "cardio"],
+  ["sleep_log"],
+  ["meal_log"],
+  ["breathwork"],
+  ["stretching"],
+  ["class_watch", "blog_open", "well_activity"],
+];
+
+function roundMetric(value: number, places = 0): number {
+  const factor = 10 ** places;
+  return Math.round(value * factor) / factor;
+}
+
+function averageMetric(values: number[], places = 0): number | null {
+  const filtered = values.filter((value) => Number.isFinite(value) && value > 0);
+  if (filtered.length === 0) return null;
+  return roundMetric(filtered.reduce((sum, value) => sum + value, 0) / filtered.length, places);
+}
+
+function coveredWellAreas(activities: { type: string }[]): number {
+  const types = new Set(activities.map((activity) => activity.type));
+  return HISTORY_CHECKIN_GRID.filter((group) => group.some((type) => types.has(type))).length;
+}
+
+function estimateEnergyOut(
+  activities: { type: string; count: number }[],
+  steps: number,
+  member: { height_cm: unknown; weight_kg: unknown; age: unknown; gender: unknown } | null
+): number | null {
+  if (!member?.height_cm || !member?.weight_kg || !member?.age) return null;
+
+  const heightCm = Number(member.height_cm);
+  const weightKg = Number(member.weight_kg);
+  const age = Number(member.age);
+  if (!Number.isFinite(heightCm) || !Number.isFinite(weightKg) || !Number.isFinite(age)) return null;
+
+  const base = (10 * weightKg) + (6.25 * heightCm) - (5 * age);
+  const gender = String(member.gender ?? "").toLowerCase();
+  const bmr = gender === "male" ? base + 5 : gender === "female" ? base - 161 : base - 78;
+  const baselineCalories = bmr * 1.2;
+  const exerciseCalories = activities.reduce((sum, activity) => {
+    const def = HISTORY_ACTIVITY_MET[activity.type];
+    if (!def) return sum;
+    return sum + ((def.met * 3.5 * weightKg) / 200) * def.minutes * activity.count;
+  }, 0);
+  const stepCalories = steps * weightKg * HISTORY_KCAL_PER_STEP_PER_KG;
+
+  return Math.max(0, Math.round(baselineCalories + exerciseCalories + stepCalories));
+}
+
 /**
  * Award points to a member for an activity. Enforces daily caps silently.
  * Safe to fire-and-forget — errors are logged but not propagated.
@@ -399,34 +461,121 @@ router.get("/activity/history", async (req, res) => {
 
   try {
     const memberTz = await getMemberTimezone(memberEmail);
-    const localDate = sqlLocalDateFor("created_at", memberTz);
+    const activityLocalDate = sqlLocalDateFor("created_at", memberTz);
+    const loggedAtLocalDate = sqlLocalDateFor("logged_at", memberTz);
     const dayStart = sqlDayStartFor(memberTz);
-    const { rows } = await pool.query(
-      `WITH scoped AS (
-         SELECT ${localDate} AS log_date, activity_type, points
-         FROM activity_logs
-         WHERE member_email = $1
-           AND created_at >= (${dayStart} - (($2::int - 1) * INTERVAL '1 day'))
-       )
-       SELECT log_date::text AS date, activity_type, SUM(points)::int AS points, COUNT(*)::int AS count
-       FROM scoped
-       GROUP BY log_date, activity_type
-       ORDER BY log_date DESC, activity_type ASC`,
-      [memberEmail, daysBack]
-    );
 
-    const days = new Map<string, { date: string; totalPoints: number; activities: { type: string; points: number; count: number }[] }>();
+    const [activityResult, mealResult, sleepResult, stepResult, memberResult] = await Promise.all([
+      pool.query(
+        `WITH scoped AS (
+           SELECT ${activityLocalDate} AS log_date, activity_type, points
+           FROM activity_logs
+           WHERE member_email = $1
+             AND created_at >= (${dayStart} - (($2::int - 1) * INTERVAL '1 day'))
+         )
+         SELECT log_date::text AS date, activity_type, SUM(points)::int AS points, COUNT(*)::int AS count
+         FROM scoped
+         GROUP BY log_date, activity_type
+         ORDER BY log_date DESC, activity_type ASC`,
+        [memberEmail, daysBack]
+      ),
+      pool.query(
+        `WITH scoped AS (
+           SELECT ${loggedAtLocalDate} AS log_date,
+                  estimated_calories,
+                  estimated_protein_g,
+                  estimated_carbs_g,
+                  estimated_fat_g
+           FROM meal_entries
+           WHERE member_email = $1
+             AND logged_at >= (${dayStart} - (($2::int - 1) * INTERVAL '1 day'))
+         )
+         SELECT log_date::text AS date,
+                COALESCE(SUM(estimated_calories), 0)::int AS energy_in,
+                COALESCE(SUM(estimated_protein_g), 0)::float AS protein,
+                COALESCE(SUM(estimated_carbs_g), 0)::float AS carbs,
+                COALESCE(SUM(estimated_fat_g), 0)::float AS fat
+         FROM scoped
+         GROUP BY log_date
+         ORDER BY log_date DESC`,
+        [memberEmail, daysBack]
+      ),
+      pool.query(
+        `WITH scoped AS (
+           SELECT ${loggedAtLocalDate} AS log_date, hours
+           FROM sleep_entries
+           WHERE member_email = $1
+             AND logged_at >= (${dayStart} - (($2::int - 1) * INTERVAL '1 day'))
+         )
+         SELECT log_date::text AS date, AVG(hours)::float AS sleep_hours
+         FROM scoped
+         GROUP BY log_date
+         ORDER BY log_date DESC`,
+        [memberEmail, daysBack]
+      ),
+      pool.query(
+        `WITH scoped AS (
+           SELECT ${loggedAtLocalDate} AS log_date, steps, logged_at
+           FROM step_entries
+           WHERE member_email = $1
+             AND logged_at >= (${dayStart} - (($2::int - 1) * INTERVAL '1 day'))
+         )
+         SELECT DISTINCT ON (log_date) log_date::text AS date, steps::int AS steps
+         FROM scoped
+         ORDER BY log_date DESC, logged_at DESC`,
+        [memberEmail, daysBack]
+      ),
+      pool.query(
+        "SELECT height_cm, weight_kg, age, gender FROM members WHERE email = $1",
+        [memberEmail]
+      ),
+    ]);
+
+    type HistoryDay = {
+      date: string;
+      totalPoints: number;
+      activities: { type: string; points: number; count: number }[];
+      energyIn: number;
+      energyOut: number | null;
+      sleepHours: number | null;
+      steps: number;
+      protein: number;
+      carbs: number;
+      fat: number;
+      wellAreas: number;
+    };
+
+    const days = new Map<string, HistoryDay>();
     const activityTotals = new Map<string, { type: string; points: number; count: number }>();
     let totalPoints = 0;
 
-    for (const row of rows) {
+    const ensureDay = (dateValue: unknown): HistoryDay => {
+      const date = String(dateValue).slice(0, 10);
+      if (!days.has(date)) {
+        days.set(date, {
+          date,
+          totalPoints: 0,
+          activities: [],
+          energyIn: 0,
+          energyOut: null,
+          sleepHours: null,
+          steps: 0,
+          protein: 0,
+          carbs: 0,
+          fat: 0,
+          wellAreas: 0,
+        });
+      }
+      return days.get(date)!;
+    };
+
+    for (const row of activityResult.rows) {
       const date = String(row.date).slice(0, 10);
       const points = Number(row.points);
       const count = Number(row.count);
       const type = String(row.activity_type);
 
-      if (!days.has(date)) days.set(date, { date, totalPoints: 0, activities: [] });
-      const day = days.get(date)!;
+      const day = ensureDay(date);
       day.activities.push({ type, points, count });
       day.totalPoints += points;
 
@@ -437,13 +586,47 @@ router.get("/activity/history", async (req, res) => {
       totalPoints += points;
     }
 
+    for (const row of mealResult.rows) {
+      const day = ensureDay(row.date);
+      day.energyIn = Number(row.energy_in) || 0;
+      day.protein = roundMetric(Number(row.protein) || 0, 1);
+      day.carbs = roundMetric(Number(row.carbs) || 0, 1);
+      day.fat = roundMetric(Number(row.fat) || 0, 1);
+    }
+
+    for (const row of sleepResult.rows) {
+      const day = ensureDay(row.date);
+      day.sleepHours = row.sleep_hours == null ? null : roundMetric(Number(row.sleep_hours), 1);
+    }
+
+    for (const row of stepResult.rows) {
+      const day = ensureDay(row.date);
+      day.steps = Number(row.steps) || 0;
+    }
+
+    const member = memberResult.rows[0] ?? null;
+    for (const day of days.values()) {
+      day.activities.sort((a, b) => b.points - a.points);
+      day.wellAreas = coveredWellAreas(day.activities);
+      day.energyOut = estimateEnergyOut(day.activities, day.steps, member);
+    }
+
+    const orderedDays = Array.from(days.values()).sort((a, b) => b.date.localeCompare(a.date));
+
     res.json({
       range: selectedRange,
-      days: Array.from(days.values()),
+      days: orderedDays,
       totals: {
         totalPoints,
         completedDays: days.size,
         activityCounts: Array.from(activityTotals.values()).sort((a, b) => b.points - a.points),
+        averages: {
+          sleepHours: averageMetric(orderedDays.map((day) => day.sleepHours ?? 0), 1),
+          energyIn: averageMetric(orderedDays.map((day) => day.energyIn)),
+          energyOut: averageMetric(orderedDays.map((day) => day.energyOut ?? 0)),
+          steps: averageMetric(orderedDays.map((day) => day.steps)),
+          wellAreas: averageMetric(orderedDays.map((day) => day.wellAreas), 1),
+        },
       },
     });
   } catch (err) {
