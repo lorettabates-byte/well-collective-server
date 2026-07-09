@@ -46,10 +46,24 @@ function serializeEvent(row: EventRow) {
   };
 }
 
-router.get("/events", async (_req, res) => {
+router.get("/events", async (req, res) => {
   try {
+    const upcomingOnly = req.query.upcoming === "true";
+    const light = req.query.light === "true";
+    const limitParam = Number.parseInt(String(req.query.limit ?? ""), 10);
+    const limit = Number.isFinite(limitParam) && limitParam > 0 ? Math.min(limitParam, 250) : null;
+    const whereClause = upcomingOnly ? "WHERE date >= CURRENT_DATE" : "";
+    const limitClause = limit ? `LIMIT ${limit}` : "";
+    const imageSelect = light
+      ? "CASE WHEN image IS NOT NULL AND image NOT LIKE 'data:%' THEN image ELSE NULL END AS image"
+      : "image";
+
     const { rows } = await pool.query<EventRow>(
-      "SELECT id, title, description, date, time, location, color, rsvps, recurrence_group_id, image, sold_out FROM events ORDER BY date ASC"
+      `SELECT id, title, description, date, time, location, color, rsvps, recurrence_group_id, ${imageSelect}, sold_out
+       FROM events
+       ${whereClause}
+       ORDER BY date ASC, time ASC
+       ${limitClause}`
     );
     res.json({ events: rows.map(serializeEvent) });
   } catch (err) {
