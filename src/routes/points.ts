@@ -21,11 +21,21 @@ async function getMemberTimezone(memberEmail: string): Promise<string> {
   }
 }
 
-// Builds a SQL day-start expression in an arbitrary IANA timezone.
+// Builds SQL expressions in an arbitrary IANA timezone.
 // Sanitized to only allow valid IANA characters (letters, digits, /, _, +, -).
-function sqlDayStartFor(tz: string): string {
+function sanitizeTimezone(tz: string): string {
   const safe = tz.replace(/[^A-Za-z0-9/_+\-]/g, "");
+  return safe || TIMEZONE;
+}
+
+function sqlDayStartFor(tz: string): string {
+  const safe = sanitizeTimezone(tz);
   return `date_trunc('day', now() AT TIME ZONE '${safe}') AT TIME ZONE '${safe}'`;
+}
+
+function sqlLocalDateFor(column: string, tz: string): string {
+  const safe = sanitizeTimezone(tz);
+  return `(${column} AT TIME ZONE '${safe}')::date`;
 }
 
 // Milestone bonuses shown in the streak modal — kept as a single source of
@@ -377,6 +387,70 @@ router.get("/activity/today", async (req, res) => {
   }
 });
 
+// A member's recent WELL Check history, grouped by their local calendar day.
+router.get("/activity/history", async (req, res) => {
+  const { email, range } = req.query as { email?: string; range?: string };
+  if (!email) return res.status(400).json({ error: "email required" });
+
+  const selectedRange = range === "month" || range === "year" ? range : "week";
+  const daysBack = selectedRange === "year" ? 365 : selectedRange === "month" ? 30 : 7;
+  const memberEmail = email.toLowerCase();
+
+  try {
+    const memberTz = await getMemberTimezone(memberEmail);
+    const localDate = sqlLocalDateFor("created_at", memberTz);
+    const dayStart = sqlDayStartFor(memberTz);
+    const { rows } = await pool.query(
+      `WITH scoped AS (
+         SELECT ${localDate} AS log_date, activity_type, points
+         FROM activity_logs
+         WHERE member_email = $1
+           AND created_at >= (${dayStart} - (($2::int - 1) * INTERVAL '1 day'))
+       )
+       SELECT log_date::text AS date, activity_type, SUM(points)::int AS points, COUNT(*)::int AS count
+       FROM scoped
+       GROUP BY log_date, activity_type
+       ORDER BY log_date DESC, activity_type ASC`,
+      [memberEmail, daysBack]
+    );
+
+    const days = new Map<string, { date: string; totalPoints: number; activities: { type: string; points: number; count: number }[] }>();
+    const activityTotals = new Map<string, { type: string; points: number; count: number }>();
+    let totalPoints = 0;
+
+    for (const row of rows) {
+      const date = String(row.date).slice(0, 10);
+      const points = Number(row.points);
+      const count = Number(row.count);
+      const type = String(row.activity_type);
+
+      if (!days.has(date)) days.set(date, { date, totalPoints: 0, activities: [] });
+      const day = days.get(date)!;
+      day.activities.push({ type, points, count });
+      day.totalPoints += points;
+
+      const total = activityTotals.get(type) ?? { type, points: 0, count: 0 };
+      total.points += points;
+      total.count += count;
+      activityTotals.set(type, total);
+      totalPoints += points;
+    }
+
+    res.json({
+      range: selectedRange,
+      days: Array.from(days.values()),
+      totals: {
+        totalPoints,
+        completedDays: days.size,
+        activityCounts: Array.from(activityTotals.values()).sort((a, b) => b.points - a.points),
+      },
+    });
+  } catch (err) {
+    console.error("Activity history error:", err);
+    res.status(500).json({ error: "Failed to fetch activity history" });
+  }
+});
+
 // Estimate calories + macros for a freeform meal description. Uses the same
 // approach as AI-generated recipes: Claude breaks the description into food
 // items + gram estimates, then real nutrition values come from USDA
@@ -683,7 +757,13 @@ router.get("/steps/today", async (req, res) => {
        ORDER BY logged_at DESC LIMIT 1`,
       [email.toLowerCase()]
     );
-    res.json({ entry: rows[0] ?? null });
+    const entry = rows[0] ?? null;
+    const steps = entry ? Number(entry.steps) : null;
+    res.json({
+      entry,
+      steps,
+      points: steps ? Math.min(Math.floor(steps / 1000), 15) : 0,
+    });
   } catch (err) {
     console.error("Fetch steps error:", err);
     res.status(500).json({ error: "Failed to fetch steps" });
