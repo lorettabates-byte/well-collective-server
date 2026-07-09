@@ -47,6 +47,10 @@ const TAG_TO_CATEGORY: Record<string, string> = {
   "scheduled-notification": "general",
   message: "replies",
   tribe: "mentions",
+  "tribe-card": "mentions",
+  "tribe-challenge": "mentions",
+  "tribe-event": "mentions",
+  "tribe-cheer": "mentions",
 };
 
 const DEFAULT_NOTIFICATION_SETTINGS: Record<string, boolean> = {

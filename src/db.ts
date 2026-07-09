@@ -445,6 +445,44 @@ export async function initDb(): Promise<void> {
     );
   `);
 
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS tribe_cards (
+      id SERIAL PRIMARY KEY,
+      sender_email TEXT NOT NULL REFERENCES members(email) ON DELETE CASCADE,
+      recipient_email TEXT NOT NULL REFERENCES members(email) ON DELETE CASCADE,
+      occasion_id TEXT NOT NULL,
+      style_id TEXT NOT NULL,
+      message TEXT NOT NULL,
+      opened_at TIMESTAMPTZ,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    );
+  `);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_tribe_cards_recipient_created
+    ON tribe_cards (recipient_email, created_at DESC);`);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS tribe_challenges (
+      id SERIAL PRIMARY KEY,
+      challenge_key TEXT NOT NULL,
+      title TEXT NOT NULL,
+      description TEXT NOT NULL,
+      duration_label TEXT NOT NULL,
+      category TEXT NOT NULL,
+      goals JSONB NOT NULL,
+      bonus_points INT NOT NULL DEFAULT 25,
+      sender_email TEXT NOT NULL REFERENCES members(email) ON DELETE CASCADE,
+      recipient_email TEXT NOT NULL REFERENCES members(email) ON DELETE CASCADE,
+      sender_progress JSONB NOT NULL DEFAULT '[]'::jsonb,
+      recipient_progress JSONB NOT NULL DEFAULT '[]'::jsonb,
+      sender_completed_at TIMESTAMPTZ,
+      recipient_completed_at TIMESTAMPTZ,
+      completed_at TIMESTAMPTZ,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    );
+  `);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_tribe_challenges_members
+    ON tribe_challenges (sender_email, recipient_email, created_at DESC);`);
+
   // Ad-hoc notes the admin sends as instant push notifications (distinct
   // from the date-keyed content_schedule, since there can be any number of
   // these per day) — persisted so they show up in the app's Inspirations
@@ -753,6 +791,22 @@ export async function initDb(): Promise<void> {
       created_at TIMESTAMPTZ NOT NULL DEFAULT now()
     );
   `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS member_notifications (
+      id SERIAL PRIMARY KEY,
+      member_email TEXT NOT NULL REFERENCES members(email) ON DELETE CASCADE,
+      type TEXT NOT NULL DEFAULT 'general',
+      title TEXT NOT NULL,
+      body TEXT NOT NULL,
+      link TEXT,
+      metadata JSONB,
+      read_at TIMESTAMPTZ,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    );
+  `);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_member_notifications_email_created
+    ON member_notifications (member_email, created_at DESC);`);
 
   // Saved meals for quick reuse in nutrition tracking
   await pool.query(`

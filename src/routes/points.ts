@@ -122,6 +122,7 @@ export const POINT_VALUES: Record<string, number> = {
   event_attend: 25,
   well_escape: 100,
   tribe_add: 5,
+  tribe_challenge_complete: 25,
   cardio: 20,
   daily_challenge_accept: 10,
   tutorial_complete: 50,

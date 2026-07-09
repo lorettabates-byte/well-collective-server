@@ -5,6 +5,7 @@ import { sendNotificationToUser } from "../push";
 import { computeBonusBadges, computeLevelBadge } from "../badges";
 import { awardPoints } from "./points";
 import { deriveMemberId, findEmailByMemberId } from "../utils/memberUtils";
+import { createMemberNotification } from "../memberNotifications";
 
 const router = Router();
 
@@ -22,6 +23,112 @@ const TRIBE_CHEER_LABELS: Record<string, string> = {
   "way-to-go": "Way to Go!",
   "happy-birthday": "Happy Birthday! Wishing you a wonderful day!",
 };
+
+interface ChallengeGoal {
+  id: string;
+  label: string;
+}
+
+interface ChallengeDefinition {
+  id: string;
+  title: string;
+  description: string;
+  duration: string;
+  category: "nutrition" | "fitness" | "mindfulness" | "wellness";
+  goals: ChallengeGoal[];
+}
+
+const TRIBE_CHALLENGE_DEFS: Record<string, ChallengeDefinition> = {
+  "nourishment-3day": {
+    id: "nourishment-3day",
+    title: "3-Day Nourishment Challenge",
+    description: "Log your meals together for 3 days straight.",
+    duration: "3 days",
+    category: "nutrition",
+    goals: [
+      { id: "day-1", label: "Day 1 meals logged" },
+      { id: "day-2", label: "Day 2 meals logged" },
+      { id: "day-3", label: "Day 3 meals logged" },
+    ],
+  },
+  "workout-streak-7": {
+    id: "workout-streak-7",
+    title: "7-Day Streak Challenge",
+    description: "Complete a movement session every day for a week.",
+    duration: "7 days",
+    category: "fitness",
+    goals: Array.from({ length: 7 }, (_, i) => ({ id: `day-${i + 1}`, label: `Day ${i + 1} workout complete` })),
+  },
+  "morning-ritual-5": {
+    id: "morning-ritual-5",
+    title: "Morning Ritual Challenge",
+    description: "Complete your WELL Check before noon for 5 days.",
+    duration: "5 days",
+    category: "wellness",
+    goals: Array.from({ length: 5 }, (_, i) => ({ id: `day-${i + 1}`, label: `Day ${i + 1} WELL Check before noon` })),
+  },
+  "mindfulness-5": {
+    id: "mindfulness-5",
+    title: "Mindfulness Challenge",
+    description: "Complete a breathwork session every day for 5 days.",
+    duration: "5 days",
+    category: "mindfulness",
+    goals: Array.from({ length: 5 }, (_, i) => ({ id: `day-${i + 1}`, label: `Day ${i + 1} breathwork complete` })),
+  },
+  "wellcheck-7": {
+    id: "wellcheck-7",
+    title: "Full WELL Check Challenge",
+    description: "Complete all WELL Check areas for 7 days in a row.",
+    duration: "7 days",
+    category: "wellness",
+    goals: Array.from({ length: 7 }, (_, i) => ({ id: `day-${i + 1}`, label: `Day ${i + 1} full WELL Check` })),
+  },
+  "hydration-5": {
+    id: "hydration-5",
+    title: "Hydration Reset",
+    description: "Hit your water goal together for 5 days.",
+    duration: "5 days",
+    category: "nutrition",
+    goals: Array.from({ length: 5 }, (_, i) => ({ id: `day-${i + 1}`, label: `Day ${i + 1} water goal met` })),
+  },
+};
+
+function progressArray(value: unknown): string[] {
+  return Array.isArray(value) ? value.map(String) : [];
+}
+
+function iso(value: unknown): string | null {
+  if (!value) return null;
+  return value instanceof Date ? value.toISOString() : String(value);
+}
+
+function challengeResponse(row: Record<string, any>, viewerEmail: string) {
+  const viewer = viewerEmail.toLowerCase();
+  const isSender = row.sender_email === viewer;
+  const myProgress = progressArray(isSender ? row.sender_progress : row.recipient_progress);
+  const partnerProgress = progressArray(isSender ? row.recipient_progress : row.sender_progress);
+  return {
+    id: Number(row.id),
+    challengeId: row.challenge_key,
+    title: row.title,
+    description: row.description,
+    duration: row.duration_label,
+    category: row.category,
+    goals: row.goals ?? [],
+    bonusPoints: Number(row.bonus_points ?? 25),
+    createdAt: iso(row.created_at),
+    completedAt: iso(row.completed_at),
+    myProgress,
+    partnerProgress,
+    myCompletedAt: iso(isSender ? row.sender_completed_at : row.recipient_completed_at),
+    partnerCompletedAt: iso(isSender ? row.recipient_completed_at : row.sender_completed_at),
+    partner: {
+      name: isSender ? row.recipient_name : row.sender_name,
+      avatar: isSender ? row.recipient_avatar : row.sender_avatar,
+    },
+    invitedByMe: isSender,
+  };
+}
 
 // Admin: list all tribe connections (diagnostic / restore tool)
 router.get("/admin/tribe-connections", requireAdmin, async (_req, res) => {
@@ -302,39 +409,93 @@ router.post("/tribe/:memberId/card", async (req, res) => {
     const { rows } = await pool.query("SELECT name FROM members WHERE email = $1", [email.toLowerCase()]);
     const senderName = rows[0]?.name || "Someone";
 
-    const occasionLabels: Record<string, string> = {
-      birthday: "a Birthday Card",
-      "thinking-of-you": "a Thinking of You card",
-      "just-saying-hi": "a Hello card",
-      condolences: "a Condolences card",
-      "youve-got-this": "a You've Got This card",
-      congratulations: "a Congratulations card",
-    };
-    const label = occasionLabels[occasionId] ?? "a card";
+    const { rows: cardRows } = await pool.query(
+      `INSERT INTO tribe_cards (sender_email, recipient_email, occasion_id, style_id, message)
+       VALUES ($1, $2, $3, $4, $5)
+       RETURNING id`,
+      [email.toLowerCase(), targetEmail.toLowerCase(), occasionId, styleId, message || ""]
+    );
+    const cardId = Number(cardRows[0].id);
+    const link = `/tribe?card=${cardId}`;
+    const title = `You received a card from ${senderName}`;
 
-    await sendNotificationToUser(targetEmail, {
-      title: `${senderName} sent you ${label}`,
-      body: message || `Open the app to view your card from ${senderName}.`,
-      tag: "tribe-card",
-      url: "/tribe",
+    await createMemberNotification({
+      memberEmail: targetEmail,
+      type: "tribe",
+      title,
+      body: "Tap to open your card.",
+      link,
+      metadata: { cardId },
     });
 
-    res.status(201).json({ ok: true });
+    await sendNotificationToUser(targetEmail, {
+      title,
+      body: "Open your card in WELL Collective.",
+      tag: "tribe-card",
+      url: link,
+    });
+
+    res.status(201).json({ ok: true, cardId });
   } catch (err) {
     console.error("Send tribe card error:", err);
     res.status(500).json({ error: "Failed to send card" });
   }
 });
 
+// Open a received card. Only the sender or recipient can fetch the card body.
+router.get("/tribe/cards/:cardId", async (req, res) => {
+  const email = (req.query.email as string | undefined)?.toLowerCase();
+  if (!email) return res.status(400).json({ error: "email required" });
+
+  try {
+    const { rows } = await pool.query(
+      `SELECT c.id, c.occasion_id, c.style_id, c.message, c.created_at,
+              sm.name AS sender_name, rm.name AS recipient_name,
+              c.sender_email, c.recipient_email
+       FROM tribe_cards c
+       JOIN members sm ON sm.email = c.sender_email
+       JOIN members rm ON rm.email = c.recipient_email
+       WHERE c.id = $1
+         AND (c.sender_email = $2 OR c.recipient_email = $2)`,
+      [req.params.cardId, email]
+    );
+
+    if (rows.length === 0) return res.status(404).json({ error: "Card not found" });
+
+    await pool.query(
+      `UPDATE tribe_cards
+       SET opened_at = COALESCE(opened_at, now())
+       WHERE id = $1 AND recipient_email = $2`,
+      [req.params.cardId, email]
+    );
+
+    const row = rows[0];
+    res.json({
+      card: {
+        id: Number(row.id),
+        occasionId: row.occasion_id,
+        styleId: row.style_id,
+        message: row.message,
+        senderName: row.sender_name,
+        recipientName: row.recipient_name,
+        createdAt: iso(row.created_at),
+      },
+    });
+  } catch (err) {
+    console.error("Fetch tribe card error:", err);
+    res.status(500).json({ error: "Failed to fetch card" });
+  }
+});
+
 // Invite a tribe member to a challenge.
 router.post("/tribe/:memberId/challenge-invite", async (req, res) => {
-  const { email, challengeId, challengeTitle } = req.body as {
+  const { email, challengeId } = req.body as {
     email?: string;
     challengeId?: string;
-    challengeTitle?: string;
   };
-  if (!email || !challengeId || !challengeTitle) {
-    return res.status(400).json({ error: "email, challengeId, and challengeTitle required" });
+  const def = challengeId ? TRIBE_CHALLENGE_DEFS[challengeId] : undefined;
+  if (!email || !def) {
+    return res.status(400).json({ error: "email and a valid challengeId required" });
   }
   try {
     const targetEmail = await findEmailByMemberId(req.params.memberId);
@@ -343,17 +504,173 @@ router.post("/tribe/:memberId/challenge-invite", async (req, res) => {
     const { rows } = await pool.query("SELECT name FROM members WHERE email = $1", [email.toLowerCase()]);
     const senderName = rows[0]?.name || "Someone";
 
-    await sendNotificationToUser(targetEmail, {
-      title: `${senderName} invited you to a challenge!`,
-      body: `Join the ${challengeTitle} — let's do this together!`,
-      tag: "tribe-challenge",
-      url: "/tribe",
+    const { rows: challengeRows } = await pool.query(
+      `INSERT INTO tribe_challenges (
+         challenge_key, title, description, duration_label, category, goals,
+         bonus_points, sender_email, recipient_email
+       )
+       VALUES ($1, $2, $3, $4, $5, $6, 25, $7, $8)
+       RETURNING id`,
+      [
+        def.id,
+        def.title,
+        def.description,
+        def.duration,
+        def.category,
+        JSON.stringify(def.goals),
+        email.toLowerCase(),
+        targetEmail.toLowerCase(),
+      ]
+    );
+    const challengeRecordId = Number(challengeRows[0].id);
+    const link = `/tribe?challenge=${challengeRecordId}`;
+
+    await createMemberNotification({
+      memberEmail: targetEmail,
+      type: "tribe",
+      title: `${senderName} invited you to a challenge`,
+      body: `${def.title} is ready on your WELL Tribe page.`,
+      link,
+      metadata: { challengeId: challengeRecordId, challengeKey: def.id },
     });
 
-    res.status(201).json({ ok: true });
+    await sendNotificationToUser(targetEmail, {
+      title: `${senderName} invited you to a challenge!`,
+      body: `Join ${def.title} together in WELL Tribe.`,
+      tag: "tribe-challenge",
+      url: link,
+    });
+
+    res.status(201).json({ ok: true, challengeId: challengeRecordId });
   } catch (err) {
     console.error("Send challenge invite error:", err);
     res.status(500).json({ error: "Failed to send challenge invite" });
+  }
+});
+
+router.get("/tribe/challenges", async (req, res) => {
+  const email = (req.query.email as string | undefined)?.toLowerCase();
+  if (!email) return res.status(400).json({ error: "email required" });
+
+  try {
+    const { rows } = await pool.query(
+      `SELECT tc.*,
+              sm.name AS sender_name, sm.avatar AS sender_avatar,
+              rm.name AS recipient_name, rm.avatar AS recipient_avatar
+       FROM tribe_challenges tc
+       JOIN members sm ON sm.email = tc.sender_email
+       JOIN members rm ON rm.email = tc.recipient_email
+       WHERE tc.sender_email = $1 OR tc.recipient_email = $1
+       ORDER BY tc.completed_at NULLS FIRST, tc.created_at DESC
+       LIMIT 50`,
+      [email]
+    );
+
+    res.json({ challenges: rows.map((row) => challengeResponse(row, email)) });
+  } catch (err) {
+    console.error("Fetch tribe challenges error:", err);
+    res.status(500).json({ error: "Failed to fetch tribe challenges" });
+  }
+});
+
+router.patch("/tribe/challenges/:challengeId/progress", async (req, res) => {
+  const { email, goalId, completed } = req.body as {
+    email?: string;
+    goalId?: string;
+    completed?: boolean;
+  };
+  if (!email || !goalId || typeof completed !== "boolean") {
+    return res.status(400).json({ error: "email, goalId, and completed required" });
+  }
+
+  const memberEmail = email.toLowerCase();
+
+  try {
+    const { rows } = await pool.query(
+      `SELECT tc.*,
+              sm.name AS sender_name, sm.avatar AS sender_avatar,
+              rm.name AS recipient_name, rm.avatar AS recipient_avatar
+       FROM tribe_challenges tc
+       JOIN members sm ON sm.email = tc.sender_email
+       JOIN members rm ON rm.email = tc.recipient_email
+       WHERE tc.id = $1
+         AND (tc.sender_email = $2 OR tc.recipient_email = $2)`,
+      [req.params.challengeId, memberEmail]
+    );
+
+    if (rows.length === 0) return res.status(404).json({ error: "Challenge not found" });
+
+    const row = rows[0];
+    if (row.completed_at) {
+      return res.json({ challenge: challengeResponse(row, memberEmail), awarded: false, points: 0 });
+    }
+
+    const goals = (row.goals ?? []) as ChallengeGoal[];
+    if (!goals.some((goal) => goal.id === goalId)) {
+      return res.status(400).json({ error: "Unknown goal" });
+    }
+
+    const isSender = row.sender_email === memberEmail;
+    const progressColumn = isSender ? "sender_progress" : "recipient_progress";
+    const completedColumn = isSender ? "sender_completed_at" : "recipient_completed_at";
+    const current = new Set(progressArray(isSender ? row.sender_progress : row.recipient_progress));
+    if (completed) current.add(goalId);
+    else current.delete(goalId);
+    const nextProgress = Array.from(current);
+    const memberComplete = goals.every((goal) => current.has(goal.id));
+
+    await pool.query(
+      `UPDATE tribe_challenges
+       SET ${progressColumn} = $1::jsonb,
+           ${completedColumn} = CASE WHEN $2 THEN COALESCE(${completedColumn}, now()) ELSE NULL END
+       WHERE id = $3`,
+      [JSON.stringify(nextProgress), memberComplete, row.id]
+    );
+
+    const { rows: updatedRows } = await pool.query(
+      `SELECT tc.*,
+              sm.name AS sender_name, sm.avatar AS sender_avatar,
+              rm.name AS recipient_name, rm.avatar AS recipient_avatar
+       FROM tribe_challenges tc
+       JOIN members sm ON sm.email = tc.sender_email
+       JOIN members rm ON rm.email = tc.recipient_email
+       WHERE tc.id = $1`,
+      [row.id]
+    );
+
+    const updated = updatedRows[0];
+    const senderDone = goals.every((goal) => progressArray(updated.sender_progress).includes(goal.id));
+    const recipientDone = goals.every((goal) => progressArray(updated.recipient_progress).includes(goal.id));
+    let awarded = false;
+
+    if (senderDone && recipientDone && !updated.completed_at) {
+      await pool.query("UPDATE tribe_challenges SET completed_at = now() WHERE id = $1", [row.id]);
+      await Promise.all([
+        awardPoints(updated.sender_email, "tribe_challenge_complete", { challengeId: row.id, challengeKey: updated.challenge_key }),
+        awardPoints(updated.recipient_email, "tribe_challenge_complete", { challengeId: row.id, challengeKey: updated.challenge_key }),
+      ]);
+      awarded = true;
+    }
+
+    const { rows: finalRows } = await pool.query(
+      `SELECT tc.*,
+              sm.name AS sender_name, sm.avatar AS sender_avatar,
+              rm.name AS recipient_name, rm.avatar AS recipient_avatar
+       FROM tribe_challenges tc
+       JOIN members sm ON sm.email = tc.sender_email
+       JOIN members rm ON rm.email = tc.recipient_email
+       WHERE tc.id = $1`,
+      [row.id]
+    );
+
+    res.json({
+      challenge: challengeResponse(finalRows[0], memberEmail),
+      awarded,
+      points: awarded ? Number(finalRows[0].bonus_points ?? 25) : 0,
+    });
+  } catch (err) {
+    console.error("Update tribe challenge progress error:", err);
+    res.status(500).json({ error: "Failed to update challenge progress" });
   }
 });
 
