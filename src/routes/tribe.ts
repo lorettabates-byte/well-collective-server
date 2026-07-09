@@ -179,6 +179,7 @@ router.post("/tribe", async (req, res) => {
 
   try {
     const targetEmail = await findEmailByMemberId(memberId);
+    console.log(`[tribe] add: owner=${ownerEmail} memberId=${memberId} resolved=${targetEmail ?? "null"}`);
     if (!targetEmail) {
       return res.status(404).json({ error: "Member not found" });
     }
