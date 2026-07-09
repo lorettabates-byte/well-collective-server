@@ -1,5 +1,6 @@
 import { Router } from "express";
 import { pool } from "../db";
+import { requireAdmin } from "../middleware/adminAuth";
 import { sendNotificationToUser } from "../push";
 import { computeBonusBadges, computeLevelBadge } from "../badges";
 import { awardPoints } from "./points";
@@ -21,6 +22,72 @@ const TRIBE_CHEER_LABELS: Record<string, string> = {
   "happy-birthday": "Happy Birthday! Wishing you a wonderful day!",
 };
 
+// Admin: list all tribe connections (diagnostic / restore tool)
+router.get("/admin/tribe-connections", requireAdmin, async (_req, res) => {
+  try {
+    const { rows } = await pool.query(
+      `SELECT t.owner_email, om.name AS owner_name,
+              t.member_email, mm.name AS member_name,
+              t.created_at
+       FROM tribe_members t
+       LEFT JOIN members om ON om.email = t.owner_email
+       LEFT JOIN members mm ON mm.email = t.member_email
+       ORDER BY t.owner_email, t.created_at DESC`
+    );
+    res.json({ connections: rows });
+  } catch (err) {
+    console.error("Admin tribe connections error:", err);
+    res.status(500).json({ error: "Failed to fetch tribe connections" });
+  }
+});
+
+// Admin: silently add a tribe connection (no push notification sent).
+// Used to restore tribe connections that were lost due to account deletions.
+router.post("/admin/tribe-connections", requireAdmin, async (req, res) => {
+  const { ownerEmail, memberEmail } = req.body as { ownerEmail?: string; memberEmail?: string };
+  if (!ownerEmail || !memberEmail) {
+    return res.status(400).json({ error: "ownerEmail and memberEmail required" });
+  }
+  const oe = ownerEmail.toLowerCase().trim();
+  const me = memberEmail.toLowerCase().trim();
+  if (oe === me) return res.status(400).json({ error: "Owner and member must be different" });
+
+  try {
+    // Ensure both accounts exist — create minimal stubs if missing so the
+    // connection can be recorded even if the member hasn't synced yet.
+    await pool.query(
+      "INSERT INTO members (email, name) VALUES ($1, $1) ON CONFLICT (email) DO NOTHING",
+      [me]
+    );
+    await pool.query(
+      "INSERT INTO tribe_members (owner_email, member_email) VALUES ($1, $2) ON CONFLICT (owner_email, member_email) DO NOTHING",
+      [oe, me]
+    );
+    res.status(201).json({ ok: true });
+  } catch (err) {
+    console.error("Admin add tribe connection error:", err);
+    res.status(500).json({ error: "Failed to add tribe connection" });
+  }
+});
+
+// Admin: remove a tribe connection
+router.delete("/admin/tribe-connections", requireAdmin, async (req, res) => {
+  const { ownerEmail, memberEmail } = req.body as { ownerEmail?: string; memberEmail?: string };
+  if (!ownerEmail || !memberEmail) {
+    return res.status(400).json({ error: "ownerEmail and memberEmail required" });
+  }
+  try {
+    await pool.query(
+      "DELETE FROM tribe_members WHERE owner_email = $1 AND member_email = $2",
+      [ownerEmail.toLowerCase().trim(), memberEmail.toLowerCase().trim()]
+    );
+    res.json({ ok: true });
+  } catch (err) {
+    console.error("Admin remove tribe connection error:", err);
+    res.status(500).json({ error: "Failed to remove tribe connection" });
+  }
+});
+
 // Get a member's WELL Tribe
 router.get("/tribe", async (req, res) => {
   const email = (req.query.email as string | undefined)?.toLowerCase();
@@ -29,12 +96,16 @@ router.get("/tribe", async (req, res) => {
   }
 
   try {
+    // LEFT JOIN so that if a member was deleted from the members table their
+    // tribe row still surfaces (with nulls) rather than silently vanishing.
     const { rows } = await pool.query(
-      `SELECT m.email, m.name, m.avatar, m.workout_log, m.featured_badge, m.created_at,
+      `SELECT t.member_email AS email,
+              COALESCE(m.name, '[Removed Member]') AS name,
+              m.avatar, m.workout_log, m.featured_badge, m.created_at,
               CASE WHEN m.show_birthday_on_calendar THEN m.birthday ELSE NULL END AS birthday,
               CASE WHEN m.mood_status_expires_at > NOW() THEN m.mood_status ELSE NULL END AS mood_status
        FROM tribe_members t
-       JOIN members m ON m.email = t.member_email
+       LEFT JOIN members m ON m.email = t.member_email
        WHERE t.owner_email = $1
        ORDER BY t.created_at DESC`,
       [email]
