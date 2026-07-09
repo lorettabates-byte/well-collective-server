@@ -144,12 +144,12 @@ List each distinct food item or dish visible. Estimate calories and macros (gram
       ],
     });
 
-    const raw = response.choices[0]?.message?.content ?? "{}";
+    const raw = (response.choices[0]?.message?.content ?? "").replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/i, "").trim();
     let parsed: { items?: { label: string; calories: number; protein: number; carbs: number; fat: number }[]; error?: string };
     try {
-      parsed = JSON.parse(raw) as typeof parsed;
+      parsed = JSON.parse(raw || "{}") as typeof parsed;
     } catch {
-      return res.status(422).json({ error: "Could not parse Vision response" });
+      return res.status(422).json({ error: "No food detected — try a clearer photo or enter food manually." });
     }
 
     if (parsed.error || !parsed.items?.length) {
