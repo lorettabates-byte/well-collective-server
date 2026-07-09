@@ -1,5 +1,6 @@
 import { Router } from "express";
 import { pool } from "../db";
+import OpenAI from "openai";
 
 const router = Router();
 
@@ -101,6 +102,64 @@ router.delete("/meals/saved/:id", async (req, res) => {
   } catch (err) {
     console.error("Delete saved meal error:", err);
     res.status(500).json({ error: "Failed to delete saved meal" });
+  }
+});
+
+// Scan a food photo using OpenAI Vision and return estimated nutrition items.
+// Accepts { imageBase64: string, mimeType?: string }.
+router.post("/meals/scan-photo", async (req, res) => {
+  const { imageBase64, mimeType } = req.body as { imageBase64?: string; mimeType?: string };
+  if (!imageBase64) return res.status(400).json({ error: "imageBase64 is required" });
+
+  const apiKey = process.env.OPENAI_API_KEY;
+  if (!apiKey) return res.status(503).json({ error: "Photo scanning is not configured on this server" });
+
+  const openai = new OpenAI({ apiKey });
+  const dataUrl = `data:${mimeType ?? "image/jpeg"};base64,${imageBase64}`;
+
+  try {
+    const response = await openai.chat.completions.create({
+      model: "gpt-4o",
+      max_tokens: 600,
+      messages: [
+        {
+          role: "user",
+          content: [
+            {
+              type: "image_url",
+              image_url: { url: dataUrl, detail: "low" },
+            },
+            {
+              type: "text",
+              text: `You are a nutrition assistant. Analyze this food photo and return a JSON object with this exact shape:
+{
+  "items": [
+    { "label": "Food name + portion", "calories": 300, "protein": 20, "carbs": 25, "fat": 8 }
+  ]
+}
+List each distinct food item or dish visible. Estimate calories and macros (grams) per typical serving shown. If no food is detected, return { "items": [], "error": "No food detected" }. Return ONLY valid JSON, no markdown.`,
+            },
+          ],
+        },
+      ],
+    });
+
+    const raw = response.choices[0]?.message?.content ?? "{}";
+    let parsed: { items?: { label: string; calories: number; protein: number; carbs: number; fat: number }[]; error?: string };
+    try {
+      parsed = JSON.parse(raw) as typeof parsed;
+    } catch {
+      return res.status(422).json({ error: "Could not parse Vision response" });
+    }
+
+    if (parsed.error || !parsed.items?.length) {
+      return res.status(422).json({ error: parsed.error ?? "No food detected in the photo" });
+    }
+
+    res.json({ items: parsed.items });
+  } catch (err) {
+    console.error("Photo scan error:", err);
+    res.status(500).json({ error: "Photo scan failed" });
   }
 });
 
