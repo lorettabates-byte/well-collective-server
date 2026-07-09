@@ -47,6 +47,12 @@ const localPreviewOrigins = [
   "http://127.0.0.1:5173",
   "http://localhost:4173",
   "http://127.0.0.1:4173",
+  // Capacitor WebViews use these origins for native iOS/Android builds.
+  // Without them, iOS surfaces fetch failures as the generic "Load failed".
+  "capacitor://localhost",
+  "ionic://localhost",
+  "http://localhost",
+  "https://localhost",
 ];
 const allowedOrigins =
   configuredOrigins.length > 0
