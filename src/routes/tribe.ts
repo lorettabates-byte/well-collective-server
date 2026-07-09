@@ -127,7 +127,7 @@ router.get("/tribe", async (req, res) => {
 
     // When did the current viewer last cheer each tribe member?
     const { rows: lastCheeredRows } = await pool.query(
-      "SELECT recipient_email, MAX(sent_at) AS last_cheered_at FROM tribe_cheers WHERE sender_email = $1 GROUP BY recipient_email",
+      "SELECT recipient_email, MAX(created_at) AS last_cheered_at FROM tribe_cheers WHERE sender_email = $1 GROUP BY recipient_email",
       [email]
     );
     const lastCheeredByEmail = new Map(lastCheeredRows.map((r) => [r.recipient_email, r.last_cheered_at as string]));
