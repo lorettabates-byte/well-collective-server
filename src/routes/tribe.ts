@@ -11,9 +11,14 @@ const router = Router();
 // whitelist so the notification text can't be spoofed by an arbitrary
 // client-supplied string.
 const TRIBE_CHEER_LABELS: Record<string, string> = {
-  "crushing-it": "🔥 Crushing It!",
-  "proud-of-you": "🎉 Proud of You!",
-  "keep-going": "💪 Keep Going!",
+  "crushing-it": "Crushing It!",
+  "proud-of-you": "Proud of You!",
+  "keep-going": "Keep Going!",
+  "you-inspire-me": "You Inspire Me!",
+  "thinking-of-you": "Thinking of You!",
+  "youre-amazing": "You're Amazing!",
+  "way-to-go": "Way to Go!",
+  "happy-birthday": "Happy Birthday! Wishing you a wonderful day!",
 };
 
 // Get a member's WELL Tribe
@@ -26,7 +31,8 @@ router.get("/tribe", async (req, res) => {
   try {
     const { rows } = await pool.query(
       `SELECT m.email, m.name, m.avatar, m.workout_log, m.featured_badge, m.created_at,
-              CASE WHEN m.show_birthday_on_calendar THEN m.birthday ELSE NULL END AS birthday
+              CASE WHEN m.show_birthday_on_calendar THEN m.birthday ELSE NULL END AS birthday,
+              CASE WHEN m.mood_status_expires_at > NOW() THEN m.mood_status ELSE NULL END AS mood_status
        FROM tribe_members t
        JOIN members m ON m.email = t.member_email
        WHERE t.owner_email = $1
@@ -48,6 +54,13 @@ router.get("/tribe", async (req, res) => {
       [emails]
     );
     const cheerCountByEmail = new Map(cheerCountRows.map((r) => [r.sender_email, Number(r.count)]));
+
+    // When did the current viewer last cheer each tribe member?
+    const { rows: lastCheeredRows } = await pool.query(
+      "SELECT recipient_email, MAX(sent_at) AS last_cheered_at FROM tribe_cheers WHERE sender_email = $1 GROUP BY recipient_email",
+      [email]
+    );
+    const lastCheeredByEmail = new Map(lastCheeredRows.map((r) => [r.recipient_email, r.last_cheered_at as string]));
 
     const { rows: badgeRows } = await pool.query(
       "SELECT member_email, badge_id FROM member_badges WHERE member_email = ANY($1)",
@@ -73,6 +86,8 @@ router.get("/tribe", async (req, res) => {
           bonusBadges: computeBonusBadges(row.created_at, messageCount, cheerCountByEmail.get(row.email) ?? 0),
           grantedBadges: badgesByEmail.get(row.email) ?? [],
           featuredBadge: row.featured_badge ?? undefined,
+          lastCheeredAt: lastCheeredByEmail.get(row.email) ?? null,
+          moodStatus: row.mood_status ?? null,
         };
       }),
     });
@@ -190,6 +205,140 @@ router.post("/tribe/:memberId/cheer", async (req, res) => {
   } catch (err) {
     console.error("Send WELL Tribe cheer error:", err);
     res.status(500).json({ error: "Failed to send cheer" });
+  }
+});
+
+// Send an occasion card (birthday / thinking of you / hi / etc.) to a tribe member.
+router.post("/tribe/:memberId/card", async (req, res) => {
+  const { email, occasionId, styleId, message } = req.body as {
+    email?: string;
+    occasionId?: string;
+    styleId?: string;
+    message?: string;
+  };
+  if (!email || !occasionId || !styleId) {
+    return res.status(400).json({ error: "email, occasionId, and styleId required" });
+  }
+  try {
+    const targetEmail = await findEmailByMemberId(req.params.memberId);
+    if (!targetEmail) return res.status(404).json({ error: "Member not found" });
+
+    const { rows } = await pool.query("SELECT name FROM members WHERE email = $1", [email.toLowerCase()]);
+    const senderName = rows[0]?.name || "Someone";
+
+    const occasionLabels: Record<string, string> = {
+      birthday: "a Birthday Card",
+      "thinking-of-you": "a Thinking of You card",
+      "just-saying-hi": "a Hello card",
+      condolences: "a Condolences card",
+      "youve-got-this": "a You've Got This card",
+      congratulations: "a Congratulations card",
+    };
+    const label = occasionLabels[occasionId] ?? "a card";
+
+    await sendNotificationToUser(targetEmail, {
+      title: `${senderName} sent you ${label}`,
+      body: message || `Open the app to view your card from ${senderName}.`,
+      tag: "tribe-card",
+      url: "/tribe",
+    });
+
+    res.status(201).json({ ok: true });
+  } catch (err) {
+    console.error("Send tribe card error:", err);
+    res.status(500).json({ error: "Failed to send card" });
+  }
+});
+
+// Invite a tribe member to a challenge.
+router.post("/tribe/:memberId/challenge-invite", async (req, res) => {
+  const { email, challengeId, challengeTitle } = req.body as {
+    email?: string;
+    challengeId?: string;
+    challengeTitle?: string;
+  };
+  if (!email || !challengeId || !challengeTitle) {
+    return res.status(400).json({ error: "email, challengeId, and challengeTitle required" });
+  }
+  try {
+    const targetEmail = await findEmailByMemberId(req.params.memberId);
+    if (!targetEmail) return res.status(404).json({ error: "Member not found" });
+
+    const { rows } = await pool.query("SELECT name FROM members WHERE email = $1", [email.toLowerCase()]);
+    const senderName = rows[0]?.name || "Someone";
+
+    await sendNotificationToUser(targetEmail, {
+      title: `${senderName} invited you to a challenge!`,
+      body: `Join the ${challengeTitle} — let's do this together!`,
+      tag: "tribe-challenge",
+      url: "/tribe",
+    });
+
+    res.status(201).json({ ok: true });
+  } catch (err) {
+    console.error("Send challenge invite error:", err);
+    res.status(500).json({ error: "Failed to send challenge invite" });
+  }
+});
+
+// Invite a tribe member to an upcoming event.
+router.post("/tribe/:memberId/event-invite", async (req, res) => {
+  const { email, eventTitle, eventDate } = req.body as {
+    email?: string;
+    eventTitle?: string;
+    eventDate?: string;
+  };
+  if (!email || !eventTitle) {
+    return res.status(400).json({ error: "email and eventTitle required" });
+  }
+  try {
+    const targetEmail = await findEmailByMemberId(req.params.memberId);
+    if (!targetEmail) return res.status(404).json({ error: "Member not found" });
+
+    const { rows } = await pool.query("SELECT name FROM members WHERE email = $1", [email.toLowerCase()]);
+    const senderName = rows[0]?.name || "Someone";
+
+    const dateStr = eventDate ? ` on ${new Date(eventDate).toLocaleDateString("en-US", { month: "short", day: "numeric" })}` : "";
+    await sendNotificationToUser(targetEmail, {
+      title: `${senderName} wants you at an event!`,
+      body: `Join ${senderName} for ${eventTitle}${dateStr}.`,
+      tag: "tribe-event",
+      url: "/events",
+    });
+
+    res.status(201).json({ ok: true });
+  } catch (err) {
+    console.error("Send event invite error:", err);
+    res.status(500).json({ error: "Failed to send event invite" });
+  }
+});
+
+// Set the caller's mood status (expires after 24 hours; null clears it)
+router.post("/member/mood-status", async (req, res) => {
+  const { email, moodStatusId } = req.body as { email?: string; moodStatusId?: string | null };
+  if (!email) return res.status(400).json({ error: "email required" });
+
+  const VALID_IDS = ["need-encouragement", "tough-day", "feeling-good", "celebrating", "crushing-it"];
+  if (moodStatusId !== null && moodStatusId !== undefined && !VALID_IDS.includes(moodStatusId)) {
+    return res.status(400).json({ error: "invalid moodStatusId" });
+  }
+
+  try {
+    if (!moodStatusId) {
+      await pool.query(
+        "UPDATE members SET mood_status = NULL, mood_status_expires_at = NULL WHERE email = $1",
+        [email.toLowerCase()]
+      );
+    } else {
+      await pool.query(
+        "UPDATE members SET mood_status = $1, mood_status_expires_at = NOW() + INTERVAL '24 hours' WHERE email = $2",
+        [moodStatusId, email.toLowerCase()]
+      );
+    }
+    res.json({ ok: true });
+  } catch (err) {
+    console.error("Set mood status error:", err);
+    res.status(500).json({ error: "Failed to set mood status" });
   }
 });
 
