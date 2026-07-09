@@ -12,8 +12,8 @@ router.get("/pixabay/video", async (req, res) => {
   const key = process.env.PIXABAY_API_KEY;
   if (!key) return res.status(503).json({ error: "Pixabay not configured" });
 
-  const encoded = encodeURIComponent(`${q} exercise`);
-  const url = `https://pixabay.com/api/videos/?key=${key}&q=${encoded}&per_page=5&safesearch=true&video_type=film`;
+  const encoded = encodeURIComponent(q);
+  const url = `https://pixabay.com/api/videos/?key=${key}&q=${encoded}&per_page=5&safesearch=true`;
 
   try {
     const data = await new Promise<string>((resolve, reject) => {
