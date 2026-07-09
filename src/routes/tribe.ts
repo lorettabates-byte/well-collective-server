@@ -12,6 +12,7 @@ const router = Router();
 // whitelist so the notification text can't be spoofed by an arbitrary
 // client-supplied string.
 const TRIBE_CHEER_LABELS: Record<string, string> = {
+  "welcome": "Welcome to WELL Collective! So glad you're here!",
   "crushing-it": "Crushing It!",
   "proud-of-you": "Proud of You!",
   "keep-going": "Keep Going!",
@@ -106,6 +107,10 @@ router.get("/tribe", async (req, res) => {
        FROM tribe_members t
        LEFT JOIN members m ON m.email = t.member_email
        WHERE t.owner_email = $1
+         AND (m.email IS NULL
+              OR m.trial_ends_at IS NULL
+              OR m.trial_ends_at >= CURRENT_DATE
+              OR m.membership_status = 'active')
        ORDER BY t.member_email ASC`,
       [email]
     );
