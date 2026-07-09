@@ -28,6 +28,7 @@ import ssoRouter from "./routes/sso";
 import blocksRouter from "./routes/blocks";
 import tribeRouter from "./routes/tribe";
 import videoNotificationsRouter from "./routes/video-notifications";
+import pixabayRouter from "./routes/pixabay";
 import { startScheduler } from "./scheduler";
 
 dotenv.config();
@@ -86,6 +87,7 @@ app.use("/api", scheduledNotificationsRouter);
 app.use("/api/referrals", referralsRouter);
 app.use("/api/blocks", blocksRouter);
 app.use("/api/sso", ssoRouter);
+app.use("/api", pixabayRouter);
 
 async function main() {
   await initDb();
