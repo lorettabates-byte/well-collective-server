@@ -27,12 +27,11 @@ router.get("/admin/tribe-connections", requireAdmin, async (_req, res) => {
   try {
     const { rows } = await pool.query(
       `SELECT t.owner_email, om.name AS owner_name,
-              t.member_email, mm.name AS member_name,
-              t.created_at
+              t.member_email, mm.name AS member_name
        FROM tribe_members t
        LEFT JOIN members om ON om.email = t.owner_email
        LEFT JOIN members mm ON mm.email = t.member_email
-       ORDER BY t.owner_email, t.created_at DESC`
+       ORDER BY t.owner_email, t.member_email`
     );
     res.json({ connections: rows });
   } catch (err) {
@@ -107,7 +106,7 @@ router.get("/tribe", async (req, res) => {
        FROM tribe_members t
        LEFT JOIN members m ON m.email = t.member_email
        WHERE t.owner_email = $1
-       ORDER BY t.created_at DESC`,
+       ORDER BY t.member_email ASC`,
       [email]
     );
 
