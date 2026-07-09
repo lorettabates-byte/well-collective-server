@@ -174,6 +174,85 @@ router.post("/apply", async (req, res) => {
   }
 });
 
+// POST /api/referrals/admin/manual — admin manually wires a referral between two existing members.
+// Awards 25 pts to both, extends the referred member's trial to 30 days from today.
+router.post("/admin/manual", requireAdmin, async (req, res) => {
+  const { referrerEmail, referredEmail } = req.body as {
+    referrerEmail?: string;
+    referredEmail?: string;
+  };
+  if (!referrerEmail || !referredEmail) {
+    return res.status(400).json({ error: "referrerEmail and referredEmail required" });
+  }
+  const rr = referrerEmail.toLowerCase().trim();
+  const rd = referredEmail.toLowerCase().trim();
+  if (rr === rd) return res.status(400).json({ error: "Referrer and referred must be different people" });
+
+  try {
+    const [{ rows: rrRows }, { rows: rdRows }] = await Promise.all([
+      pool.query("SELECT name FROM members WHERE email = $1", [rr]),
+      pool.query("SELECT name FROM members WHERE email = $1", [rd]),
+    ]);
+    if (rrRows.length === 0) return res.status(404).json({ error: `Referrer not found: ${rr}` });
+    if (rdRows.length === 0) return res.status(404).json({ error: `Referred member not found: ${rd}` });
+
+    // Record referral (idempotent — ignore if already exists)
+    const { rowCount: inserted } = await pool.query(
+      `INSERT INTO referrals (referrer_email, referred_email, referrer_signup_bonus_awarded)
+       VALUES ($1, $2, TRUE)
+       ON CONFLICT (referrer_email, referred_email) DO NOTHING`,
+      [rr, rd]
+    );
+
+    // Only award points if we actually inserted a new row (not a duplicate)
+    if (inserted && inserted > 0) {
+      await Promise.all([
+        pool.query(
+          "INSERT INTO activity_logs (member_email, activity_type, points, metadata) VALUES ($1, 'referral_signup', $2, $3)",
+          [rr, REFERRAL_BONUS_POINTS, JSON.stringify({ friendEmail: rd, manual: true })]
+        ),
+        pool.query(
+          "INSERT INTO activity_logs (member_email, activity_type, points, metadata) VALUES ($1, 'referral_signup', $2, $3)",
+          [rd, REFERRAL_BONUS_POINTS, JSON.stringify({ referredBy: rr, manual: true })]
+        ),
+      ]);
+    }
+
+    // Extend referred member's trial to 30 days from today
+    const trialEnd = new Date();
+    trialEnd.setDate(trialEnd.getDate() + 30);
+    const trialEndsAt = trialEnd.toISOString().slice(0, 10);
+    await pool.query(
+      `UPDATE members
+         SET trial_ends_at = $1,
+             trial_started_at = COALESCE(trial_started_at, now()),
+             referred_by = COALESCE(referred_by, $2),
+             updated_at = now()
+       WHERE email = $3`,
+      [trialEndsAt, rr, rd]
+    );
+
+    // Notify both (fire-and-forget)
+    sendNotificationToUser(rr, {
+      title: "Referral bonus applied!",
+      body: `Your referral of ${rdRows[0].name} has been recorded. You earned ${REFERRAL_BONUS_POINTS} points!`,
+      tag: "referral",
+      url: "/well-cup",
+    }).catch(() => {});
+    sendNotificationToUser(rd, {
+      title: "Referral bonus applied!",
+      body: `Your referral has been applied — enjoy 30 days free plus ${REFERRAL_BONUS_POINTS} bonus points!`,
+      tag: "referral",
+      url: "/well-cup",
+    }).catch(() => {});
+
+    res.json({ ok: true, trialEndsAt, pointsAwarded: !!(inserted && inserted > 0) });
+  } catch (err) {
+    console.error("[REFERRALS] Admin manual error:", err);
+    res.status(500).json({ error: "Failed to apply referral" });
+  }
+});
+
 // GET /api/referrals/admin/list — admin view of every referral record
 router.get("/admin/list", requireAdmin, async (_req, res) => {
   try {

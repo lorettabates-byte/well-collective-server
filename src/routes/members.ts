@@ -335,6 +335,30 @@ router.post("/members/claim-founding-badge", async (req, res) => {
   }
 });
 
+// Admin: set or extend a member's free trial end date.
+router.put("/admin/members/:email/trial", requireAdmin, async (req, res) => {
+  const { trialEndsAt } = req.body as { trialEndsAt?: string };
+  if (!trialEndsAt || !/^\d{4}-\d{2}-\d{2}$/.test(trialEndsAt)) {
+    return res.status(400).json({ error: "trialEndsAt must be YYYY-MM-DD" });
+  }
+  const memberEmail = req.params.email.toLowerCase();
+  try {
+    const { rowCount } = await pool.query(
+      `UPDATE members
+         SET trial_ends_at = $1,
+             trial_started_at = COALESCE(trial_started_at, now()),
+             updated_at = now()
+       WHERE email = $2`,
+      [trialEndsAt, memberEmail]
+    );
+    if (!rowCount) return res.status(404).json({ error: "Member not found" });
+    res.json({ ok: true });
+  } catch (err) {
+    console.error("Update trial error:", err);
+    res.status(500).json({ error: "Failed to update trial" });
+  }
+});
+
 // Admin: grant or revoke a special badge (e.g. "well-escape") that can't be
 // earned automatically from in-app activity.
 router.post("/admin/members/:email/badges", requireAdmin, async (req, res) => {
