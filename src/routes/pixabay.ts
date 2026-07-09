@@ -1,9 +1,25 @@
 import { Router } from "express";
+import fs from "fs";
 import https from "https";
+import path from "path";
 import { pool } from "../db";
 import { requireAdmin } from "../middleware/adminAuth";
 
 const router = Router();
+
+function exerciseDemoSlug(name: string): string {
+  return name
+    .toLowerCase()
+    .replace(/&/g, "and")
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+}
+
+function getLocalExerciseVideo(name: string): string | null {
+  const file = `${exerciseDemoSlug(name)}.mp4`;
+  const localPath = path.join(__dirname, "..", "..", "public", "exercise-videos", file);
+  return fs.existsSync(localPath) ? file : null;
+}
 
 // Curated search terms per exercise so auto-find has the best chance of
 // returning a relevant Pixabay video when no URL has been manually saved.
@@ -94,6 +110,13 @@ async function pixabaySearch(term: string, key: string): Promise<string | null> 
 router.get("/pixabay/video", async (req, res) => {
   const q = (req.query.q as string | undefined)?.trim();
   if (!q) return res.status(400).json({ error: "q is required" });
+
+  const localFile = getLocalExerciseVideo(q);
+  if (localFile) {
+    const forwardedProto = req.get("x-forwarded-proto")?.split(",")[0]?.trim();
+    const protocol = forwardedProto || req.protocol;
+    return res.json({ url: `${protocol}://${req.get("host")}/exercise-videos/${localFile}` });
+  }
 
   const key = process.env.PIXABAY_API_KEY;
   if (!key) return res.status(503).json({ error: "Pixabay not configured" });

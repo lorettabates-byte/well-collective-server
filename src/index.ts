@@ -1,6 +1,7 @@
 import cors from "cors";
 import dotenv from "dotenv";
 import express from "express";
+import path from "path";
 import { initDb } from "./db";
 import authRouter from "./routes/auth";
 import blogNotificationsRouter from "./routes/blog-notifications";
@@ -36,10 +37,20 @@ dotenv.config();
 const app = express();
 const PORT = process.env.PORT || 4000;
 
-const allowedOrigins = (process.env.ALLOWED_ORIGINS || "")
+const configuredOrigins = (process.env.ALLOWED_ORIGINS || "")
   .split(",")
   .map((origin) => origin.trim())
   .filter(Boolean);
+const localPreviewOrigins = [
+  "http://localhost:5173",
+  "http://127.0.0.1:5173",
+  "http://localhost:4173",
+  "http://127.0.0.1:4173",
+];
+const allowedOrigins =
+  configuredOrigins.length > 0
+    ? Array.from(new Set([...configuredOrigins, ...localPreviewOrigins]))
+    : [];
 
 app.use(
   cors({
@@ -56,6 +67,12 @@ app.use(
 // would silently 413 with no visible error, while small built-in avatar
 // images stay under the limit and save fine.
 app.use(express.json({ limit: "15mb" }));
+app.use(
+  "/exercise-videos",
+  express.static(path.join(__dirname, "..", "public", "exercise-videos"), {
+    maxAge: "7d",
+  })
+);
 
 app.get("/health", (_req, res) => {
   res.json({ ok: true });
