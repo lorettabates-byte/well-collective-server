@@ -186,7 +186,7 @@ router.get("/members/me", async (req, res) => {
 
   try {
     const { rows } = await pool.query(
-      `SELECT name, avatar, bio, birthday, show_birthday_on_calendar, workout_log, featured_badge, created_at, saved_inspiration_ids, liked_inspiration_ids, favorite_song_ids, show_on_leaderboard, height_cm, weight_kg, age, gender, health_sync_enabled, breathwork_log, well_activity_log, resistance_log, stretching_log, goal_plan, notification_tone, movement_target, goals_completed
+      `SELECT name, avatar, bio, birthday, show_birthday_on_calendar, workout_log, featured_badge, created_at, saved_inspiration_ids, liked_inspiration_ids, favorite_song_ids, show_on_leaderboard, hidden_from_community, height_cm, weight_kg, age, gender, health_sync_enabled, breathwork_log, well_activity_log, resistance_log, stretching_log, goal_plan, notification_tone, movement_target, goals_completed
        FROM members WHERE email = $1`,
       [email]
     );
@@ -223,6 +223,7 @@ router.get("/members/me", async (req, res) => {
         likedInspirationIds: row.liked_inspiration_ids ?? undefined,
         favoriteSongIds: row.favorite_song_ids ?? undefined,
         showOnLeaderboard: row.show_on_leaderboard ?? true,
+        hiddenFromCommunity: row.hidden_from_community ?? false,
         heightCm: row.height_cm != null ? Number(row.height_cm) : undefined,
         weightKg: row.weight_kg != null ? Number(row.weight_kg) : undefined,
         age: row.age != null ? Number(row.age) : undefined,
@@ -446,6 +447,7 @@ router.get("/members", async (req, res) => {
       `SELECT email, name, avatar, workout_log, featured_badge, created_at FROM members
        WHERE email != $1
          AND (trial_ends_at IS NULL OR trial_ends_at >= CURRENT_DATE)
+         AND (hidden_from_community IS NULL OR hidden_from_community = false)
        ORDER BY name ASC`,
       [excludeEmail || ""]
     );
@@ -587,6 +589,24 @@ router.delete("/members/:email", requireAdmin, async (req, res) => {
   } catch (err) {
     console.error("Delete member error:", err);
     res.status(500).json({ error: "Failed to delete member" });
+  }
+});
+
+// Let a member hide themselves from community member lists and discovery.
+router.put("/members/community-visibility", async (req, res) => {
+  const { email, hiddenFromCommunity } = req.body as { email?: string; hiddenFromCommunity?: boolean };
+  if (!email || hiddenFromCommunity === undefined) {
+    return res.status(400).json({ error: "email and hiddenFromCommunity required" });
+  }
+  try {
+    await pool.query(
+      "UPDATE members SET hidden_from_community = $1 WHERE email = $2",
+      [hiddenFromCommunity, email.toLowerCase()]
+    );
+    res.json({ ok: true });
+  } catch (err) {
+    console.error("Community visibility error:", err);
+    res.status(500).json({ error: "Failed to update community visibility" });
   }
 });
 
