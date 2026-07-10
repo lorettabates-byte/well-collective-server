@@ -15,7 +15,10 @@ interface TribeEvent {
   description: string;
   url: string;
   start_date: string;
+  end_date?: string;
+  cost?: string;
   venue?: { venue?: string; city?: string; state?: string };
+  image?: { url?: string; sizes?: { medium?: { url?: string } } } | false;
 }
 
 function stripHtml(html: string): string {
@@ -99,6 +102,16 @@ router.post("/send-live-event-notification", async (_req, res) => {
   } catch (err) {
     console.error("[LIVE-EVENT] Error in send-live-event-notification endpoint:", err);
     res.status(500).json({ error: "Failed to send notifications" });
+  }
+});
+
+router.get("/", async (_req, res) => {
+  try {
+    const events = await fetchLiveEvents();
+    res.json({ events });
+  } catch (err) {
+    console.error("[LIVE-EVENT] Failed to fetch live events:", err);
+    res.status(500).json({ error: "Failed to fetch live events" });
   }
 });
 
