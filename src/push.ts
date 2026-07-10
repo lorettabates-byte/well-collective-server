@@ -65,6 +65,19 @@ const DEFAULT_NOTIFICATION_SETTINGS: Record<string, boolean> = {
   newSongs: true,
 };
 
+// Which notification_schedule slot (if any) gates this tag.
+// Tags not listed here are event-driven and not time-gated.
+const TAG_TO_SCHEDULE_SLOT: Record<string, "send7am" | "send3pm" | "send9pm"> = {
+  "weekly-theme":      "send7am",
+  "daily-inspiration": "send7am",
+  "motivation-boost":  "send3pm",
+  "well-check":        "send9pm",
+};
+
+// Default schedule when a member has never saved time preferences —
+// 7am on, 3pm and 9pm off (matches the UI default).
+const DEFAULT_SCHEDULE = { send7am: true, send3pm: false, send9pm: false };
+
 // A member with no saved preferences yet (never opened Notification Settings,
 // or synced before this feature existed) gets the same defaults as a brand
 // new client install, so behavior doesn't change for them.
@@ -73,6 +86,16 @@ function isCategoryEnabled(payload: NotificationPayload, settings: Record<string
   if (!category) return true;
   const resolved = settings ?? DEFAULT_NOTIFICATION_SETTINGS;
   return resolved[category] !== false;
+}
+
+function isScheduleSlotEnabled(
+  payload: NotificationPayload,
+  schedule: { send7am?: boolean; send3pm?: boolean; send9pm?: boolean } | null
+): boolean {
+  const slot = payload.tag ? TAG_TO_SCHEDULE_SLOT[payload.tag] : undefined;
+  if (!slot) return true; // not a time-gated tag
+  const resolved = schedule ?? DEFAULT_SCHEDULE;
+  return resolved[slot] !== false;
 }
 
 function buildPayload(payload: NotificationPayload): string {
@@ -193,10 +216,15 @@ export async function broadcastNotification(
   );
   const activeTrialEmails = new Set(trialRows.map((r) => r.email.toLowerCase()));
 
-  const { rows: settingsRows } = await pool.query<{ email: string; notification_settings: Record<string, boolean> | null }>(
-    "SELECT email, notification_settings FROM members"
+  const { rows: settingsRows } = await pool.query<{
+    email: string;
+    notification_settings: Record<string, boolean> | null;
+    notification_schedule: { send7am?: boolean; send3pm?: boolean; send9pm?: boolean } | null;
+  }>(
+    "SELECT email, notification_settings, notification_schedule FROM members"
   );
   const settingsByEmail = new Map(settingsRows.map((r) => [r.email.toLowerCase(), r.notification_settings]));
+  const scheduleByEmail = new Map(settingsRows.map((r) => [r.email.toLowerCase(), r.notification_schedule]));
 
   let joinedAfterContentEmails = new Set<string>();
   if (options?.contentPublishedAt) {
@@ -229,6 +257,12 @@ export async function broadcastNotification(
       if (!isCategoryEnabled(payload, settingsByEmail.get(row.user_email.toLowerCase()) ?? null)) {
         blocked += 1;
         console.log(`[PUSH] Blocked subscription for ${row.user_email} - category disabled in their settings`);
+        return;
+      }
+
+      if (!isScheduleSlotEnabled(payload, scheduleByEmail.get(row.user_email.toLowerCase()) ?? null)) {
+        blocked += 1;
+        console.log(`[PUSH] Blocked subscription for ${row.user_email} - time slot disabled (${payload.tag})`);
         return;
       }
 
