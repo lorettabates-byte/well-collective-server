@@ -49,8 +49,8 @@ router.post("/members/sync", async (req, res) => {
     // still empty. However, saved/liked inspiration IDs should always be updated
     // from the client since they reflect current user interactions.
     await pool.query(
-      `INSERT INTO members (email, name, avatar, bio, birthday, show_birthday_on_calendar, workout_log, saved_inspiration_ids, liked_inspiration_ids, favorite_song_ids, height_cm, weight_kg, age, gender, health_sync_enabled, breathwork_log, well_activity_log, resistance_log, stretching_log, goal_plan, notification_tone, movement_target, goals_completed, updated_at)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, now())
+      `INSERT INTO members (email, name, avatar, bio, birthday, show_birthday_on_calendar, workout_log, saved_inspiration_ids, liked_inspiration_ids, favorite_song_ids, height_cm, weight_kg, age, gender, health_sync_enabled, breathwork_log, well_activity_log, resistance_log, stretching_log, goal_plan, notification_tone, movement_target, goals_completed, goals_refresh_period, updated_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, now())
        ON CONFLICT (email) DO UPDATE SET
          name = $2,
          avatar = COALESCE($3, members.avatar),
@@ -74,6 +74,7 @@ router.post("/members/sync", async (req, res) => {
          notification_tone = COALESCE($21, members.notification_tone),
          movement_target = COALESCE($22, members.movement_target),
          goals_completed = CASE WHEN $23 THEN TRUE ELSE members.goals_completed END,
+         goals_refresh_period = COALESCE($24, members.goals_refresh_period),
          updated_at = now()`,
       [
         normalizedEmail,
@@ -99,6 +100,7 @@ router.post("/members/sync", async (req, res) => {
         (req.body as Record<string, unknown>).notificationTone || null,
         (req.body as Record<string, unknown>).movementTarget || null,
         !!(req.body as Record<string, unknown>).goalsCompleted,
+        (req.body as Record<string, unknown>).goalsRefreshPeriod || null,
       ]
     );
 
@@ -186,7 +188,7 @@ router.get("/members/me", async (req, res) => {
 
   try {
     const { rows } = await pool.query(
-      `SELECT name, avatar, bio, birthday, show_birthday_on_calendar, workout_log, featured_badge, created_at, saved_inspiration_ids, liked_inspiration_ids, favorite_song_ids, show_on_leaderboard, hidden_from_community, height_cm, weight_kg, age, gender, health_sync_enabled, breathwork_log, well_activity_log, resistance_log, stretching_log, goal_plan, notification_tone, movement_target, goals_completed,
+      `SELECT name, avatar, bio, birthday, show_birthday_on_calendar, workout_log, featured_badge, created_at, saved_inspiration_ids, liked_inspiration_ids, favorite_song_ids, show_on_leaderboard, hidden_from_community, height_cm, weight_kg, age, gender, health_sync_enabled, breathwork_log, well_activity_log, resistance_log, stretching_log, goal_plan, notification_tone, movement_target, goals_completed, goals_refresh_period,
               CASE WHEN mood_status_expires_at > NOW() THEN mood_status ELSE NULL END AS mood_status
        FROM members WHERE email = $1`,
       [email]
@@ -238,6 +240,7 @@ router.get("/members/me", async (req, res) => {
         notificationTone: row.notification_tone ?? undefined,
         movementTarget: row.movement_target ?? undefined,
         goalsCompleted: row.goals_completed ?? false,
+        goalsRefreshPeriod: row.goals_refresh_period ?? undefined,
         moodStatus: row.mood_status ?? null,
         tribeConnections: Number(tribeAddedRows.rows[0].count),
         addedByCount: Number(tribeAddedByRows.rows[0].count),

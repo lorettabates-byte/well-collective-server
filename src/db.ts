@@ -887,6 +887,7 @@ export async function initDb(): Promise<void> {
   await pool.query(`ALTER TABLE members ADD COLUMN IF NOT EXISTS notification_tone TEXT;`);
   await pool.query(`ALTER TABLE members ADD COLUMN IF NOT EXISTS movement_target TEXT;`);
   await pool.query(`ALTER TABLE members ADD COLUMN IF NOT EXISTS goals_completed BOOLEAN NOT NULL DEFAULT FALSE;`);
+  await pool.query(`ALTER TABLE members ADD COLUMN IF NOT EXISTS goals_refresh_period TEXT;`);
 
   // Tribe mood status — visible only to tribe members, expires after 24h
   await pool.query(`ALTER TABLE members ADD COLUMN IF NOT EXISTS mood_status TEXT;`);
