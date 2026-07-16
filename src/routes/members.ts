@@ -609,8 +609,47 @@ router.get("/members/birthdays", async (_req, res) => {
   }
 });
 
-// Remove a member from the shared directory (e.g. a stale test account) —
-// there was previously no way to do this at all.
+// Self-service account deletion — called by the member from their own device.
+// Deletes all personal data across every table, then removes the member record.
+// The members table has ON DELETE CASCADE for tribe_members, member_badges,
+// tribe_cheers, tribe_cards, tribe_challenges — those clean up automatically.
+router.delete("/members/self", async (req, res) => {
+  const { email } = req.body as { email?: string };
+  if (!email) return res.status(400).json({ error: "email required" });
+  const emailLower = email.toLowerCase();
+  try {
+    // Verify account exists before proceeding
+    const { rows } = await pool.query("SELECT email FROM members WHERE email = $1", [emailLower]);
+    if (rows.length === 0) return res.status(404).json({ error: "Account not found" });
+
+    // Explicit deletes for tables without CASCADE
+    await pool.query("DELETE FROM push_subscriptions WHERE user_email = $1", [emailLower]);
+    await pool.query("DELETE FROM meal_plan_entries WHERE member_email = $1", [emailLower]);
+    await pool.query("DELETE FROM saved_recipes WHERE email = $1", [emailLower]);
+    await pool.query("DELETE FROM recipe_folders WHERE email = $1", [emailLower]);
+    await pool.query("DELETE FROM meal_entries WHERE member_email = $1", [emailLower]);
+    await pool.query("DELETE FROM sleep_entries WHERE member_email = $1", [emailLower]);
+    await pool.query("DELETE FROM step_entries WHERE member_email = $1", [emailLower]);
+    await pool.query("DELETE FROM activity_logs WHERE member_email = $1", [emailLower]);
+    await pool.query("DELETE FROM login_streaks WHERE member_email = $1", [emailLower]);
+    await pool.query("DELETE FROM well_cup_wins WHERE member_email = $1", [emailLower]);
+    await pool.query("DELETE FROM coupon_redemptions WHERE member_email = $1", [emailLower]);
+    await pool.query("DELETE FROM inspiration_reactions WHERE member_email = $1", [emailLower]);
+    await pool.query("DELETE FROM event_rsvps WHERE member_email = $1", [emailLower]);
+    await pool.query("DELETE FROM live_event_rsvps WHERE member_email = $1", [emailLower]);
+    await pool.query("DELETE FROM messages WHERE sender_email = $1 OR recipient_email = $1", [emailLower]);
+    await pool.query("DELETE FROM user_blocks WHERE blocker_email = $1 OR blocked_email = $1", [emailLower]);
+    // Deleting from members cascades: tribe_members, member_badges, tribe_cheers, tribe_cards, tribe_challenges
+    await pool.query("DELETE FROM members WHERE email = $1", [emailLower]);
+
+    res.json({ ok: true });
+  } catch (err) {
+    console.error("Self-delete account error:", err);
+    res.status(500).json({ error: "Failed to delete account" });
+  }
+});
+
+// Remove a member from the shared directory (admin only) —
 router.delete("/members/:email", requireAdmin, async (req, res) => {
   try {
     await pool.query("DELETE FROM members WHERE email = $1", [req.params.email.toLowerCase()]);
