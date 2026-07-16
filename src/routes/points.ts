@@ -145,6 +145,10 @@ const DAILY_CAPS: Record<string, number> = {
   tutorial_complete: 1,
   notifications_enabled: 1,
   add_to_homescreen: 1,
+  breathwork: 1,
+  stretching: 1,
+  resistance_training: 1,
+  well_activity: 1,
 };
 
 const HISTORY_ACTIVITY_MET: Record<string, { met: number; minutes: number }> = {
