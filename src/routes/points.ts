@@ -1092,6 +1092,43 @@ router.get("/sleep/today", async (req, res) => {
   }
 });
 
+// Sleep history for the last 30 days — used by the Sleep Analysis page.
+router.get("/sleep/history", async (req, res) => {
+  const { email, days } = req.query as { email?: string; days?: string };
+  if (!email) return res.status(400).json({ error: "email required" });
+
+  const daysBack = Math.min(90, Math.max(7, parseInt(days ?? "30", 10)));
+
+  try {
+    const memberTz = await getMemberTimezone(email.toLowerCase());
+    const loggedAtLocalDate = sqlLocalDateFor("logged_at", memberTz);
+    const dayStart = sqlDayStartFor(memberTz);
+
+    // DISTINCT ON picks the most-recent entry when multiple exist for the same
+    // local date (can happen if health sync and a manual WellCheck log both ran).
+    const { rows } = await pool.query(
+      `SELECT date::text, hours, quality
+       FROM (
+         SELECT DISTINCT ON (${loggedAtLocalDate})
+           ${loggedAtLocalDate} AS date,
+           hours::float AS hours,
+           quality
+         FROM sleep_entries
+         WHERE member_email = $1
+           AND logged_at >= (${dayStart} - (($2::int - 1) * INTERVAL '1 day'))
+         ORDER BY ${loggedAtLocalDate} ASC, logged_at DESC
+       ) sub
+       ORDER BY date ASC`,
+      [email.toLowerCase(), daysBack]
+    );
+
+    res.json({ entries: rows });
+  } catch (err) {
+    console.error("Fetch sleep history error:", err);
+    res.status(500).json({ error: "Failed to fetch sleep history" });
+  }
+});
+
 // Point values guide (public — shown on profiles and in the app).
 router.get("/points/guide", async (_req, res) => {
   res.json({ pointValues: POINT_VALUES, dailyCaps: DAILY_CAPS });
