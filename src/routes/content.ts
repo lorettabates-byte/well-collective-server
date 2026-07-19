@@ -6,7 +6,7 @@ import type { ContentBatchEntry } from "../types";
 import { parseIngredientsForNutritionLookup } from "../anthropic";
 import { computeNutritionFromIngredients } from "../usda";
 import { PHOTOS, resolveCategory } from "../recipePhotos";
-import { generateAIContentForUpcomingWeek } from "../scheduler";
+import { generateAIContent, generateAIContentForUpcomingWeek } from "../scheduler";
 
 const router = Router();
 
@@ -303,6 +303,41 @@ router.post("/content-schedule/generate-week", requireAdmin, async (_req, res) =
   } catch (err) {
     console.error("Manual week generation error:", err);
     res.status(500).json({ error: "Failed to generate upcoming week's content" });
+  }
+});
+
+// Clear specific AI-generated fields for a date, then regenerate them.
+// Accepts optional `fields` array (default: all AI fields). Used by the
+// admin UI to fix duplicate content without deleting the whole row.
+const AI_CONTENT_FIELDS = ["daily_inspiration", "well_activity", "recipe", "motivation_boost", "nutrition_tip"] as const;
+type AiContentField = (typeof AI_CONTENT_FIELDS)[number];
+
+router.post("/content-schedule/:date/regenerate", requireAdmin, async (req, res) => {
+  const { date } = req.params;
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+    return res.status(400).json({ error: "Invalid date format" });
+  }
+
+  const { fields }: { fields?: string[] } = req.body ?? {};
+  const toClear: AiContentField[] = fields
+    ? (fields.filter((f): f is AiContentField => (AI_CONTENT_FIELDS as readonly string[]).includes(f)))
+    : [...AI_CONTENT_FIELDS];
+
+  if (toClear.length === 0) {
+    return res.status(400).json({ error: "No valid fields specified" });
+  }
+
+  try {
+    const setClauses = toClear.map((f, i) => `${f} = $${i + 2}`).join(", ");
+    await pool.query(
+      `UPDATE content_schedule SET ${setClauses} WHERE date = $1`,
+      [date, ...toClear.map(() => null)]
+    );
+    await generateAIContent(date);
+    res.json({ ok: true, date, cleared: toClear });
+  } catch (err) {
+    console.error(`Regenerate content error for ${date}:`, err);
+    res.status(500).json({ error: "Failed to regenerate content" });
   }
 });
 
