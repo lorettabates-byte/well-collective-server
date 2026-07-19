@@ -252,13 +252,13 @@ export interface GeneratedDailyInspiration {
 
 export async function generateDailyInspiration(
   weeklyThemeTitle: string | undefined,
-  avoidTitle?: string
+  recentTitles: string[] = []
 ): Promise<GeneratedDailyInspiration> {
   const themeContext = weeklyThemeTitle
     ? `This week's theme for the WELL Collective wellness community is "${weeklyThemeTitle}".`
     : "There's no specific weekly theme set right now, so keep it generally uplifting.";
-  const avoidContext = avoidTitle
-    ? ` Do not repeat or closely resemble yesterday's daily inspiration, titled "${avoidTitle}" — write something distinct.`
+  const avoidContext = recentTitles.length > 0
+    ? ` Recent daily inspirations, most recent first: ${recentTitles.map((t) => `"${t}"`).join(", ")}. Do not repeat or closely resemble ANY of these — write something distinct from all of them, not just the most recent one.`
     : "";
 
   const prompt = `You are writing today's "Daily Inspiration" message for the WELL Collective, a wellness community app run by Loretta Bates. The community is predominantly women, but not exclusively — use gender-neutral language throughout (e.g. "you," "someone," "they/them"); never assume the reader is a woman or use "she"/"her"/"woman." ${themeContext}${avoidContext}
@@ -306,13 +306,13 @@ export interface GeneratedWellActivity {
 
 export async function generateWellActivity(
   weeklyThemeTitle: string | undefined,
-  avoidTitle?: string
+  recentTitles: string[] = []
 ): Promise<GeneratedWellActivity> {
   const themeContext = weeklyThemeTitle
     ? `This week's theme for the WELL Collective wellness community is "${weeklyThemeTitle}".`
     : "There's no specific weekly theme right now, so keep it generally restorative.";
-  const avoidContext = avoidTitle
-    ? ` Do not repeat yesterday's activity, "${avoidTitle}" — suggest something clearly different.`
+  const avoidContext = recentTitles.length > 0
+    ? ` Recent WELL activities, most recent first: ${recentTitles.map((t) => `"${t}"`).join(", ")}. Do not repeat or closely resemble ANY of these — suggest something clearly different from all of them.`
     : "";
 
   const prompt = `You are suggesting today's "WELL Activity" — a short mental-health or self-care activity — for the WELL Collective, a wellness community app run by Loretta Bates. The community is predominantly women, but not exclusively — use gender-neutral language throughout (e.g. "you," "someone," "they/them"); never assume the reader is a woman or use "she"/"her"/"woman." ${themeContext}${avoidContext}
