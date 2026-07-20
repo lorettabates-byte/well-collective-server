@@ -482,6 +482,13 @@ export async function initDb(): Promise<void> {
   `);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_tribe_challenges_members
     ON tribe_challenges (sender_email, recipient_email, created_at DESC);`);
+  // Track when each member last had a goal auto-advanced so the system only
+  // advances one goal per calendar day per member per challenge.
+  await pool.query(`
+    ALTER TABLE tribe_challenges
+      ADD COLUMN IF NOT EXISTS sender_last_auto_date DATE,
+      ADD COLUMN IF NOT EXISTS recipient_last_auto_date DATE
+  `);
 
   // Ad-hoc notes the admin sends as instant push notifications (distinct
   // from the date-keyed content_schedule, since there can be any number of

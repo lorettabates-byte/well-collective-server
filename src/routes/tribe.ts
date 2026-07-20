@@ -6,6 +6,7 @@ import { computeBonusBadges, computeLevelBadge } from "../badges";
 import { awardPoints } from "./points";
 import { deriveMemberId, findEmailByMemberId } from "../utils/memberUtils";
 import { createMemberNotification } from "../memberNotifications";
+import { TIMEZONE } from "../dateUtils";
 
 const router = Router();
 
@@ -734,5 +735,127 @@ router.post("/member/mood-status", async (req, res) => {
     res.status(500).json({ error: "Failed to set mood status" });
   }
 });
+
+// When a member completes an activity that belongs to one of their active tribe
+// challenges, automatically advance the next unchecked day goal for them — once
+// per calendar day per challenge.  Called fire-and-forget from points.ts.
+export async function autoAdvanceChallengeGoal(
+  memberEmail: string,
+  challengeKey: string,
+): Promise<void> {
+  const email = memberEmail.toLowerCase();
+  // Derive today's date string in the server timezone.
+  const today = new Intl.DateTimeFormat("en-CA", {
+    timeZone: TIMEZONE,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(new Date());
+
+  try {
+    const { rows } = await pool.query(
+      `SELECT * FROM tribe_challenges
+       WHERE challenge_key = $1
+         AND (sender_email = $2 OR recipient_email = $2)
+         AND completed_at IS NULL`,
+      [challengeKey, email],
+    );
+
+    for (const row of rows) {
+      const isSender = row.sender_email === email;
+      const progressCol = isSender ? "sender_progress" : "recipient_progress";
+      const completedAtCol = isSender ? "sender_completed_at" : "recipient_completed_at";
+      const lastAutoCol = isSender ? "sender_last_auto_date" : "recipient_last_auto_date";
+
+      // Only advance once per calendar day.
+      const lastAutoRaw = row[lastAutoCol];
+      if (lastAutoRaw) {
+        const lastDate = String(lastAutoRaw instanceof Date ? lastAutoRaw.toISOString() : lastAutoRaw).slice(0, 10);
+        if (lastDate >= today) continue;
+      }
+
+      const goals = (row.goals ?? []) as ChallengeGoal[];
+      const current = new Set(progressArray(isSender ? row.sender_progress : row.recipient_progress));
+      const nextGoal = goals.find((g) => !current.has(g.id));
+      if (!nextGoal) continue; // member already completed all their goals
+
+      current.add(nextGoal.id);
+      const nextProgress = Array.from(current);
+      const memberComplete = goals.every((g) => current.has(g.id));
+
+      await pool.query(
+        `UPDATE tribe_challenges
+         SET ${progressCol} = $1::jsonb,
+             ${completedAtCol} = CASE WHEN $2 THEN COALESCE(${completedAtCol}, now()) ELSE ${completedAtCol} END,
+             ${lastAutoCol} = $3
+         WHERE id = $4`,
+        [JSON.stringify(nextProgress), memberComplete, today, row.id],
+      );
+
+      if (!memberComplete) continue;
+
+      // Check if the partner has also finished — if so, complete the challenge.
+      const { rows: updatedRows } = await pool.query(
+        `SELECT tc.*,
+                sm.name AS sender_name,
+                rm.name AS recipient_name
+         FROM tribe_challenges tc
+         JOIN members sm ON sm.email = tc.sender_email
+         JOIN members rm ON rm.email = tc.recipient_email
+         WHERE tc.id = $1`,
+        [row.id],
+      );
+      if (!updatedRows[0]) continue;
+      const updated = updatedRows[0];
+      const partnerProgress = progressArray(isSender ? updated.recipient_progress : updated.sender_progress);
+      const partnerComplete = goals.every((g) => partnerProgress.includes(g.id));
+
+      if (partnerComplete && !updated.completed_at) {
+        await pool.query("UPDATE tribe_challenges SET completed_at = now() WHERE id = $1", [row.id]);
+        await Promise.all([
+          awardPoints(updated.sender_email, "tribe_challenge_complete", {
+            challengeId: row.id,
+            challengeKey,
+          }),
+          awardPoints(updated.recipient_email, "tribe_challenge_complete", {
+            challengeId: row.id,
+            challengeKey,
+          }),
+        ]);
+        const title = updated.title as string;
+        await Promise.allSettled([
+          createMemberNotification({
+            memberEmail: updated.sender_email,
+            type: "tribe",
+            title: "Challenge complete!",
+            body: `You and ${updated.recipient_name} both finished "${title}". Bonus points awarded!`,
+            link: "/tribe",
+          }),
+          createMemberNotification({
+            memberEmail: updated.recipient_email,
+            type: "tribe",
+            title: "Challenge complete!",
+            body: `You and ${updated.sender_name} both finished "${title}". Bonus points awarded!`,
+            link: "/tribe",
+          }),
+          sendNotificationToUser(updated.sender_email, {
+            title: "Challenge complete!",
+            body: `You and ${updated.recipient_name} both finished "${title}". Bonus points awarded!`,
+            tag: "tribe-challenge",
+            url: "/tribe",
+          }),
+          sendNotificationToUser(updated.recipient_email, {
+            title: "Challenge complete!",
+            body: `You and ${updated.sender_name} both finished "${title}". Bonus points awarded!`,
+            tag: "tribe-challenge",
+            url: "/tribe",
+          }),
+        ]);
+      }
+    }
+  } catch (err) {
+    console.error(`autoAdvanceChallengeGoal error (${challengeKey}, ${email}):`, err);
+  }
+}
 
 export default router;

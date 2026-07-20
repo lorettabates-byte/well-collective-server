@@ -5,6 +5,21 @@ import { isAnthropicConfigured, parseMealDescriptionForNutritionLookup } from ".
 import { isUsdaConfigured, computeNutritionFromIngredients } from "../usda";
 import { requireAdmin } from "../middleware/adminAuth";
 import { sendNotificationToUser } from "../push";
+import { autoAdvanceChallengeGoal } from "./tribe";
+
+// Maps activity types to the tribe challenge(s) they should auto-advance.
+const ACTIVITY_CHALLENGE_MAP: Record<string, string[]> = {
+  meal_log:            ["nourishment-3day"],
+  resistance_training: ["workout-streak-7"],
+  cardio:              ["workout-streak-7"],
+  stretching:          ["workout-streak-7"],
+  class_watch:         ["workout-streak-7"],
+  breathwork:          ["mindfulness-5"],
+  breathwork_extended: ["mindfulness-5"],
+  breathwork_calm_kit: ["mindfulness-5"],
+  well_activity:       ["wellcheck-7"],
+  sleep_log:           ["wellcheck-7"],
+};
 
 const router = Router();
 
@@ -316,6 +331,18 @@ router.post("/activity", async (req, res) => {
     let streakData: { streak: number; bonus: number; longestStreak: number } | null = null;
     if (result.awarded && type === "app_open") {
       streakData = await updateLoginStreak(email).catch(() => null);
+
+      // morning-ritual-5 challenge: WELL Check before noon in the server tz.
+      const hour = new Date().toLocaleString("en-US", { timeZone: TIMEZONE, hour: "numeric", hour12: false });
+      if (Number(hour) < 12) {
+        autoAdvanceChallengeGoal(email, "morning-ritual-5").catch(() => {});
+      }
+    }
+
+    // Auto-advance any tribe challenges tied to this activity type.
+    const challengeKeys = ACTIVITY_CHALLENGE_MAP[type] ?? [];
+    for (const key of challengeKeys) {
+      autoAdvanceChallengeGoal(email, key).catch(() => {});
     }
 
     res.json({ ...result, streak: streakData });
@@ -768,6 +795,10 @@ router.put("/meals/:id", async (req, res) => {
       ]
     );
     if (rows.length === 0) return res.status(404).json({ error: "Meal not found" });
+    // Auto-advance hydration challenge when water is checked on a meal update.
+    if (rows[0].had_water === true) {
+      autoAdvanceChallengeGoal(memberEmail.toLowerCase(), "hydration-5").catch(() => {});
+    }
     res.json({ meal: rows[0] });
   } catch (err) {
     console.error("Update meal error:", err);
@@ -848,6 +879,9 @@ router.post("/meals", async (req, res) => {
     );
 
     await awardPoints(memberEmail.toLowerCase(), "meal_log", { mealType });
+    if (hadWater) {
+      autoAdvanceChallengeGoal(memberEmail.toLowerCase(), "hydration-5").catch(() => {});
+    }
 
     res.status(201).json({ meal: rows[0] });
   } catch (err) {
