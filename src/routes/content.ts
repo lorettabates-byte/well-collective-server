@@ -81,6 +81,36 @@ router.get("/content-today", async (_req, res) => {
   }
 });
 
+// Public: recent content history for the Inspirations feed — returns
+// daily inspirations, weekly themes, and motivation boosts for the past
+// `days` calendar days (default 60). Today is excluded (handled by
+// content-today). Only rows with at least one inspiration field populated
+// are returned, so empty placeholder dates are filtered out.
+router.get("/content-history", async (req, res) => {
+  try {
+    const days = Math.min(Number(req.query.days) || 60, 180);
+    const { rows } = await pool.query(
+      `SELECT date, weekly_theme, daily_inspiration, motivation_boost
+       FROM content_schedule
+       WHERE date < CURRENT_DATE
+         AND date >= CURRENT_DATE - INTERVAL '${days} days'
+         AND (daily_inspiration IS NOT NULL OR weekly_theme IS NOT NULL OR motivation_boost IS NOT NULL)
+       ORDER BY date DESC`
+    );
+    res.json({
+      entries: rows.map((row) => ({
+        date: row.date.toISOString().slice(0, 10),
+        weeklyTheme: row.weekly_theme ?? undefined,
+        dailyInspiration: row.daily_inspiration ?? undefined,
+        motivationBoost: row.motivation_boost ?? undefined,
+      })),
+    });
+  } catch (err) {
+    console.error("Fetch content-history error:", err);
+    res.status(500).json({ error: "Failed to fetch content history" });
+  }
+});
+
 // Public: paginated past recipes for the Nutrition page's "browse past
 // recipes" view, going back from `before` (exclusive) rather than always
 // starting at today, so members can keep paging further into the archive.
