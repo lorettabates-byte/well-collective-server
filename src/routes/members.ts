@@ -625,8 +625,8 @@ router.delete("/members/self", async (req, res) => {
     // Explicit deletes for tables without CASCADE
     await pool.query("DELETE FROM push_subscriptions WHERE user_email = $1", [emailLower]);
     await pool.query("DELETE FROM meal_plan_entries WHERE member_email = $1", [emailLower]);
-    await pool.query("DELETE FROM saved_recipes WHERE email = $1", [emailLower]);
-    await pool.query("DELETE FROM recipe_folders WHERE email = $1", [emailLower]);
+    await pool.query("DELETE FROM saved_recipes WHERE member_email = $1", [emailLower]);
+    await pool.query("DELETE FROM recipe_folders WHERE member_email = $1", [emailLower]);
     await pool.query("DELETE FROM meal_entries WHERE member_email = $1", [emailLower]);
     await pool.query("DELETE FROM sleep_entries WHERE member_email = $1", [emailLower]);
     await pool.query("DELETE FROM step_entries WHERE member_email = $1", [emailLower]);
@@ -656,8 +656,7 @@ router.delete("/members/self", async (req, res) => {
     res.json({ ok: true });
   } catch (err) {
     console.error("Self-delete account error:", err);
-    const detail = err instanceof Error ? err.message : String(err);
-    res.status(500).json({ error: "Failed to delete account", detail });
+    res.status(500).json({ error: "Failed to delete account" });
   }
 });
 
