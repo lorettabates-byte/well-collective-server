@@ -37,7 +37,7 @@ router.get("/link", (req, res): void => {
   const token = base64url(Buffer.from(JSON.stringify(payload)));
   const sig = crypto.createHmac("sha256", SSO_SECRET).update(token).digest("hex");
 
-  const url = `${redirect.split("?")[0]}${redirect.includes("?") ? "&" : "?"}well_sso=${encodeURIComponent(token)}&well_sig=${sig}`;
+  const url = `${redirect}${redirect.includes("?") ? "&" : "?"}well_sso=${encodeURIComponent(token)}&well_sig=${sig}`;
   res.json({ url });
 });
 
