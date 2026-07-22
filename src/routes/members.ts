@@ -656,7 +656,8 @@ router.delete("/members/self", async (req, res) => {
     res.json({ ok: true });
   } catch (err) {
     console.error("Self-delete account error:", err);
-    res.status(500).json({ error: "Failed to delete account" });
+    const detail = err instanceof Error ? err.message : String(err);
+    res.status(500).json({ error: "Failed to delete account", detail });
   }
 });
 
