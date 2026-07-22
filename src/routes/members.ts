@@ -633,12 +633,12 @@ router.delete("/members/self", async (req, res) => {
     await pool.query("DELETE FROM activity_logs WHERE member_email = $1", [emailLower]);
     await pool.query("DELETE FROM login_streaks WHERE member_email = $1", [emailLower]);
     await pool.query("DELETE FROM well_cup_wins WHERE member_email = $1", [emailLower]);
-    await pool.query("DELETE FROM coupon_redemptions WHERE member_email = $1", [emailLower]);
+    await pool.query("DELETE FROM coupon_redemptions WHERE user_id = $1", [emailLower]);
     await pool.query("DELETE FROM inspiration_reactions WHERE member_email = $1", [emailLower]);
     await pool.query("DELETE FROM event_rsvps WHERE member_email = $1", [emailLower]);
-    await pool.query("DELETE FROM live_event_rsvps WHERE member_email = $1", [emailLower]);
-    await pool.query("DELETE FROM messages WHERE sender_email = $1 OR recipient_email = $1", [emailLower]);
-    await pool.query("DELETE FROM user_blocks WHERE blocker_email = $1 OR blocked_email = $1", [emailLower]);
+    await pool.query("UPDATE live_event_rsvps SET rsvps = array_remove(rsvps, $1)", [emailLower]);
+    await pool.query("DELETE FROM messages WHERE sender_id = $1 OR recipient_id = $1", [emailLower]);
+    await pool.query("DELETE FROM user_blocks WHERE blocker_id = $1 OR blocked_id = $1", [emailLower]);
     await pool.query("DELETE FROM referrals WHERE referrer_email = $1 OR referred_email = $1", [emailLower]);
     await pool.query("DELETE FROM analytics_events WHERE member_email = $1", [emailLower]);
     await pool.query("DELETE FROM member_notifications WHERE member_email = $1", [emailLower]);
