@@ -43,6 +43,9 @@ const configuredOrigins = (process.env.ALLOWED_ORIGINS || "")
   .map((origin) => origin.trim())
   .filter(Boolean);
 const localPreviewOrigins = [
+  // The public trial-signup page on the website posts to /api/auth/start-trial.
+  "https://lorettabates.com",
+  "https://www.lorettabates.com",
   "http://localhost:5173",
   "http://127.0.0.1:5173",
   "http://localhost:4173",
