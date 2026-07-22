@@ -639,7 +639,16 @@ router.delete("/members/self", async (req, res) => {
     await pool.query("DELETE FROM live_event_rsvps WHERE member_email = $1", [emailLower]);
     await pool.query("DELETE FROM messages WHERE sender_email = $1 OR recipient_email = $1", [emailLower]);
     await pool.query("DELETE FROM user_blocks WHERE blocker_email = $1 OR blocked_email = $1", [emailLower]);
-    // Deleting from members cascades: tribe_members, member_badges, tribe_cheers, tribe_cards, tribe_challenges
+    await pool.query("DELETE FROM referrals WHERE referrer_email = $1 OR referred_email = $1", [emailLower]);
+    await pool.query("DELETE FROM analytics_events WHERE member_email = $1", [emailLower]);
+    // These have ON DELETE CASCADE in the current schema, but tables created
+    // before CASCADE was added keep their old constraints — delete explicitly
+    // so the final members delete can never hit a foreign-key violation.
+    await pool.query("DELETE FROM tribe_cheers WHERE sender_email = $1 OR recipient_email = $1", [emailLower]);
+    await pool.query("DELETE FROM tribe_cards WHERE sender_email = $1 OR recipient_email = $1", [emailLower]);
+    await pool.query("DELETE FROM tribe_challenges WHERE sender_email = $1 OR recipient_email = $1", [emailLower]);
+    await pool.query("DELETE FROM tribe_members WHERE owner_email = $1 OR member_email = $1", [emailLower]);
+    await pool.query("DELETE FROM member_badges WHERE member_email = $1", [emailLower]);
     await pool.query("DELETE FROM members WHERE email = $1", [emailLower]);
 
     res.json({ ok: true });
