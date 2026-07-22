@@ -227,6 +227,19 @@ router.post("/start-trial", async (req, res) => {
       })().catch((err) => console.error("Referral bonus error:", err));
     }
 
+    // Mirror the trial into WordPress/UMP so the member exists on the
+    // videolibrary site too (fire-and-forget — app access never depends on it).
+    fetch(`${WORDPRESS_URL}/wp-json/well/v1/create-trial`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-WELL-API-KEY": WELL_API_KEY },
+      body: JSON.stringify({ email: normalizedEmail, name: effectiveName, trial_days: trialDays }),
+      signal: AbortSignal.timeout(10000),
+    })
+      .then(async (r) => {
+        if (!r.ok) console.error("WP create-trial failed:", r.status, await r.text().catch(() => ""));
+      })
+      .catch((err) => console.error("WP create-trial error:", err));
+
     if (isFirstTimeJoin && normalizedEmail !== ADMIN_NOTIFY_EMAIL) {
       const referralNote = validReferrer ? ` (referred by ${validReferrer})` : "";
       sendNotificationToUser(ADMIN_NOTIFY_EMAIL, {
