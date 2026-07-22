@@ -641,6 +641,8 @@ router.delete("/members/self", async (req, res) => {
     await pool.query("DELETE FROM user_blocks WHERE blocker_email = $1 OR blocked_email = $1", [emailLower]);
     await pool.query("DELETE FROM referrals WHERE referrer_email = $1 OR referred_email = $1", [emailLower]);
     await pool.query("DELETE FROM analytics_events WHERE member_email = $1", [emailLower]);
+    await pool.query("DELETE FROM member_notifications WHERE member_email = $1", [emailLower]);
+    await pool.query("DELETE FROM saved_meals WHERE member_email = $1", [emailLower]);
     // These have ON DELETE CASCADE in the current schema, but tables created
     // before CASCADE was added keep their old constraints — delete explicitly
     // so the final members delete can never hit a foreign-key violation.
