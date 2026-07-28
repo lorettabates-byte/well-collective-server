@@ -79,15 +79,49 @@ router.delete("/categories/:id", requireAdmin, async (req, res) => {
   }
 });
 
-router.get("/threads", async (_req, res) => {
+router.get("/threads", async (req, res) => {
+  const since = req.query.since as string | undefined;
   try {
-    const { rows: threadRows } = await pool.query(
-      `SELECT id, category_id, title, author_id, author_name, author_avatar, created_at, pinned_at
-       FROM forum_threads ORDER BY (pinned_at IS NOT NULL) DESC, pinned_at DESC, created_at DESC`
-    );
+    let threadRows: Array<{
+      id: string; category_id: string; title: string; author_id: string;
+      author_name: string; author_avatar: string | null; created_at: Date; pinned_at: Date | null;
+    }>;
+
+    if (since) {
+      // Delta mode: only return threads that were created or received a new
+      // message after `since`. Pinned threads are always included so the
+      // client never loses them after the initial load.
+      const { rows: changedThreadIds } = await pool.query(
+        `SELECT DISTINCT thread_id AS id FROM forum_messages WHERE created_at > $1`,
+        [since]
+      );
+      const ids = changedThreadIds.map((r: { id: string }) => r.id);
+
+      const { rows } = await pool.query(
+        `SELECT id, category_id, title, author_id, author_name, author_avatar, created_at, pinned_at
+         FROM forum_threads
+         WHERE (created_at > $1 OR pinned_at IS NOT NULL OR id = ANY($2))
+         ORDER BY (pinned_at IS NOT NULL) DESC, pinned_at DESC, created_at DESC`,
+        [since, ids]
+      );
+      threadRows = rows;
+    } else {
+      const { rows } = await pool.query(
+        `SELECT id, category_id, title, author_id, author_name, author_avatar, created_at, pinned_at
+         FROM forum_threads ORDER BY (pinned_at IS NOT NULL) DESC, pinned_at DESC, created_at DESC`
+      );
+      threadRows = rows;
+    }
+
+    if (threadRows.length === 0) {
+      return res.json({ threads: [] });
+    }
+
+    const threadIds = threadRows.map((r) => r.id);
     const { rows: messageRows } = await pool.query(
       `SELECT id, thread_id, author_id, author_name, author_avatar, text, created_at, likes, reply_to_id, image
-       FROM forum_messages ORDER BY created_at ASC`
+       FROM forum_messages WHERE thread_id = ANY($1) ORDER BY created_at ASC`,
+      [threadIds]
     );
 
     const messagesByThread = new Map<string, ReturnType<typeof formatMessage>[]>();
