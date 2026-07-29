@@ -563,6 +563,7 @@ export async function initDb(): Promise<void> {
   // Lets admins mark an event as full so members see a clear banner instead
   // of RSVPing into a class that's already at capacity.
   await pool.query(`ALTER TABLE events ADD COLUMN IF NOT EXISTS sold_out BOOLEAN NOT NULL DEFAULT false;`);
+  await pool.query(`ALTER TABLE events ADD COLUMN IF NOT EXISTS url TEXT;`);
 
   await pool.query(`
     CREATE TABLE IF NOT EXISTS event_rsvps (

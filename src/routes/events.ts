@@ -29,6 +29,7 @@ interface EventRow {
   recurrence_group_id: string | null;
   image: string | null;
   sold_out: boolean;
+  url: string | null;
 }
 
 function serializeEvent(row: EventRow) {
@@ -44,6 +45,7 @@ function serializeEvent(row: EventRow) {
     recurrenceGroupId: row.recurrence_group_id ?? undefined,
     image: row.image ?? undefined,
     soldOut: row.sold_out ?? false,
+    url: row.url ?? undefined,
   };
 }
 
@@ -60,7 +62,7 @@ router.get("/events", async (req, res) => {
       : "image";
 
     const { rows } = await pool.query<EventRow>(
-      `SELECT id, title, description, date, time, location, color, rsvps, recurrence_group_id, ${imageSelect}, sold_out
+      `SELECT id, title, description, date, time, location, color, rsvps, recurrence_group_id, ${imageSelect}, sold_out, url
        FROM events
        ${whereClause}
        ORDER BY date ASC, time ASC
@@ -78,7 +80,7 @@ router.get("/events", async (req, res) => {
 // occurrences), so e.g. "every Tuesday at 9am" only needs to be set up once.
 // Only one notification is sent for the whole series, not one per occurrence.
 router.post("/events", requireAdmin, async (req, res) => {
-  const { title, description, date, time, location, color, image, recurrence, soldOut } = req.body as {
+  const { title, description, date, time, location, color, image, recurrence, soldOut, url } = req.body as {
     title?: string;
     description?: string;
     date?: string;
@@ -88,6 +90,7 @@ router.post("/events", requireAdmin, async (req, res) => {
     image?: string;
     recurrence?: { frequency: "weekly"; occurrences?: number };
     soldOut?: boolean;
+    url?: string;
   };
 
   if (!title?.trim() || !date || !time?.trim()) {
@@ -109,8 +112,8 @@ router.post("/events", requireAdmin, async (req, res) => {
       const id = uid("e");
       insertedIds.push(id);
       await pool.query(
-        `INSERT INTO events (id, title, description, date, time, location, color, recurrence_group_id, image, sold_out)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
+        `INSERT INTO events (id, title, description, date, time, location, color, recurrence_group_id, image, sold_out, url)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
         [
           id,
           title.trim(),
@@ -122,6 +125,7 @@ router.post("/events", requireAdmin, async (req, res) => {
           recurrenceGroupId,
           image || null,
           soldOut ?? false,
+          url?.trim() || null,
         ]
       );
     }
@@ -148,7 +152,7 @@ router.post("/events", requireAdmin, async (req, res) => {
 });
 
 router.put("/events/:id", requireAdmin, async (req, res) => {
-  const { title, description, date, time, location, color, image, soldOut } = req.body as {
+  const { title, description, date, time, location, color, image, soldOut, url } = req.body as {
     title?: string;
     description?: string;
     date?: string;
@@ -157,6 +161,7 @@ router.put("/events/:id", requireAdmin, async (req, res) => {
     color?: string;
     image?: string;
     soldOut?: boolean;
+    url?: string;
   };
 
   if (!title?.trim() || !date || !time?.trim()) {
@@ -165,7 +170,7 @@ router.put("/events/:id", requireAdmin, async (req, res) => {
 
   try {
     await pool.query(
-      `UPDATE events SET title = $2, description = $3, date = $4, time = $5, location = $6, color = $7, image = $8, sold_out = $9
+      `UPDATE events SET title = $2, description = $3, date = $4, time = $5, location = $6, color = $7, image = $8, sold_out = $9, url = $10
        WHERE id = $1`,
       [
         req.params.id,
@@ -177,6 +182,7 @@ router.put("/events/:id", requireAdmin, async (req, res) => {
         color || "#0191CE",
         image || null,
         soldOut ?? false,
+        url?.trim() || null,
       ]
     );
     res.json({ ok: true });
