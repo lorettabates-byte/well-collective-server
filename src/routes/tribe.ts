@@ -385,6 +385,9 @@ router.post("/tribe/:memberId/cheer", async (req, res) => {
       url: "/tribe",
     }).catch((err) => console.error("Failed to send WELL Tribe cheer notification:", err));
 
+    awardPoints(senderEmail, "tribe_cheer", { recipientEmail: targetEmail })
+      .catch((err) => console.error("Award points (tribe_cheer) error:", err));
+
     res.status(201).json({ ok: true });
   } catch (err) {
     console.error("Send WELL Tribe cheer error:", err);
@@ -435,6 +438,9 @@ router.post("/tribe/:memberId/card", async (req, res) => {
       tag: "tribe-card",
       url: link,
     });
+
+    awardPoints(email.toLowerCase(), "tribe_card", { recipientEmail: targetEmail })
+      .catch((err) => console.error("Award points (tribe_card) error:", err));
 
     res.status(201).json({ ok: true, cardId });
   } catch (err) {
