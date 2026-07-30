@@ -901,6 +901,20 @@ export async function initDb(): Promise<void> {
   await pool.query(`ALTER TABLE members ADD COLUMN IF NOT EXISTS mood_status TEXT;`);
   await pool.query(`ALTER TABLE members ADD COLUMN IF NOT EXISTS mood_status_expires_at TIMESTAMPTZ;`);
 
+  // Content reports — Apple App Store guideline 1.2 (UGC safety)
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS content_reports (
+      id SERIAL PRIMARY KEY,
+      reporter_email TEXT NOT NULL,
+      content_type TEXT NOT NULL,
+      content_id TEXT NOT NULL,
+      thread_id TEXT,
+      reason TEXT,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      UNIQUE (reporter_email, content_type, content_id)
+    )
+  `);
+
   // Seed yesterday's WELL CUP winner if none exists yet (first-run bootstrap).
   // The midnight cron takes over from today onward; ON CONFLICT keeps this safe
   // to run on every startup without clobbering real winners.

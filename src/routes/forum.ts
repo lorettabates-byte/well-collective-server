@@ -407,4 +407,30 @@ router.post("/threads/:threadId/unpin", requireAdmin, async (req, res) => {
   }
 });
 
+// POST /api/forum/report — report a post or thread for objectionable content
+router.post("/report", async (req, res) => {
+  const { reporterEmail, contentType, contentId, threadId, reason } = req.body as {
+    reporterEmail?: string;
+    contentType?: "message" | "thread";
+    contentId?: string;
+    threadId?: string;
+    reason?: string;
+  };
+  if (!reporterEmail || !contentType || !contentId) {
+    return res.status(400).json({ error: "reporterEmail, contentType, and contentId are required" });
+  }
+  try {
+    await pool.query(
+      `INSERT INTO content_reports (reporter_email, content_type, content_id, thread_id, reason, created_at)
+       VALUES ($1, $2, $3, $4, $5, NOW())
+       ON CONFLICT DO NOTHING`,
+      [reporterEmail.toLowerCase(), contentType, contentId, threadId || null, reason || null]
+    );
+    res.json({ ok: true });
+  } catch (err) {
+    console.error("Report content error:", err);
+    res.status(500).json({ error: "Failed to submit report" });
+  }
+});
+
 export default router;
