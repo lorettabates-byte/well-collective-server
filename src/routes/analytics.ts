@@ -78,7 +78,7 @@ router.get("/analytics/dashboard", requireAdmin, async (_req, res) => {
       FROM analytics_events
       WHERE event_type = 'session_end'
         AND created_at >= NOW() - INTERVAL '30 days'
-        AND metadata->>'duration_seconds' IS NOT NULL
+        AND metadata->>'duration_seconds' ~ '^\\d+$'
     `);
 
     // ── Tutorial funnel ───────────────────────────────────────────────
@@ -89,6 +89,7 @@ router.get("/analytics/dashboard", requireAdmin, async (_req, res) => {
         COUNT(DISTINCT member_email) AS users
       FROM analytics_events
       WHERE event_type = 'tutorial_step'
+        AND metadata->>'step' ~ '^\\d+$'
       GROUP BY step
       ORDER BY step
     `);
@@ -107,6 +108,7 @@ router.get("/analytics/dashboard", requireAdmin, async (_req, res) => {
         COUNT(*) AS count
       FROM analytics_events
       WHERE event_type = 'tutorial_skip'
+        AND metadata->>'at_step' ~ '^\\d+$'
       GROUP BY at_step, slide_title
       ORDER BY at_step
     `);
