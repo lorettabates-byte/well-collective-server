@@ -44,6 +44,7 @@ const TAG_TO_CATEGORY: Record<string, string> = {
   "new-song": "newSongs",
   "motivation-boost": "dailyInspiration",
   "well-check": "general",
+  "well-cup-spotlight": "general",
   "scheduled-notification": "general",
   message: "replies",
   tribe: "mentions",

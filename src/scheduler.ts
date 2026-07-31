@@ -644,6 +644,123 @@ async function crownDailyWinner(): Promise<void> {
   }
 }
 
+async function sendWeeklySpotlightAwards(): Promise<void> {
+  const date = todayInTimezone();
+  if (await alreadySent(date, "weeklySpotlights")) {
+    console.log(`[WELL CUP] Weekly spotlight awards already sent for ${date}`);
+    return;
+  }
+
+  const SQL_WEEK_START = `date_trunc('week', now() AT TIME ZONE '${TIMEZONE}') AT TIME ZONE '${TIMEZONE}'`;
+  const SQL_PREV_WEEK_START = `(date_trunc('week', now() AT TIME ZONE '${TIMEZONE}') AT TIME ZONE '${TIMEZONE}' - INTERVAL '7 days')`;
+
+  // Most Improved — biggest pts increase vs last week
+  const { rows: improvedRows } = await pool.query(`
+    WITH this_week AS (
+      SELECT member_email, COALESCE(SUM(points), 0) AS pts
+      FROM activity_logs
+      WHERE created_at >= ${SQL_WEEK_START}
+      GROUP BY member_email
+    ),
+    last_week AS (
+      SELECT member_email, COALESCE(SUM(points), 0) AS pts
+      FROM activity_logs
+      WHERE created_at >= ${SQL_PREV_WEEK_START}
+        AND created_at < ${SQL_WEEK_START}
+      GROUP BY member_email
+    )
+    SELECT m.email, m.name,
+           COALESCE(tw.pts, 0) - COALESCE(lw.pts, 0) AS improvement
+    FROM members m
+    LEFT JOIN this_week tw ON tw.member_email = m.email
+    LEFT JOIN last_week lw ON lw.member_email = m.email
+    WHERE m.show_on_leaderboard = TRUE
+      AND COALESCE(tw.pts, 0) > 0
+      AND COALESCE(tw.pts, 0) > COALESCE(lw.pts, 0)
+    ORDER BY improvement DESC
+    LIMIT 1
+  `);
+
+  if (improvedRows[0]) {
+    const { email, name, improvement } = improvedRows[0];
+    const firstName = (name as string).split(" ")[0];
+    await sendNotificationToUser(email, {
+      title: "You leveled up more than anyone this week",
+      body: `+${Number(improvement)} pts vs last week, ${firstName} — your growth earned you a WELL Cup spotlight. Open the app to see your award.`,
+      tag: "well-cup-spotlight",
+      url: "/well-cup",
+    }).catch((err) => console.error("[WELL CUP] Most improved push failed:", err));
+    console.log(`[WELL CUP] Most Improved spotlight sent to ${email}`);
+  }
+
+  // Comeback Story — highest pts this week among members who had 0 pts last week
+  const { rows: comebackRows } = await pool.query(`
+    WITH this_week AS (
+      SELECT member_email, COALESCE(SUM(points), 0) AS pts
+      FROM activity_logs
+      WHERE created_at >= ${SQL_WEEK_START}
+      GROUP BY member_email
+    ),
+    last_week AS (
+      SELECT member_email, COALESCE(SUM(points), 0) AS pts
+      FROM activity_logs
+      WHERE created_at >= ${SQL_PREV_WEEK_START}
+        AND created_at < ${SQL_WEEK_START}
+      GROUP BY member_email
+    )
+    SELECT m.email, m.name, tw.pts AS this_week_pts
+    FROM members m
+    JOIN this_week tw ON tw.member_email = m.email
+    LEFT JOIN last_week lw ON lw.member_email = m.email
+    WHERE m.show_on_leaderboard = TRUE
+      AND tw.pts > 0
+      AND COALESCE(lw.pts, 0) = 0
+    ORDER BY tw.pts DESC
+    LIMIT 1
+  `);
+
+  if (comebackRows[0]) {
+    const { email, name, this_week_pts } = comebackRows[0];
+    const firstName = (name as string).split(" ")[0];
+    await sendNotificationToUser(email, {
+      title: "You came back — and the community noticed",
+      body: `After a quiet week you returned with ${Number(this_week_pts)} pts, ${firstName}. That's this week's Comeback Story. Open the WELL Cup to see your spotlight.`,
+      tag: "well-cup-spotlight",
+      url: "/well-cup",
+    }).catch((err) => console.error("[WELL CUP] Comeback push failed:", err));
+    console.log(`[WELL CUP] Comeback Story spotlight sent to ${email}`);
+  }
+
+  // Weekly Spotlight — deterministic-random pick among members with 20+ pts this week
+  const { rows: spotlightRows } = await pool.query(`
+    SELECT m.email, m.name
+    FROM members m
+    JOIN activity_logs al ON al.member_email = m.email
+      AND al.created_at >= ${SQL_WEEK_START}
+    WHERE m.show_on_leaderboard = TRUE
+    GROUP BY m.email, m.name
+    HAVING COALESCE(SUM(al.points), 0) >= 20
+    ORDER BY m.email
+  `);
+
+  if (spotlightRows.length > 0) {
+    const now = new Date();
+    const startOfYear = new Date(now.getFullYear(), 0, 1);
+    const weekNum = Math.floor((now.getTime() - startOfYear.getTime()) / (7 * 24 * 60 * 60 * 1000));
+    const winner = spotlightRows[weekNum % spotlightRows.length];
+    const firstName = (winner.name as string).split(" ")[0];
+    await sendNotificationToUser(winner.email, {
+      title: "You're this week's WELL Community Spotlight",
+      body: `${firstName}, we're recognizing you for the energy and presence you bring to WELL Collective. Open the WELL Cup to see your spotlight.`,
+      tag: "well-cup-spotlight",
+      url: "/well-cup",
+    }).catch((err) => console.error("[WELL CUP] Weekly spotlight push failed:", err));
+    console.log(`[WELL CUP] Weekly Spotlight sent to ${winner.email}`);
+  }
+
+  await markSent(date, "weeklySpotlights");
+}
+
 async function crownMonthlyWinner(): Promise<void> {
   // Runs on the last day of each month — find the member with the most points this month.
   const { rows } = await pool.query(`
@@ -747,6 +864,11 @@ export function startScheduler(): void {
   // Weekly theme: every Monday at 7:00am
   cron.schedule("0 7 * * 1", () => {
     sendWeeklyTheme().catch((err) => console.error("Weekly theme send failed:", err));
+  }, { timezone: TIMEZONE });
+
+  // Weekly spotlight awards: every Monday at 8:00am — Most Improved, Comeback Story, Weekly Spotlight
+  cron.schedule("0 8 * * 1", () => {
+    sendWeeklySpotlightAwards().catch((err) => console.error("Weekly spotlight awards failed:", err));
   }, { timezone: TIMEZONE });
 
   // Daily inspiration: every day EXCEPT Monday at 7:00am
