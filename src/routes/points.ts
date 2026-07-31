@@ -444,6 +444,113 @@ router.get("/leaderboard/yearly", async (_req, res) => {
   }
 });
 
+// Most Consistent this month — member with the most distinct calendar days with any points earned.
+// Céline's total-points lead is irrelevant here; showing up consistently is all that matters.
+router.get("/leaderboard/most-consistent", async (_req, res) => {
+  try {
+    const { rows } = await pool.query(`
+      SELECT m.email, m.name, m.avatar,
+             COUNT(DISTINCT (al.created_at AT TIME ZONE '${TIMEZONE}')::date) AS active_days
+      FROM members m
+      JOIN activity_logs al ON al.member_email = m.email
+        AND al.created_at >= ${SQL_MONTH_START}
+      WHERE m.show_on_leaderboard = TRUE
+      GROUP BY m.email, m.name, m.avatar
+      ORDER BY active_days DESC
+      LIMIT 1
+    `);
+    res.json({
+      leader: rows[0]
+        ? { name: rows[0].name, avatar: rows[0].avatar ?? null, email: rows[0].email, active_days: Number(rows[0].active_days) }
+        : null,
+    });
+  } catch (err) {
+    console.error("Most-consistent leader error:", err);
+    res.status(500).json({ error: "Failed to fetch most-consistent leader" });
+  }
+});
+
+// Most Well-Rounded this week — member who logged the most distinct activity categories
+// (e.g., workout + sleep + nutrition + breathwork) in the current calendar week.
+router.get("/leaderboard/most-rounded", async (_req, res) => {
+  const WELL_ACTIVITY_TYPES = [
+    "cardio", "class_watch", "sleep_log", "meal_log",
+    "breathwork", "breathwork_extended", "breathwork_calm_kit",
+    "stretching", "resistance_training", "well_activity",
+    "forum_post", "event_attend", "tribe_challenge_complete",
+  ];
+  const SQL_WEEK_START = `date_trunc('week', now() AT TIME ZONE '${TIMEZONE}') AT TIME ZONE '${TIMEZONE}'`;
+  try {
+    const { rows } = await pool.query(`
+      SELECT m.email, m.name, m.avatar,
+             COUNT(DISTINCT al.activity_type) AS category_count
+      FROM members m
+      JOIN activity_logs al ON al.member_email = m.email
+        AND al.created_at >= ${SQL_WEEK_START}
+        AND al.activity_type = ANY($1)
+      WHERE m.show_on_leaderboard = TRUE
+      GROUP BY m.email, m.name, m.avatar
+      ORDER BY category_count DESC
+      LIMIT 1
+    `, [WELL_ACTIVITY_TYPES]);
+    res.json({
+      leader: rows[0]
+        ? { name: rows[0].name, avatar: rows[0].avatar ?? null, email: rows[0].email, category_count: Number(rows[0].category_count) }
+        : null,
+    });
+  } catch (err) {
+    console.error("Most-rounded leader error:", err);
+    res.status(500).json({ error: "Failed to fetch most-rounded leader" });
+  }
+});
+
+// Personal stats for a member — their own personal bests regardless of rank.
+router.get("/stats/me", async (req, res) => {
+  const { email } = req.query as { email?: string };
+  if (!email) return res.status(400).json({ error: "email required" });
+  const e = (email as string).toLowerCase();
+  try {
+    const [bestDayRes, activeDaysRes, streakRes, categoriesRes] = await Promise.all([
+      pool.query(`
+        SELECT COALESCE(MAX(daily_pts), 0) AS best_day
+        FROM (
+          SELECT SUM(points) AS daily_pts
+          FROM activity_logs
+          WHERE member_email = $1
+          GROUP BY (created_at AT TIME ZONE '${TIMEZONE}')::date
+        ) sub
+      `, [e]),
+      pool.query(`
+        SELECT COUNT(DISTINCT (created_at AT TIME ZONE '${TIMEZONE}')::date) AS active_days
+        FROM activity_logs
+        WHERE member_email = $1
+          AND created_at >= ${SQL_MONTH_START}
+      `, [e]),
+      pool.query(`
+        SELECT current_streak, longest_streak
+        FROM login_streaks
+        WHERE member_email = $1
+      `, [e]),
+      pool.query(`
+        SELECT COUNT(DISTINCT activity_type) AS categories
+        FROM activity_logs
+        WHERE member_email = $1
+          AND created_at >= date_trunc('week', now() AT TIME ZONE '${TIMEZONE}') AT TIME ZONE '${TIMEZONE}'
+      `, [e]),
+    ]);
+    res.json({
+      bestDay: Number(bestDayRes.rows[0]?.best_day ?? 0),
+      activeDaysThisMonth: Number(activeDaysRes.rows[0]?.active_days ?? 0),
+      currentStreak: Number(streakRes.rows[0]?.current_streak ?? 0),
+      longestStreak: Number(streakRes.rows[0]?.longest_streak ?? 0),
+      categoriesThisWeek: Number(categoriesRes.rows[0]?.categories ?? 0),
+    });
+  } catch (err) {
+    console.error("Personal stats error:", err);
+    res.status(500).json({ error: "Failed to fetch personal stats" });
+  }
+});
+
 // Yesterday's WELL CUP winner (awarded by the midnight-ET cron job).
 router.get("/leaderboard/yesterday", async (_req, res) => {
   try {
