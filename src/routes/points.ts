@@ -556,6 +556,103 @@ router.get("/leaderboard/most-improved", async (_req, res) => {
   }
 });
 
+// Comeback Story this week — highest points this week among members who earned 0 pts last week.
+// An always-active member can NEVER qualify because they always have last-week points.
+router.get("/leaderboard/comeback", async (_req, res) => {
+  const SQL_WEEK_START = `date_trunc('week', now() AT TIME ZONE '${TIMEZONE}') AT TIME ZONE '${TIMEZONE}'`;
+  const SQL_PREV_WEEK_START = `(date_trunc('week', now() AT TIME ZONE '${TIMEZONE}') AT TIME ZONE '${TIMEZONE}' - INTERVAL '7 days')`;
+  try {
+    const { rows } = await pool.query(`
+      WITH this_week AS (
+        SELECT member_email, COALESCE(SUM(points), 0) AS pts
+        FROM activity_logs
+        WHERE created_at >= ${SQL_WEEK_START}
+        GROUP BY member_email
+      ),
+      last_week AS (
+        SELECT member_email, COALESCE(SUM(points), 0) AS pts
+        FROM activity_logs
+        WHERE created_at >= ${SQL_PREV_WEEK_START}
+          AND created_at < ${SQL_WEEK_START}
+        GROUP BY member_email
+      )
+      SELECT m.email, m.name, m.avatar, tw.pts AS this_week_pts
+      FROM members m
+      JOIN this_week tw ON tw.member_email = m.email
+      LEFT JOIN last_week lw ON lw.member_email = m.email
+      WHERE m.show_on_leaderboard = TRUE
+        AND tw.pts > 0
+        AND COALESCE(lw.pts, 0) = 0
+      ORDER BY tw.pts DESC
+      LIMIT 1
+    `);
+    res.json({
+      leader: rows[0]
+        ? { name: rows[0].name, avatar: rows[0].avatar ?? null, email: rows[0].email, this_week_pts: Number(rows[0].this_week_pts) }
+        : null,
+    });
+  } catch (err) {
+    console.error("Comeback leader error:", err);
+    res.status(500).json({ error: "Failed to fetch comeback leader" });
+  }
+});
+
+// Weekend Warrior this month — most points earned specifically on Saturdays and Sundays.
+// Céline's weekday grind can't carry into a weekend-only ranking.
+router.get("/leaderboard/weekend-warrior", async (_req, res) => {
+  try {
+    const { rows } = await pool.query(`
+      SELECT m.email, m.name, m.avatar, COALESCE(SUM(al.points), 0) AS weekend_pts
+      FROM members m
+      JOIN activity_logs al ON al.member_email = m.email
+        AND al.created_at >= ${SQL_MONTH_START}
+        AND EXTRACT(DOW FROM al.created_at AT TIME ZONE '${TIMEZONE}') IN (0, 6)
+      WHERE m.show_on_leaderboard = TRUE
+      GROUP BY m.email, m.name, m.avatar
+      ORDER BY weekend_pts DESC
+      LIMIT 1
+    `);
+    res.json({
+      leader: rows[0]
+        ? { name: rows[0].name, avatar: rows[0].avatar ?? null, email: rows[0].email, weekend_pts: Number(rows[0].weekend_pts) }
+        : null,
+    });
+  } catch (err) {
+    console.error("Weekend warrior error:", err);
+    res.status(500).json({ error: "Failed to fetch weekend warrior" });
+  }
+});
+
+// Weekly Lucky Draw — deterministic-random pick among all members with 20+ pts this week.
+// Seed is derived from the current week number so the winner is stable within a week
+// but changes every Monday. Everyone who participates gets one equal ticket.
+router.get("/leaderboard/lucky-draw", async (_req, res) => {
+  const SQL_WEEK_START = `date_trunc('week', now() AT TIME ZONE '${TIMEZONE}') AT TIME ZONE '${TIMEZONE}'`;
+  try {
+    const { rows } = await pool.query(`
+      SELECT m.email, m.name, m.avatar
+      FROM members m
+      JOIN activity_logs al ON al.member_email = m.email
+        AND al.created_at >= ${SQL_WEEK_START}
+      WHERE m.show_on_leaderboard = TRUE
+      GROUP BY m.email, m.name, m.avatar
+      HAVING COALESCE(SUM(al.points), 0) >= 20
+      ORDER BY m.email
+    `);
+    if (!rows.length) return res.json({ leader: null });
+    // Deterministic weekly seed: week number of current year
+    const now = new Date();
+    const startOfYear = new Date(now.getFullYear(), 0, 1);
+    const weekNum = Math.floor((now.getTime() - startOfYear.getTime()) / (7 * 24 * 60 * 60 * 1000));
+    const idx = weekNum % rows.length;
+    const winner = rows[idx];
+    res.json({ leader: { name: winner.name, avatar: winner.avatar ?? null, email: winner.email } });
+  } catch (err) {
+    console.error("Lucky draw error:", err);
+    res.status(500).json({ error: "Failed to fetch lucky draw" });
+  }
+});
+
 // Personal stats for a member — their own personal bests regardless of rank.
 router.get("/stats/me", async (req, res) => {
   const { email } = req.query as { email?: string };
