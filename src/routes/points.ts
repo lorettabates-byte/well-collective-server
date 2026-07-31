@@ -504,6 +504,58 @@ router.get("/leaderboard/most-rounded", async (_req, res) => {
   }
 });
 
+// Most Improved this week — biggest increase in points vs the previous week.
+// Someone already at peak engagement can't win this — only members who stepped
+// up meaningfully compared to last week qualify.
+router.get("/leaderboard/most-improved", async (_req, res) => {
+  const SQL_WEEK_START = `date_trunc('week', now() AT TIME ZONE '${TIMEZONE}') AT TIME ZONE '${TIMEZONE}'`;
+  const SQL_PREV_WEEK_START = `(date_trunc('week', now() AT TIME ZONE '${TIMEZONE}') AT TIME ZONE '${TIMEZONE}' - INTERVAL '7 days')`;
+  try {
+    const { rows } = await pool.query(`
+      WITH this_week AS (
+        SELECT member_email, COALESCE(SUM(points), 0) AS pts
+        FROM activity_logs
+        WHERE created_at >= ${SQL_WEEK_START}
+        GROUP BY member_email
+      ),
+      last_week AS (
+        SELECT member_email, COALESCE(SUM(points), 0) AS pts
+        FROM activity_logs
+        WHERE created_at >= ${SQL_PREV_WEEK_START}
+          AND created_at < ${SQL_WEEK_START}
+        GROUP BY member_email
+      )
+      SELECT m.email, m.name, m.avatar,
+             COALESCE(tw.pts, 0) AS this_week_pts,
+             COALESCE(lw.pts, 0) AS last_week_pts,
+             COALESCE(tw.pts, 0) - COALESCE(lw.pts, 0) AS improvement
+      FROM members m
+      LEFT JOIN this_week tw ON tw.member_email = m.email
+      LEFT JOIN last_week lw ON lw.member_email = m.email
+      WHERE m.show_on_leaderboard = TRUE
+        AND COALESCE(tw.pts, 0) > 0
+        AND COALESCE(tw.pts, 0) > COALESCE(lw.pts, 0)
+      ORDER BY improvement DESC
+      LIMIT 1
+    `);
+    res.json({
+      leader: rows[0]
+        ? {
+            name: rows[0].name,
+            avatar: rows[0].avatar ?? null,
+            email: rows[0].email,
+            improvement: Number(rows[0].improvement),
+            this_week_pts: Number(rows[0].this_week_pts),
+            last_week_pts: Number(rows[0].last_week_pts),
+          }
+        : null,
+    });
+  } catch (err) {
+    console.error("Most-improved leader error:", err);
+    res.status(500).json({ error: "Failed to fetch most-improved leader" });
+  }
+});
+
 // Personal stats for a member — their own personal bests regardless of rank.
 router.get("/stats/me", async (req, res) => {
   const { email } = req.query as { email?: string };
