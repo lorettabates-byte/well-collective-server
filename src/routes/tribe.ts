@@ -355,7 +355,7 @@ router.delete("/tribe/:memberId", async (req, res) => {
 
 // Send one of the 3 fixed WELL Tribe cheers to a tribe member.
 router.post("/tribe/:memberId/cheer", async (req, res) => {
-  const { email, cheerId } = req.body as { email?: string; cheerId?: string };
+  const { email, cheerId, note } = req.body as { email?: string; cheerId?: string; note?: string };
   const cheerLabel = cheerId ? TRIBE_CHEER_LABELS[cheerId] : undefined;
 
   if (!email || !cheerLabel) {
@@ -371,16 +371,19 @@ router.post("/tribe/:memberId/cheer", async (req, res) => {
     }
 
     await pool.query(
-      "INSERT INTO tribe_cheers (sender_email, recipient_email, cheer_id) VALUES ($1, $2, $3)",
-      [senderEmail, targetEmail.toLowerCase(), cheerId]
+      "INSERT INTO tribe_cheers (sender_email, recipient_email, cheer_id, note) VALUES ($1, $2, $3, $4)",
+      [senderEmail, targetEmail.toLowerCase(), cheerId, note || null]
     );
 
     const { rows: senderRows } = await pool.query("SELECT name FROM members WHERE email = $1", [senderEmail]);
     const senderName = senderRows[0]?.name || "Someone";
 
+    const cheerBody = note
+      ? `${senderName} sent you a cheer: ${cheerLabel} — "${note}"`
+      : `${senderName} sent you a cheer: ${cheerLabel}`;
     sendNotificationToUser(targetEmail, {
       title: "WELL Tribe Cheer",
-      body: `${senderName} sent you a cheer: ${cheerLabel}`,
+      body: cheerBody,
       tag: "tribe-cheer",
       url: "/tribe",
     }).catch((err) => console.error("Failed to send WELL Tribe cheer notification:", err));
@@ -678,6 +681,29 @@ router.patch("/tribe/challenges/:challengeId/progress", async (req, res) => {
   } catch (err) {
     console.error("Update tribe challenge progress error:", err);
     res.status(500).json({ error: "Failed to update challenge progress" });
+  }
+});
+
+// Cancel (delete) a tribe challenge — either participant can cancel before completion.
+router.delete("/tribe/challenges/:challengeId", async (req, res) => {
+  const email = (req.query.email as string | undefined)?.toLowerCase();
+  const challengeId = parseInt(req.params.challengeId, 10);
+  if (!email || isNaN(challengeId)) {
+    return res.status(400).json({ error: "email and valid challengeId required" });
+  }
+  try {
+    const { rowCount } = await pool.query(
+      `DELETE FROM tribe_challenges
+       WHERE id = $1
+         AND (sender_email = $2 OR recipient_email = $2)
+         AND completed_at IS NULL`,
+      [challengeId, email]
+    );
+    if (!rowCount) return res.status(404).json({ error: "Challenge not found or already completed" });
+    res.json({ ok: true });
+  } catch (err) {
+    console.error("Cancel tribe challenge error:", err);
+    res.status(500).json({ error: "Failed to cancel challenge" });
   }
 });
 

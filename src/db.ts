@@ -367,6 +367,8 @@ export async function initDb(): Promise<void> {
   // Push notification time preferences: {send7am: bool, send3pm: bool, send9pm: bool}
   await pool.query(`ALTER TABLE members ADD COLUMN IF NOT EXISTS notification_schedule JSONB;`);
   await pool.query(`ALTER TABLE members ADD COLUMN IF NOT EXISTS hidden_from_community BOOLEAN NOT NULL DEFAULT FALSE;`);
+  await pool.query(`ALTER TABLE tribe_cheers ADD COLUMN IF NOT EXISTS note TEXT;`);
+  await pool.query(`ALTER TABLE tribe_challenges ADD COLUMN IF NOT EXISTS cancelled_at TIMESTAMPTZ;`);
 
   await pool.query(`
     CREATE TABLE IF NOT EXISTS app_settings (
