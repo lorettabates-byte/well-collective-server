@@ -339,14 +339,26 @@ async function sendMotivationBoost(): Promise<void> {
     return;
   }
 
-  console.log(`[SCHEDULER] Sending motivation boost: "${boost.title}"`);
-  const result = await broadcastNotification({
-    title: boost.title,
-    body: boost.body,
-    tag: "motivation-boost",
-    url: "/inspirations",
-  });
-  console.log(`[SCHEDULER] Motivation boost result:`, result);
+  // Members with a goal plan receive a personalized 3pm push via scheduleTimezoneNotifications().
+  // The generic broadcast only goes to members without a goal plan set.
+  const { rows: noGoalRows } = await pool.query<{ email: string }>(
+    "SELECT email FROM members WHERE (goal_plan IS NULL OR goal_plan = '') AND notification_schedule->>'send3pm' = 'true'"
+  );
+  if (noGoalRows.length === 0) {
+    console.log(`[SCHEDULER] Motivation boost skipped — all members with 3pm enabled have goal plans`);
+    await markSent(date, "motivationBoost");
+    return;
+  }
+
+  console.log(`[SCHEDULER] Sending motivation boost to ${noGoalRows.length} members without a goal plan`);
+  for (const row of noGoalRows) {
+    await sendNotificationToUser(row.email, {
+      title: boost.title,
+      body: boost.body,
+      tag: "motivation-boost",
+      url: "/inspirations",
+    }).catch((err) => console.error(`[SCHEDULER] Motivation boost failed for ${row.email}:`, err));
+  }
   await markSent(date, "motivationBoost");
 }
 

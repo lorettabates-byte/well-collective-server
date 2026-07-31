@@ -32,6 +32,7 @@ import tribeRouter from "./routes/tribe";
 import videoNotificationsRouter from "./routes/video-notifications";
 import pixabayRouter from "./routes/pixabay";
 import { startScheduler } from "./scheduler";
+import { scheduleTimezoneNotifications } from "./scheduledNotifications";
 
 dotenv.config();
 
@@ -120,6 +121,7 @@ app.use("/api", pixabayRouter);
 async function main() {
   await initDb();
   startScheduler();
+  scheduleTimezoneNotifications();
   app.listen(PORT, () => {
     console.log(`✅ WELL Collective push server listening on port ${PORT}`);
   });

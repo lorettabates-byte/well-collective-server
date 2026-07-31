@@ -1,6 +1,6 @@
 import cron from "node-cron";
 import { pool } from "./db";
-import { broadcastNotification } from "./push";
+import { sendNotificationToUser } from "./push";
 
 type GoalPlan = "energy" | "weight" | "strength" | "rut" | "stress" | "community";
 type NotifTone = "motivation" | "accountability" | "gentle" | "education";
@@ -213,28 +213,22 @@ function getPersonalizedCopy(
   return applyTone(copy, tone);
 }
 
-// Runs every hour to send notifications at 7am, 3pm, 9pm in each user's local timezone
+// Runs every hour — fires goal-specific 3pm motivation push to each member in their local timezone.
+// 7am (inspiration) and 9pm (WELL Check) are handled by the broadcast scheduler and are the same for everyone.
 export function scheduleTimezoneNotifications() {
   cron.schedule("0 * * * *", async () => {
     try {
-      console.log("[SCHEDULED] Hourly timezone notification check");
-
       const { rows: members } = await pool.query<{
         email: string;
         timezone: string;
-        notification_schedule: { send7am?: boolean; send3pm?: boolean; send9pm?: boolean } | null;
+        notification_schedule: { send3pm?: boolean } | null;
         goal_plan: GoalPlan | null;
         notification_tone: NotifTone | null;
       }>(
         `SELECT email, timezone, notification_schedule, goal_plan, notification_tone
          FROM members
-         WHERE notification_schedule IS NOT NULL
-         AND (notification_schedule->>'send7am' = 'true'
-           OR notification_schedule->>'send3pm' = 'true'
-           OR notification_schedule->>'send9pm' = 'true')`
+         WHERE notification_schedule->>'send3pm' = 'true'`
       );
-
-      console.log(`[SCHEDULED] Found ${members.length} members with timezone notifications enabled`);
 
       const now = new Date();
       const dayOfYear = Math.floor(
@@ -242,9 +236,7 @@ export function scheduleTimezoneNotifications() {
       );
 
       for (const member of members) {
-        const schedule = member.notification_schedule || {};
         const timezone = member.timezone || "America/New_York";
-
         const userTimeString = new Intl.DateTimeFormat("en-US", {
           timeZone: timezone,
           hour: "2-digit",
@@ -253,32 +245,26 @@ export function scheduleTimezoneNotifications() {
         }).format(now);
 
         const [hour, minute] = userTimeString.split(":").map(Number);
+        if (hour !== 15 || minute >= 1) continue;
 
-        const shouldSend7am = schedule.send7am && hour === 7 && minute < 1;
-        const shouldSend3pm = schedule.send3pm && hour === 15 && minute < 1;
-        const shouldSend9pm = schedule.send9pm && hour === 21 && minute < 1;
-
-        if (!shouldSend7am && !shouldSend3pm && !shouldSend9pm) continue;
-
-        const timeSlot: TimeSlot = shouldSend7am ? "morning" : shouldSend3pm ? "afternoon" : "evening";
         const { title, body } = getPersonalizedCopy(
           member.goal_plan,
           member.notification_tone,
-          timeSlot,
+          "afternoon",
           dayOfYear
         );
 
-        console.log(`[SCHEDULED] Sending "${title}" to ${member.email} (goal: ${member.goal_plan ?? "none"}, tone: ${member.notification_tone ?? "none"})`);
+        console.log(`[GOAL NOTIF] 3pm → ${member.email} (goal: ${member.goal_plan ?? "none"}): "${title}"`);
 
-        await broadcastNotification({
+        await sendNotificationToUser(member.email, {
           title,
           body,
-          tag: "scheduled-notification",
+          tag: "motivation-boost",
           url: "/",
-        }).catch((err) => console.error(`Failed to send scheduled notification to ${member.email}:`, err));
+        }).catch((err) => console.error(`[GOAL NOTIF] Failed for ${member.email}:`, err));
       }
     } catch (err) {
-      console.error("[SCHEDULED] Timezone notification error:", err);
+      console.error("[GOAL NOTIF] 3pm cron error:", err);
     }
   });
 }
