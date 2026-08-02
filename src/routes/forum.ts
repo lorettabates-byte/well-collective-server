@@ -189,6 +189,7 @@ router.post("/threads", async (req, res) => {
       body: text.substring(0, 100),
       tag: "community",
       url: `/community/${categoryId}/${id}`,
+      ...(authorEmail ? { senderEmail: authorEmail } : {}),
     }).catch((err) => console.error("Failed to send community notification:", err));
 
     if (authorEmail) {
@@ -270,6 +271,7 @@ router.post("/threads/:threadId/messages", async (req, res) => {
       body: text ? text.substring(0, 100) : "📷 Shared a photo",
       tag: "community",
       url: deepLinkUrl,
+      ...(authorEmail ? { senderEmail: authorEmail } : {}),
     }).catch((err) => console.error("Failed to send community notification:", err));
 
     // Handle @mentions — extract usernames and send notifications to mentioned users
@@ -299,6 +301,7 @@ router.post("/threads/:threadId/messages", async (req, res) => {
                 body: `in "${threadTitle}" — ${text.substring(0, 80)}`,
                 tag: "mention",
                 url: deepLinkUrl,
+                ...(authorEmail ? { senderEmail: authorEmail } : {}),
               }).catch((err) => console.error("Failed to send mention notification:", err));
             }
           }

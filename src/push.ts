@@ -27,6 +27,7 @@ export interface NotificationPayload {
   body: string;
   tag?: string;
   url?: string;
+  senderEmail?: string; // if set, recipients who have blocked this email won't receive the notification
 }
 
 // Maps each payload `tag` to the NotificationSettings category (types.ts on
@@ -165,6 +166,20 @@ export async function sendNotificationToUser(
         return { sent: 0, removed: 0, blocked: 1 };
       }
     }
+
+    if (payload.senderEmail) {
+      const { rows: blockRows } = await pool.query(
+        `SELECT 1 FROM user_blocks ub
+         JOIN members blocker ON blocker.id = ub.blocker_id
+         JOIN members sender ON sender.id = ub.blocked_id
+         WHERE blocker.email = $1 AND sender.email = $2`,
+        [email.toLowerCase(), payload.senderEmail.toLowerCase()]
+      );
+      if (blockRows.length > 0) {
+        console.log(`[PUSH] Blocked notification to ${email} - sender ${payload.senderEmail} is blocked`);
+        return { sent: 0, removed: 0, blocked: 1 };
+      }
+    }
   }
 
   const { rows } = await pool.query<{ endpoint: string; p256dh: string; auth: string; user_email: string | null }>(
@@ -255,6 +270,18 @@ export async function broadcastNotification(
   const settingsByEmail = new Map(settingsRows.map((r) => [r.email.toLowerCase(), r.notification_settings]));
   const scheduleByEmail = new Map(settingsRows.map((r) => [r.email.toLowerCase(), r.notification_schedule]));
 
+  let blockedBySenderEmails = new Set<string>();
+  if (payload.senderEmail) {
+    const { rows: blockRows } = await pool.query<{ email: string }>(
+      `SELECT blocker.email FROM user_blocks ub
+       JOIN members sender ON sender.id = ub.blocked_id
+       JOIN members blocker ON blocker.id = ub.blocker_id
+       WHERE sender.email = $1`,
+      [payload.senderEmail.toLowerCase()]
+    );
+    blockedBySenderEmails = new Set(blockRows.map((r) => r.email.toLowerCase()));
+  }
+
   let joinedAfterContentEmails = new Set<string>();
   if (options?.contentPublishedAt) {
     const { rows: lateJoinerRows } = await pool.query<{ email: string }>(
@@ -280,6 +307,12 @@ export async function broadcastNotification(
       if (joinedAfterContentEmails.has(row.user_email.toLowerCase())) {
         blocked += 1;
         console.log(`[PUSH] Blocked subscription for ${row.user_email} - joined after this content was published`);
+        return;
+      }
+
+      if (blockedBySenderEmails.has(row.user_email.toLowerCase())) {
+        blocked += 1;
+        console.log(`[PUSH] Blocked subscription for ${row.user_email} - has blocked the sender`);
         return;
       }
 
