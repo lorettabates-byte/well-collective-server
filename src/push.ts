@@ -129,13 +129,41 @@ export async function sendNotificationToUser(
   console.log(`[PUSH] Sending notification to ${email}: "${payload.title}"`);
 
   if (email.toLowerCase() !== ADMIN_NOTIFY_EMAIL) {
-    const { rows: memberRows } = await pool.query<{ notification_settings: Record<string, boolean> | null }>(
-      "SELECT notification_settings FROM members WHERE email = $1",
+    const { rows: memberRows } = await pool.query<{
+      notification_settings: Record<string, boolean> | null;
+      notif_quiet_start: string | null;
+      notif_quiet_end: string | null;
+      timezone: string | null;
+    }>(
+      "SELECT notification_settings, notif_quiet_start, notif_quiet_end, timezone FROM members WHERE email = $1",
       [email.toLowerCase()]
     );
+
     if (!isCategoryEnabled(payload, memberRows[0]?.notification_settings ?? null)) {
       console.log(`[PUSH] Blocked notification to ${email} - category disabled in their settings`);
       return { sent: 0, removed: 0, blocked: 1 };
+    }
+
+    const qStart = memberRows[0]?.notif_quiet_start;
+    const qEnd = memberRows[0]?.notif_quiet_end;
+    if (qStart && qEnd) {
+      const tz = memberRows[0]?.timezone || "America/New_York";
+      const parts = new Intl.DateTimeFormat("en-US", {
+        timeZone: tz, hour: "2-digit", minute: "2-digit", hour12: false,
+      }).formatToParts(new Date());
+      const hh = parts.find((p) => p.type === "hour")?.value ?? "00";
+      const mm = parts.find((p) => p.type === "minute")?.value ?? "00";
+      const toMin = (t: string) => { const [h, m] = t.split(":").map(Number); return h * 60 + (m || 0); };
+      const nowMin = toMin(`${hh}:${mm}`);
+      const startMin = toMin(qStart);
+      const endMin = toMin(qEnd);
+      const inQuiet = startMin <= endMin
+        ? nowMin >= startMin && nowMin < endMin
+        : nowMin >= startMin || nowMin < endMin;
+      if (inQuiet) {
+        console.log(`[PUSH] Blocked notification to ${email} - quiet hours (${qStart}–${qEnd} ${tz})`);
+        return { sent: 0, removed: 0, blocked: 1 };
+      }
     }
   }
 

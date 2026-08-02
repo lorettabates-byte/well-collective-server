@@ -213,6 +213,22 @@ router.delete("/threads/:id", requireAdmin, async (req, res) => {
   }
 });
 
+// Member deletes their own thread
+router.delete("/threads/:id/own", async (req, res) => {
+  const { userId } = req.body as { userId?: string };
+  if (!userId) return res.status(400).json({ error: "userId required" });
+  try {
+    const { rows } = await pool.query("SELECT author_id FROM forum_threads WHERE id = $1", [req.params.id]);
+    if (rows.length === 0) return res.status(404).json({ error: "Thread not found" });
+    if (rows[0].author_id !== userId) return res.status(403).json({ error: "Can only delete your own threads" });
+    await pool.query("DELETE FROM forum_threads WHERE id = $1", [req.params.id]);
+    res.json({ ok: true });
+  } catch (err) {
+    console.error("Delete own thread error:", err);
+    res.status(500).json({ error: "Failed to delete thread" });
+  }
+});
+
 router.post("/threads/:threadId/messages", async (req, res) => {
   const { id, authorId, authorName, authorAvatar, authorEmail, text, replyToId, image } = req.body as {
     id: string;
@@ -310,6 +326,22 @@ router.delete("/threads/:threadId/messages/:messageId", requireAdmin, async (req
     res.json({ ok: true });
   } catch (err) {
     console.error("Delete message error:", err);
+    res.status(500).json({ error: "Failed to delete message" });
+  }
+});
+
+// Member deletes their own message
+router.delete("/threads/:threadId/messages/:messageId/own", async (req, res) => {
+  const { userId } = req.body as { userId?: string };
+  if (!userId) return res.status(400).json({ error: "userId required" });
+  try {
+    const { rows } = await pool.query("SELECT author_id FROM forum_messages WHERE id = $1", [req.params.messageId]);
+    if (rows.length === 0) return res.status(404).json({ error: "Message not found" });
+    if (rows[0].author_id !== userId) return res.status(403).json({ error: "Can only delete your own messages" });
+    await pool.query("DELETE FROM forum_messages WHERE id = $1", [req.params.messageId]);
+    res.json({ ok: true });
+  } catch (err) {
+    console.error("Delete own message error:", err);
     res.status(500).json({ error: "Failed to delete message" });
   }
 });

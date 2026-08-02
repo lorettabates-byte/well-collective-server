@@ -64,7 +64,7 @@ export async function generateMotivationBoost(
 
   const prompt = `You are writing a short, warm "Motivation Boost" message for the WELL Collective, a wellness community app run by Loretta Bates. The community is predominantly women, but not exclusively — use gender-neutral language throughout (e.g. "you," "someone," "they/them"); never assume the reader is a woman or use "she"/"her"/"woman." ${themeContext}${dailyContext}
 
-Write one brand-new motivation boost that complements (does not repeat) the above. It should feel like an encouraging friend, not a generic quote account. Avoid cliches like "you got this."
+Write one brand-new motivation boost that complements (does not repeat) the above. It should feel like an encouraging friend, not a generic quote account. Avoid cliches like "you got this." Do not use em dashes (—) anywhere in your response.
 
 Respond with ONLY a JSON object, no other text, in this exact shape:
 {"title": "a short punchy title, under 8 words", "body": "2-3 warm, specific sentences"}`;
@@ -263,7 +263,7 @@ export async function generateDailyInspiration(
 
   const prompt = `You are writing today's "Daily Inspiration" message for the WELL Collective, a wellness community app run by Loretta Bates. The community is predominantly women, but not exclusively — use gender-neutral language throughout (e.g. "you," "someone," "they/them"); never assume the reader is a woman or use "she"/"her"/"woman." ${themeContext}${avoidContext}
 
-Write one short daily inspiration message that ties into that theme. Warm, grounded, and specific — not a generic quote.
+Write one short daily inspiration message that ties into that theme. Warm, grounded, and specific. Do not use em dashes (—) anywhere in your response.
 
 Respond with ONLY a JSON object, no other text, in this exact shape:
 {"title": "a short title, under 8 words", "body": "2-3 warm, specific sentences"}`;
@@ -288,7 +288,7 @@ export async function generateWeeklyTheme(recentThemes: string[] = []): Promise<
 
   const prompt = `You are setting this week's wellness theme for the WELL Collective, a wellness community app run by Loretta Bates. The community is predominantly women, but not exclusively — use gender-neutral language throughout (e.g. "you," "someone," "they/them"); never assume the reader is a woman or use "she"/"her"/"woman." Pick a single grounded, encouraging theme (e.g. rest, boundaries, gentle consistency, self-compassion, movement, connection, gratitude, joy, resilience) that the rest of the week's content can build on.${avoidContext}
 
-Respond with ONLY a JSON object, no other text, in this exact shape:
+Do not use em dashes (—) anywhere in your response. Respond with ONLY a JSON object, no other text, in this exact shape:
 {"title": "a short theme title, under 6 words", "body": "2-3 sentences introducing the theme for the week"}`;
 
   const text = await callClaude(prompt, 400);

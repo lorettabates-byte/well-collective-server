@@ -646,13 +646,19 @@ async function crownDailyWinner(): Promise<void> {
   );
   console.log(`[WELL CUP] ${winDate} winner: ${rows[0].member_email} (${rows[0].total} pts)`);
 
-  // Notify the winner — only on the first insert (not if already recorded)
+  // Notify the winner and record the win — only on the first insert
   if (rowCount && rowCount > 0) {
     await sendNotificationToUser(rows[0].member_email, {
       title: "🏆 You won the WELL Cup today!",
       body: `${rows[0].total.toLocaleString()} points — you led the entire leaderboard. Open the app to share your win!`,
       tag: "well-cup-win",
+      url: "/well-cup",
     }).catch((err) => console.error("[WELL CUP] Push to winner failed:", err));
+
+    await pool.query(
+      `UPDATE members SET last_daily_win_at = NOW(), last_daily_win_pts = $2 WHERE email = $1`,
+      [rows[0].member_email, rows[0].total]
+    ).catch((err) => console.error("[WELL CUP] Daily win record update failed:", err));
   }
 }
 

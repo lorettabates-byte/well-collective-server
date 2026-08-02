@@ -127,11 +127,13 @@ router.post("/members/sync", async (req, res) => {
 // full profile sync — and so broadcastNotification/sendNotificationToUser in
 // push.ts can actually filter sends by what each member has opted into.
 router.put("/members/notification-settings", async (req, res) => {
-  const { email, notificationSettings, timezone, notificationSchedule } = req.body as {
+  const { email, notificationSettings, timezone, notificationSchedule, notifQuietStart, notifQuietEnd } = req.body as {
     email?: string;
     notificationSettings?: Record<string, boolean>;
     timezone?: string;
     notificationSchedule?: { send7am?: boolean; send3pm?: boolean; send9pm?: boolean };
+    notifQuietStart?: string | null;
+    notifQuietEnd?: string | null;
   };
 
   if (!email) {
@@ -158,6 +160,16 @@ router.put("/members/notification-settings", async (req, res) => {
     if (notificationSchedule) {
       updateFields.push(`notification_schedule = $${params.length + 1}`);
       params.push(JSON.stringify(notificationSchedule));
+    }
+
+    if (notifQuietStart !== undefined) {
+      updateFields.push(`notif_quiet_start = $${params.length + 1}`);
+      params.push(notifQuietStart);
+    }
+
+    if (notifQuietEnd !== undefined) {
+      updateFields.push(`notif_quiet_end = $${params.length + 1}`);
+      params.push(notifQuietEnd);
     }
 
     const updateClause = updateFields.join(", ");
@@ -188,7 +200,7 @@ router.get("/members/me", async (req, res) => {
 
   try {
     const { rows } = await pool.query(
-      `SELECT name, avatar, bio, birthday, show_birthday_on_calendar, workout_log, featured_badge, created_at, saved_inspiration_ids, liked_inspiration_ids, favorite_song_ids, show_on_leaderboard, hidden_from_community, height_cm, weight_kg, age, gender, health_sync_enabled, breathwork_log, well_activity_log, resistance_log, stretching_log, goal_plan, notification_tone, movement_target, goals_completed, goals_refresh_period, last_monthly_win_at, last_monthly_win_pts,
+      `SELECT name, avatar, bio, birthday, show_birthday_on_calendar, workout_log, featured_badge, created_at, saved_inspiration_ids, liked_inspiration_ids, favorite_song_ids, show_on_leaderboard, hidden_from_community, height_cm, weight_kg, age, gender, health_sync_enabled, breathwork_log, well_activity_log, resistance_log, stretching_log, goal_plan, notification_tone, movement_target, goals_completed, goals_refresh_period, last_monthly_win_at, last_monthly_win_pts, last_daily_win_at, last_daily_win_pts, notif_quiet_start, notif_quiet_end,
               CASE WHEN mood_status_expires_at > NOW() THEN mood_status ELSE NULL END AS mood_status
        FROM members WHERE email = $1`,
       [email]
@@ -247,6 +259,10 @@ router.get("/members/me", async (req, res) => {
         allTimePoints: Number(totalPtsRows.rows[0].total),
         lastMonthlyWinAt: row.last_monthly_win_at ? new Date(row.last_monthly_win_at).toISOString() : undefined,
         lastMonthlyWinPts: row.last_monthly_win_pts ? Number(row.last_monthly_win_pts) : undefined,
+        lastDailyWinAt: row.last_daily_win_at ? new Date(row.last_daily_win_at).toISOString() : undefined,
+        lastDailyWinPts: row.last_daily_win_pts ? Number(row.last_daily_win_pts) : undefined,
+        notifQuietStart: row.notif_quiet_start ?? undefined,
+        notifQuietEnd: row.notif_quiet_end ?? undefined,
       },
     });
   } catch (err) {
@@ -729,6 +745,36 @@ router.post("/admin/force-day3-blast", requireAdmin, async (_req, res) => {
   } catch (err) {
     console.error("Force day-3 blast error:", err);
     res.status(500).json({ error: "Blast failed" });
+  }
+});
+
+// Admin: backfill last_monthly_win_at/pts for a specific past month's winner
+// POST /api/members/admin/crown-previous-month  { year: 2026, month: 7 }
+router.post("/admin/crown-previous-month", requireAdmin, async (req, res) => {
+  const { year, month } = req.body as { year?: number; month?: number };
+  if (!year || !month) return res.status(400).json({ error: "year and month required" });
+  try {
+    const monthStart = new Date(year, month - 1, 1).toISOString();
+    const monthEnd = new Date(year, month, 1).toISOString();
+    const { rows } = await pool.query<{ member_email: string; total: string }>(`
+      SELECT member_email, SUM(points) AS total
+      FROM activity_logs
+      WHERE created_at >= $1 AND created_at < $2
+      GROUP BY member_email
+      ORDER BY total DESC
+      LIMIT 1
+    `, [monthStart, monthEnd]);
+    if (rows.length === 0) return res.status(404).json({ error: "No activity found for that month" });
+    const winner = rows[0];
+    const winAt = new Date(year, month - 1, 28, 23, 45, 0).toISOString(); // last day of month ~11:45pm
+    await pool.query(
+      `UPDATE members SET last_monthly_win_at = $2, last_monthly_win_pts = $3 WHERE email = $1`,
+      [winner.member_email, winAt, Math.round(Number(winner.total))]
+    );
+    res.json({ ok: true, winner: winner.member_email, total: Math.round(Number(winner.total)) });
+  } catch (err) {
+    console.error("Crown previous month error:", err);
+    res.status(500).json({ error: "Failed to backfill monthly winner" });
   }
 });
 
