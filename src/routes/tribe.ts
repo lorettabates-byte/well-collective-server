@@ -299,6 +299,22 @@ router.post("/tribe", async (req, res) => {
       return res.status(400).json({ error: "Cannot add yourself to your own WELL Tribe" });
     }
 
+    // If the target has blocked the owner, silently refuse so the blocker's status isn't revealed
+    const { rows: ownerIdRows } = await pool.query(
+      "SELECT id FROM members WHERE email = $1",
+      [ownerEmail]
+    );
+    const ownerMemberId = ownerIdRows[0]?.id as string | undefined;
+    if (ownerMemberId) {
+      const { rows: blockRows } = await pool.query(
+        "SELECT 1 FROM user_blocks WHERE blocker_id = $1 AND blocked_id = $2 LIMIT 1",
+        [memberId, ownerMemberId]
+      );
+      if (blockRows.length > 0) {
+        return res.status(201).json({ ok: true }); // silent no-op
+      }
+    }
+
     const { rows: insertRows } = await pool.query(
       `INSERT INTO tribe_members (owner_email, member_email) VALUES ($1, $2)
        ON CONFLICT (owner_email, member_email) DO NOTHING
