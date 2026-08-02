@@ -680,6 +680,8 @@ export async function initDb(): Promise<void> {
   await pool.query(`ALTER TABLE members ADD COLUMN IF NOT EXISTS last_monthly_win_pts INT;`);
   await pool.query(`ALTER TABLE members ADD COLUMN IF NOT EXISTS last_daily_win_at TIMESTAMPTZ;`);
   await pool.query(`ALTER TABLE members ADD COLUMN IF NOT EXISTS last_daily_win_pts INT;`);
+  await pool.query(`ALTER TABLE members ADD COLUMN IF NOT EXISTS last_yearly_win_at TIMESTAMPTZ;`);
+  await pool.query(`ALTER TABLE members ADD COLUMN IF NOT EXISTS last_yearly_win_pts INT;`);
   await pool.query(`ALTER TABLE members ADD COLUMN IF NOT EXISTS notif_quiet_start TEXT;`);
   await pool.query(`ALTER TABLE members ADD COLUMN IF NOT EXISTS notif_quiet_end TEXT;`);
 

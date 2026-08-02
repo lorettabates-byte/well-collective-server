@@ -378,6 +378,7 @@ router.get("/leaderboard", async (req, res) => {
       JOIN activity_logs al ON al.member_email = m.email
         AND al.created_at >= ${SQL_DAY_START}
       WHERE m.show_on_leaderboard = TRUE
+        AND (m.last_daily_win_at IS NULL OR m.last_daily_win_at < ${SQL_DAY_START})
       GROUP BY m.email, m.name, m.avatar
       ORDER BY total_points DESC
       ${limitClause}
@@ -409,6 +410,9 @@ router.get("/leaderboard/monthly", async (_req, res) => {
       JOIN activity_logs al ON al.member_email = m.email
         AND al.created_at >= ${SQL_MONTH_START}
       WHERE m.show_on_leaderboard = TRUE
+        AND (m.last_monthly_win_at IS NULL
+             OR date_trunc('month', m.last_monthly_win_at AT TIME ZONE '${TIMEZONE}')
+                != date_trunc('month', (now() AT TIME ZONE '${TIMEZONE}') - INTERVAL '1 month'))
       GROUP BY m.email, m.name, m.avatar
       ORDER BY total_points DESC
       LIMIT 1
@@ -429,6 +433,9 @@ router.get("/leaderboard/yearly", async (_req, res) => {
       JOIN activity_logs al ON al.member_email = m.email
         AND al.created_at >= ${SQL_YEAR_START}
       WHERE m.show_on_leaderboard = TRUE
+        AND (m.last_yearly_win_at IS NULL
+             OR date_trunc('year', m.last_yearly_win_at AT TIME ZONE '${TIMEZONE}')
+                != date_trunc('year', (now() AT TIME ZONE '${TIMEZONE}') - INTERVAL '1 year'))
       GROUP BY m.email, m.name, m.avatar
       ORDER BY total_points DESC
       LIMIT 1

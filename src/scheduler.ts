@@ -16,7 +16,7 @@ import { broadcastNotification, sendNotificationToUser } from "./push";
 import { computeNutritionFromIngredients, isUsdaConfigured } from "./usda";
 import { addTrialContactToBrevo, moveTrialContactToCompleted, sendMidTrialEmail, sendTrialExpiredEmail, sendReferralWeek1Email, sendReferralWinbackEmail } from "./brevo";
 import { awardPoints } from "./routes/points";
-import { TIMEZONE, todayInTimezone, addDays, SQL_DAY_START, SQL_MONTH_START } from "./dateUtils";
+import { TIMEZONE, todayInTimezone, addDays, SQL_DAY_START, SQL_MONTH_START, SQL_YEAR_START } from "./dateUtils";
 // scheduledNotifications import removed — it duplicated content-driven sends
 
 // Weekly themes are only stored on the Monday row, so to find "this week's"
@@ -623,6 +623,7 @@ async function sendMidTrialEmailBlast(): Promise<void> {
 
 async function crownDailyWinner(): Promise<void> {
   // Find the member with the most points in yesterday's day, in the member-facing timezone.
+  // Exclude whoever won the day before (their last_daily_win_at was set at yesterday's midnight).
   const { rows } = await pool.query(`
     SELECT al.member_email, SUM(al.points)::int AS total
     FROM activity_logs al
@@ -630,6 +631,7 @@ async function crownDailyWinner(): Promise<void> {
     WHERE al.created_at >= ${SQL_DAY_START} - INTERVAL '1 day'
       AND al.created_at <  ${SQL_DAY_START}
       AND m.show_on_leaderboard = TRUE
+      AND (m.last_daily_win_at IS NULL OR m.last_daily_win_at < ${SQL_DAY_START} - INTERVAL '1 day')
     GROUP BY al.member_email
     ORDER BY total DESC
     LIMIT 1
@@ -781,12 +783,16 @@ async function sendWeeklySpotlightAwards(): Promise<void> {
 
 async function crownMonthlyWinner(): Promise<void> {
   // Runs on the last day of each month — find the member with the most points this month.
+  // Exclude whoever won last month so the same person can't win back-to-back months.
   const { rows } = await pool.query(`
     SELECT al.member_email, m.name, SUM(al.points)::int AS total
     FROM activity_logs al
     JOIN members m ON m.email = al.member_email
     WHERE al.created_at >= ${SQL_MONTH_START}
       AND m.show_on_leaderboard = TRUE
+      AND (m.last_monthly_win_at IS NULL
+           OR date_trunc('month', m.last_monthly_win_at AT TIME ZONE '${TIMEZONE}')
+              != date_trunc('month', (now() AT TIME ZONE '${TIMEZONE}') - INTERVAL '1 month'))
     GROUP BY al.member_email, m.name
     ORDER BY total DESC
     LIMIT 1
@@ -808,6 +814,40 @@ async function crownMonthlyWinner(): Promise<void> {
     `UPDATE members SET last_monthly_win_at = NOW(), last_monthly_win_pts = $2 WHERE email = $1`,
     [rows[0].member_email, rows[0].total]
   ).catch((err) => console.error("[WELL CUP] Monthly win record update failed:", err));
+}
+
+async function crownYearlyWinner(): Promise<void> {
+  // Runs on Dec 31 — find the member with the most points this year.
+  // Excludes whoever won last year so the same person can't win back-to-back years.
+  const { rows } = await pool.query(`
+    SELECT al.member_email, m.name, SUM(al.points)::int AS total
+    FROM activity_logs al
+    JOIN members m ON m.email = al.member_email
+    WHERE al.created_at >= ${SQL_YEAR_START}
+      AND m.show_on_leaderboard = TRUE
+      AND (m.last_yearly_win_at IS NULL
+           OR date_trunc('year', m.last_yearly_win_at AT TIME ZONE '${TIMEZONE}')
+              != date_trunc('year', (now() AT TIME ZONE '${TIMEZONE}') - INTERVAL '1 year'))
+    GROUP BY al.member_email, m.name
+    ORDER BY total DESC
+    LIMIT 1
+  `);
+  if (rows.length === 0) return;
+
+  const yearName = new Date().toLocaleString("default", { year: "numeric" });
+  console.log(`[WELL CUP] ${yearName} yearly champion: ${rows[0].member_email} (${rows[0].total} pts)`);
+
+  await sendNotificationToUser(rows[0].member_email, {
+    title: `⭐ You're the ${yearName} WELL Cup Annual Champion!`,
+    body: `${Number(rows[0].total).toLocaleString()} points this year — you led the entire WELL Collective community. Incredible achievement!`,
+    tag: "well-cup-yearly-win",
+    url: "/well-cup",
+  }).catch((err) => console.error("[WELL CUP] Yearly push failed:", err));
+
+  await pool.query(
+    `UPDATE members SET last_yearly_win_at = NOW(), last_yearly_win_pts = $2 WHERE email = $1`,
+    [rows[0].member_email, rows[0].total]
+  ).catch((err) => console.error("[WELL CUP] Yearly win record update failed:", err));
 }
 
 async function sendPersonalizedWellChecks(): Promise<void> {
@@ -989,6 +1029,11 @@ export function startScheduler(): void {
     if (tomorrow.getMonth() !== now.getMonth()) {
       crownMonthlyWinner().catch((err) => console.error("Crown monthly winner failed:", err));
     }
+  }, { timezone: TIMEZONE });
+
+  // WELL CUP: Dec 31 at 11:50 PM ET — crown the yearly champion (5 min after monthly).
+  cron.schedule("50 23 31 12 *", () => {
+    crownYearlyWinner().catch((err) => console.error("Crown yearly winner failed:", err));
   }, { timezone: TIMEZONE });
 
   // WELL CUP: award event_attend points for events that passed yesterday.
