@@ -728,13 +728,17 @@ router.get("/activity/today", async (req, res) => {
   if (!email) return res.status(400).json({ error: "email required" });
 
   try {
+    const memberEmail = email.toLowerCase();
+    const memberTz = await getMemberTimezone(memberEmail);
+    const dayStart = sqlDayStartFor(memberTz);
+
     const { rows } = await pool.query(`
       SELECT activity_type, SUM(points) AS points, COUNT(*) AS count
       FROM activity_logs
       WHERE member_email = $1
-        AND created_at >= ${SQL_DAY_START}
+        AND created_at >= ${dayStart}
       GROUP BY activity_type
-    `, [email.toLowerCase()]);
+    `, [memberEmail]);
 
     const totalPoints = rows.reduce((sum, r) => sum + Number(r.points), 0);
     res.json({

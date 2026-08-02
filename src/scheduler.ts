@@ -794,7 +794,14 @@ async function crownMonthlyWinner(): Promise<void> {
     title: `🏆 You're the ${monthName} WELL Cup Leader!`,
     body: `${rows[0].total.toLocaleString()} points this month — you've earned a free month of WELL Collective. We'll be in touch!`,
     tag: "well-cup-monthly-win",
+    url: "/well-cup",
   }).catch((err) => console.error("[WELL CUP] Monthly push failed:", err));
+
+  // Record the win so the app can show a share-card banner when the winner opens it.
+  await pool.query(
+    `UPDATE members SET last_monthly_win_at = NOW(), last_monthly_win_pts = $2 WHERE email = $1`,
+    [rows[0].member_email, rows[0].total]
+  ).catch((err) => console.error("[WELL CUP] Monthly win record update failed:", err));
 }
 
 async function sendPersonalizedWellChecks(): Promise<void> {

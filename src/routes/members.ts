@@ -188,7 +188,7 @@ router.get("/members/me", async (req, res) => {
 
   try {
     const { rows } = await pool.query(
-      `SELECT name, avatar, bio, birthday, show_birthday_on_calendar, workout_log, featured_badge, created_at, saved_inspiration_ids, liked_inspiration_ids, favorite_song_ids, show_on_leaderboard, hidden_from_community, height_cm, weight_kg, age, gender, health_sync_enabled, breathwork_log, well_activity_log, resistance_log, stretching_log, goal_plan, notification_tone, movement_target, goals_completed, goals_refresh_period,
+      `SELECT name, avatar, bio, birthday, show_birthday_on_calendar, workout_log, featured_badge, created_at, saved_inspiration_ids, liked_inspiration_ids, favorite_song_ids, show_on_leaderboard, hidden_from_community, height_cm, weight_kg, age, gender, health_sync_enabled, breathwork_log, well_activity_log, resistance_log, stretching_log, goal_plan, notification_tone, movement_target, goals_completed, goals_refresh_period, last_monthly_win_at, last_monthly_win_pts,
               CASE WHEN mood_status_expires_at > NOW() THEN mood_status ELSE NULL END AS mood_status
        FROM members WHERE email = $1`,
       [email]
@@ -245,6 +245,8 @@ router.get("/members/me", async (req, res) => {
         tribeConnections: Number(tribeAddedRows.rows[0].count),
         addedByCount: Number(tribeAddedByRows.rows[0].count),
         allTimePoints: Number(totalPtsRows.rows[0].total),
+        lastMonthlyWinAt: row.last_monthly_win_at ? new Date(row.last_monthly_win_at).toISOString() : undefined,
+        lastMonthlyWinPts: row.last_monthly_win_pts ? Number(row.last_monthly_win_pts) : undefined,
       },
     });
   } catch (err) {
