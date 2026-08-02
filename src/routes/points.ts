@@ -60,6 +60,10 @@ export const STREAK_MILESTONES = [
   { days: 7, bonus: 20 },
   { days: 14, bonus: 40 },
   { days: 30, bonus: 80 },
+  { days: 60, bonus: 150 },
+  { days: 90, bonus: 250 },
+  { days: 180, bonus: 500 },
+  { days: 365, bonus: 1000 },
 ] as const;
 
 function streakBonusPoints(streak: number): number {
