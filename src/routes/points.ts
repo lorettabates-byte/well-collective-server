@@ -379,6 +379,11 @@ router.get("/leaderboard", async (req, res) => {
         AND al.created_at >= ${SQL_DAY_START}
       WHERE m.show_on_leaderboard = TRUE
         AND (m.last_daily_win_at IS NULL OR m.last_daily_win_at < ${SQL_DAY_START})
+        AND NOT EXISTS (
+          SELECT 1 FROM well_cup_wins wcw
+          WHERE wcw.member_email = m.email
+            AND wcw.win_date = ((now() AT TIME ZONE '${TIMEZONE}')::date - 1)
+        )
       GROUP BY m.email, m.name, m.avatar
       ORDER BY total_points DESC
       ${limitClause}
