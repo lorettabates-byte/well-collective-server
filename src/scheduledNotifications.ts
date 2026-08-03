@@ -1,6 +1,7 @@
 import cron from "node-cron";
 import { pool } from "./db";
 import { sendNotificationToUser } from "./push";
+import { createMemberNotification } from "./memberNotifications";
 
 type GoalPlan = "energy" | "weight" | "strength" | "rut" | "stress" | "community";
 type NotifTone = "motivation" | "accountability" | "gentle" | "education";
@@ -260,8 +261,16 @@ export function scheduleTimezoneNotifications() {
           title,
           body,
           tag: "motivation-boost",
-          url: "/",
+          url: "/notifications",
         }).catch((err) => console.error(`[GOAL NOTIF] Failed for ${member.email}:`, err));
+
+        await createMemberNotification({
+          memberEmail: member.email,
+          type: "general",
+          title,
+          body,
+          link: "/notifications",
+        }).catch((err) => console.error(`[GOAL NOTIF] Failed to save in-app notif for ${member.email}:`, err));
       }
     } catch (err) {
       console.error("[GOAL NOTIF] 3pm cron error:", err);
