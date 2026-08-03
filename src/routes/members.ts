@@ -838,6 +838,10 @@ router.post("/admin/campaign-send-app-invite", requireAdmin, async (req, res) =>
   for (const { email, name } of emails) {
     try {
       await sendAppInviteEmail(email, name);
+      await pool.query(
+        `INSERT INTO campaign_emails (email, name, campaign_type) VALUES ($1, $2, 'app-invite')`,
+        [email.toLowerCase(), name]
+      );
       sent++;
     } catch (err) {
       errors.push(email);
@@ -862,6 +866,10 @@ router.post("/admin/campaign-send-winback", requireAdmin, async (req, res) => {
   for (const { email, name } of emails) {
     try {
       await sendMemberWinbackEmail(email, name, referralCode);
+      await pool.query(
+        `INSERT INTO campaign_emails (email, name, campaign_type) VALUES ($1, $2, 'winback')`,
+        [email.toLowerCase(), name]
+      );
       sent++;
     } catch (err) {
       errors.push(email);
@@ -869,6 +877,22 @@ router.post("/admin/campaign-send-winback", requireAdmin, async (req, res) => {
     }
   }
   res.json({ sent, errors });
+});
+
+// GET /api/admin/campaign-history  — log of every campaign email sent
+router.get("/admin/campaign-history", requireAdmin, async (_req, res) => {
+  try {
+    const { rows } = await pool.query(`
+      SELECT email, name, campaign_type, sent_at
+      FROM campaign_emails
+      ORDER BY sent_at DESC
+      LIMIT 500
+    `);
+    res.json({ history: rows });
+  } catch (err) {
+    console.error("Campaign history error:", err);
+    res.status(500).json({ error: "Failed to load campaign history" });
+  }
 });
 
 // GET /api/admin/push-diagnostic/:email  — check push subscription for a member
