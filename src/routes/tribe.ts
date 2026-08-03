@@ -299,20 +299,15 @@ router.post("/tribe", async (req, res) => {
       return res.status(400).json({ error: "Cannot add yourself to your own WELL Tribe" });
     }
 
-    // If the target has blocked the owner, silently refuse so the blocker's status isn't revealed
-    const { rows: ownerIdRows } = await pool.query(
-      "SELECT id FROM members WHERE email = $1",
-      [ownerEmail]
+    // If the target has blocked the owner, silently refuse so the blocker's status isn't revealed.
+    // user_blocks stores derived member IDs (TEXT), not DB row IDs — use deriveMemberId().
+    const ownerMemberId = deriveMemberId(ownerEmail);
+    const { rows: blockRows } = await pool.query(
+      "SELECT 1 FROM user_blocks WHERE blocker_id = $1 AND blocked_id = $2 LIMIT 1",
+      [memberId, ownerMemberId]
     );
-    const ownerMemberId = ownerIdRows[0]?.id as string | undefined;
-    if (ownerMemberId) {
-      const { rows: blockRows } = await pool.query(
-        "SELECT 1 FROM user_blocks WHERE blocker_id = $1 AND blocked_id = $2 LIMIT 1",
-        [memberId, ownerMemberId]
-      );
-      if (blockRows.length > 0) {
-        return res.status(201).json({ ok: true }); // silent no-op
-      }
+    if (blockRows.length > 0) {
+      return res.status(201).json({ ok: true }); // silent no-op
     }
 
     const { rows: insertRows } = await pool.query(

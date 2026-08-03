@@ -622,8 +622,14 @@ async function sendMidTrialEmailBlast(): Promise<void> {
 }
 
 async function crownDailyWinner(): Promise<void> {
-  // Find the member with the most points in yesterday's day, in the member-facing timezone.
-  // Exclude whoever won the day before (their last_daily_win_at was set at yesterday's midnight).
+  // winDate = yesterday in member-facing timezone (the day we're crowning a winner for).
+  // prevWinDate = the day before winDate — whoever won then must be excluded so the
+  // same person can't win two consecutive days. We use well_cup_wins.win_date (a DATE
+  // column) as the source of truth instead of last_daily_win_at (a TIMESTAMPTZ) because
+  // a timestamp comparison is vulnerable to sub-second scheduler jitter near midnight.
+  const winDate = addDays(todayInTimezone(), -1);
+  const prevWinDate = addDays(winDate, -1);
+
   const { rows } = await pool.query(`
     SELECT al.member_email, SUM(al.points)::int AS total
     FROM activity_logs al
@@ -631,14 +637,16 @@ async function crownDailyWinner(): Promise<void> {
     WHERE al.created_at >= ${SQL_DAY_START} - INTERVAL '1 day'
       AND al.created_at <  ${SQL_DAY_START}
       AND m.show_on_leaderboard = TRUE
-      AND (m.last_daily_win_at IS NULL OR m.last_daily_win_at < ${SQL_DAY_START} - INTERVAL '1 day')
+      AND NOT EXISTS (
+        SELECT 1 FROM well_cup_wins wcw
+        WHERE wcw.member_email = m.email
+          AND wcw.win_date = $1
+      )
     GROUP BY al.member_email
     ORDER BY total DESC
     LIMIT 1
-  `);
+  `, [prevWinDate]);
   if (rows.length === 0) return;
-
-  const winDate = addDays(todayInTimezone(), -1);
 
   const { rowCount } = await pool.query(
     `INSERT INTO well_cup_wins (member_email, win_date, total_points)

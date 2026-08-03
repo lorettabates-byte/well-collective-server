@@ -35,7 +35,9 @@ async function callClaude(prompt: string, maxTokens = 600): Promise<string> {
   if (!textBlock?.text) {
     throw new Error("Anthropic response had no text content");
   }
-  return textBlock.text;
+  // Strip em dashes regardless of prompt instructions — the model occasionally
+  // ignores them, especially in longer generations.
+  return textBlock.text.replace(/—/g, " - ");
 }
 
 function extractJson(text: string): unknown {
@@ -161,7 +163,7 @@ For foodQuery, use USDA's own naming convention as closely as you can recall it,
 
 Also provide a fallback nutrition total (only used if the lookup above is unavailable): work it out ingredient by ingredient using standard USDA values for each quantity, then sum.
 
-Respond with ONLY a JSON object, no other text, in this exact shape:
+Do not use em dashes (—) anywhere in your response. Respond with ONLY a JSON object, no other text, in this exact shape:
 {"name": "recipe name", "description": "1 short sentence on why it fits this week", "ingredients": ["...", "..."], "steps": ["...", "..."], "imageCategory": "one_of_the_categories", "nutritionLookup": [{"foodQuery": "cooked quinoa", "grams": 185}, {"foodQuery": "tahini", "grams": 30}], "nutrition": {"calories": 350, "protein": "20g", "carbs": "30g", "fat": "12g"}}`;
 
   const text = await callClaude(prompt, 1100);
@@ -176,7 +178,7 @@ Respond with ONLY a JSON object, no other text, in this exact shape:
     parsed.imageCategory = "general_healthy";
   }
   if (!parsed.nutrition || typeof parsed.nutrition.calories !== "number") {
-    parsed.nutrition = { calories: 0, protein: "—", carbs: "—", fat: "—" };
+    parsed.nutrition = { calories: 0, protein: "N/A", carbs: "N/A", fat: "N/A" };
   }
   if (!Array.isArray(parsed.nutritionLookup)) {
     parsed.nutritionLookup = [];
@@ -317,7 +319,7 @@ export async function generateWellActivity(
 
   const prompt = `You are suggesting today's "WELL Activity" — a short mental-health or self-care activity — for the WELL Collective, a wellness community app run by Loretta Bates. The community is predominantly women, but not exclusively — use gender-neutral language throughout (e.g. "you," "someone," "they/them"); never assume the reader is a woman or use "she"/"her"/"woman." ${themeContext}${avoidContext}
 
-Suggest one simple, doable-today activity that ties into that theme (e.g. take a bath, call a friend, write three things you're grateful for, take a 10-minute walk without your phone). Keep it concrete and achievable in one sitting.
+Suggest one simple, doable-today activity that ties into that theme (e.g. take a bath, call a friend, write three things you're grateful for, take a 10-minute walk without your phone). Keep it concrete and achievable in one sitting. Do not use em dashes (—) anywhere in your response.
 
 Respond with ONLY a JSON object, no other text, in this exact shape:
 {"title": "a short activity title, under 8 words", "description": "1 short sentence describing it"}`;
@@ -350,7 +352,7 @@ Keep it realistic for a home cook: 5-8 ingredients, 4-6 short steps.
 
 Also provide a working Unsplash image URL that matches this recipe. Use format: https://images.unsplash.com/photo-<id>?w=500&h=300&fit=crop or a direct search-based Unsplash URL.
 
-Respond with ONLY a JSON object, no other text, in this exact shape:
+Do not use em dashes (—) anywhere in your response. Respond with ONLY a JSON object, no other text, in this exact shape:
 {"name": "recipe name", "description": "1-2 short sentences", "ingredients": ["...", "..."], "steps": ["...", "..."], "image": "https://..."}`;
 
   const text = await callClaude(prompt, 1000);
@@ -368,7 +370,7 @@ Respond with ONLY a JSON object, no other text, in this exact shape:
 }
 
 export async function generateNutritionTip(): Promise<string> {
-  const prompt = `Write one short, practical nutrition tip of the day (1-2 sentences, under 200 characters) for the WELL Collective wellness community (predominantly women, but not exclusively — keep it gender-neutral). Make it specific and actionable, not generic.
+  const prompt = `Write one short, practical nutrition tip of the day (1-2 sentences, under 200 characters) for the WELL Collective wellness community (predominantly women, but not exclusively — keep it gender-neutral). Make it specific and actionable, not generic. Do not use em dashes (—).
 
 Respond with ONLY the tip text, no quotes, no JSON, no extra commentary.`;
 

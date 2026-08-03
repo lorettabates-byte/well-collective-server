@@ -493,7 +493,9 @@ router.get("/members", async (req, res) => {
 
   try {
     const { rows } = await pool.query(
-      `SELECT email, name, avatar, workout_log, featured_badge, created_at FROM members
+      `SELECT email, name, avatar, workout_log, featured_badge, created_at,
+              CASE WHEN mood_status_expires_at > NOW() THEN mood_status ELSE NULL END AS mood_status
+       FROM members
        WHERE email != $1
          AND (trial_ends_at IS NULL OR trial_ends_at >= CURRENT_DATE)
          AND (hidden_from_community IS NULL OR hidden_from_community = false)
@@ -537,6 +539,7 @@ router.get("/members", async (req, res) => {
           bonusBadges: computeBonusBadges(row.created_at, messageCount, cheerCountByEmail.get(row.email) ?? 0),
           grantedBadges: badgesByEmail.get(row.email) ?? [],
           featuredBadge: row.featured_badge ?? undefined,
+          moodStatus: row.mood_status ?? null,
         };
       }),
     });
