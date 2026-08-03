@@ -805,6 +805,27 @@ Loretta Bates`;
  * Sent to active WELL Collective members who are NOT yet on the myWELL app.
  * Reminds them the app is included in their membership and encourages them to download it.
  */
+function svgIcon(paths: string): string {
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#4db8e8" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">${paths}</svg>`;
+  return `data:image/svg+xml,${encodeURIComponent(svg)}`;
+}
+
+const ICON_GOAL     = svgIcon('<circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/>');
+const ICON_PEOPLE   = svgIcon('<path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>');
+const ICON_GRID     = svgIcon('<rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/>');
+const ICON_TROPHY   = svgIcon('<path d="M6 9H4a2 2 0 0 1-2-2V5h4m14 4h2a2 2 0 0 0 2-2V5h-4M4 5h16v4a8 8 0 0 1-16 0V5z"/><line x1="12" y1="17" x2="12" y2="21"/><line x1="8" y1="21" x2="16" y2="21"/>');
+const ICON_SLIDERS  = svgIcon('<line x1="4" y1="6" x2="20" y2="6"/><line x1="8" y1="12" x2="20" y2="12"/><line x1="12" y1="18" x2="20" y2="18"/><circle cx="4" cy="6" r="2"/><circle cx="8" cy="12" r="2"/><circle cx="12" cy="18" r="2"/>');
+
+function iconRow(iconDataUri: string, label: string, body: string): string {
+  return `<table width="100%" cellpadding="0" cellspacing="0" style="margin:0 0 20px;"><tr><td style="background:#0a1520;border:1px solid #1e2a3a;border-radius:12px;padding:20px 24px;">
+    <table cellpadding="0" cellspacing="0" style="margin:0 0 8px;"><tr>
+      <td style="width:30px;padding-right:10px;vertical-align:middle;"><img src="${iconDataUri}" width="22" height="22" alt="" style="display:block;" /></td>
+      <td style="vertical-align:middle;"><p style="margin:0;font-size:16px;font-weight:bold;color:#4db8e8;">${label}</p></td>
+    </tr></table>
+    <p style="margin:0;font-size:14px;line-height:1.7;color:#c8cdd6;">${body}</p>
+  </td></tr></table>`;
+}
+
 export async function sendAppInviteEmail(email: string, name: string): Promise<void> {
   if (!BREVO_API_KEY) {
     console.warn("[BREVO] BREVO_API_KEY not set — skipping app invite email");
@@ -838,30 +859,10 @@ export async function sendAppInviteEmail(email: string, name: string): Promise<v
             <p style="margin:0 0 20px;font-size:15px;line-height:1.7;color:#c8cdd6;">
               The <strong style="color:#ffffff;">WELL with Loretta app</strong> is live, and it is included in your membership at no extra cost. This is where the WELL community is coming together every single day between our live classes and events.
             </p>
-            <table width="100%" cellpadding="0" cellspacing="0" style="margin:0 0 20px;">
-              <tr><td style="background:#0a1520;border:1px solid #1e2a3a;border-radius:12px;padding:20px 24px;">
-                <p style="margin:0 0 6px;font-size:16px;font-weight:bold;color:#4db8e8;">Built around your goals</p>
-                <p style="margin:0;font-size:14px;line-height:1.7;color:#c8cdd6;">When you first open the app you'll answer a few simple questions about what you're working toward. The app uses your answers to shape your daily experience, so everything you see is relevant to you and where you are right now.</p>
-              </td></tr>
-            </table>
-            <table width="100%" cellpadding="0" cellspacing="0" style="margin:0 0 20px;">
-              <tr><td style="background:#0a1520;border:1px solid #1e2a3a;border-radius:12px;padding:20px 24px;">
-                <p style="margin:0 0 6px;font-size:16px;font-weight:bold;color:#4db8e8;">Your community, always with you</p>
-                <p style="margin:0;font-size:14px;line-height:1.7;color:#c8cdd6;">Connect with fellow WELL members, build your WELL Tribe, cheer each other on, and stay inspired between live sessions. The community doesn't stop when class ends.</p>
-              </td></tr>
-            </table>
-            <table width="100%" cellpadding="0" cellspacing="0" style="margin:0 0 20px;">
-              <tr><td style="background:#0a1520;border:1px solid #1e2a3a;border-radius:12px;padding:20px 24px;">
-                <p style="margin:0 0 6px;font-size:16px;font-weight:bold;color:#4db8e8;">Everything you need in one place</p>
-                <p style="margin:0;font-size:14px;line-height:1.7;color:#c8cdd6;">Daily inspirations, a new recipe every day, meal planner with shopping list, breathwork, curated music, push notifications for live classes, and your full event calendar.</p>
-              </td></tr>
-            </table>
-            <table width="100%" cellpadding="0" cellspacing="0" style="margin:0 0 20px;">
-              <tr><td style="background:#0a1520;border:1px solid #1e2a3a;border-radius:12px;padding:20px 24px;">
-                <p style="margin:0 0 6px;font-size:16px;font-weight:bold;color:#4db8e8;">The WELL Cup</p>
-                <p style="margin:0;font-size:14px;line-height:1.7;color:#c8cdd6;">Everything you do in the app earns points. Daily winner gets recognition, monthly winner gets a <strong style="color:#e8e8e8;">free month</strong>, and the annual WELL Crown winner receives a <strong style="color:#e8e8e8;">free WELL ESCAPE!</strong></p>
-              </td></tr>
-            </table>
+            ${iconRow(ICON_GOAL, "Built around your goals", "When you first open the app you'll answer a few simple questions about what you're working toward. The app uses your answers to shape your daily experience, so everything you see is relevant to you and where you are right now.")}
+            ${iconRow(ICON_PEOPLE, "Your community, always with you", "Connect with fellow WELL members, build your WELL Tribe, cheer each other on, and stay inspired between live sessions. The community doesn't stop when class ends.")}
+            ${iconRow(ICON_GRID, "Everything you need in one place", "Daily inspirations, a new recipe every day, meal planner with shopping list, breathwork, curated music, push notifications for live classes, and your full event calendar.")}
+            ${iconRow(ICON_TROPHY, "The WELL Cup", "Everything you do in the app earns points. Daily winner gets recognition, monthly winner gets a <strong style=\"color:#e8e8e8;\">free month</strong>, and the annual WELL Crown winner receives a <strong style=\"color:#e8e8e8;\">free WELL ESCAPE!</strong>")}
             <p style="margin:0 0 28px;font-size:15px;line-height:1.7;color:#c8cdd6;">
               <strong style="color:#ffffff;">It is already part of your membership.</strong> All you have to do is show up.
             </p>
@@ -993,32 +994,18 @@ export async function sendMemberWinbackEmail(
               </tr>
             </table>
             <p style="margin:0 0 12px;font-size:14px;line-height:1.7;color:#c8cdd6;"><strong style="color:#e8e8e8;">What's new since you've been gone:</strong></p>
-            <table width="100%" cellpadding="0" cellspacing="0" style="margin:0 0 20px;">
-              <tr><td style="background:#0a1520;border:1px solid #1e2a3a;border-radius:12px;padding:20px 24px;">
-                <p style="margin:0 0 6px;font-size:15px;font-weight:bold;color:#4db8e8;">Your wellness, customized for you</p>
-                <p style="margin:0;font-size:14px;line-height:1.7;color:#c8cdd6;">The <strong style="color:#ffffff;">WELL with Loretta app</strong> is not a one-size-fits-all experience. When you join, you set your wellness goals, and the app shapes itself around you. You choose which sections live on your home screen. Your push notifications are tailored to what matters to you, whether that's class reminders, daily inspiration, or your WELL Cup progress. It's your wellness journey, built the way you need it.</p>
-              </td></tr>
-            </table>
-            <table width="100%" cellpadding="0" cellspacing="0" style="margin:0 0 20px;">
-              <tr><td style="background:#0a1520;border:1px solid #1e2a3a;border-radius:12px;padding:20px 24px;">
-                <p style="margin:0 0 6px;font-size:15px;font-weight:bold;color:#4db8e8;">The WELL Cup</p>
-                <p style="margin:0;font-size:14px;line-height:1.7;color:#c8cdd6;">Daily + monthly prizes including <strong style="color:#e8e8e8;">free months</strong> and <strong style="color:#e8e8e8;">WELL ESCAPES</strong>, just for showing up.</p>
-              </td></tr>
-            </table>
-            <table width="100%" cellpadding="0" cellspacing="0" style="margin:0 0 28px;">
-              <tr><td style="background:#0a1520;border:1px solid #1e2a3a;border-radius:12px;padding:20px 24px;">
-                <p style="margin:0 0 6px;font-size:15px;font-weight:bold;color:#4db8e8;">Everything in one place</p>
-                <p style="margin:0;font-size:14px;line-height:1.7;color:#c8cdd6;">New recipes, breathwork sessions, curated music, a live community forum, and a WELL Tribe of members showing up for themselves every single day.</p>
-              </td></tr>
-            </table>
+            ${iconRow(ICON_SLIDERS, "Your wellness, customized for you", `The <strong style="color:#ffffff;">WELL with Loretta app</strong> is not a one-size-fits-all experience. When you join, you set your wellness goals, and the app shapes itself around you. You choose which sections live on your home screen. Your push notifications are tailored to what matters to you, whether that's class reminders, daily inspiration, or your WELL Cup progress. It's your wellness journey, built the way you need it.`)}
+            ${iconRow(ICON_TROPHY, "The WELL Cup", `Daily + monthly prizes including <strong style="color:#e8e8e8;">free months</strong> and <strong style="color:#e8e8e8;">WELL ESCAPES</strong>, just for showing up.`)}
+            ${iconRow(ICON_GRID, "Everything in one place", "New recipes, breathwork sessions, curated music, a live community forum, and a WELL Tribe of members showing up for themselves every single day.")}
             <p style="margin:0 0 28px;font-size:15px;line-height:1.7;color:#c8cdd6;">
               You showed up before, and that matters. I believe you're ready to show up again. Let's do this together.
             </p>
-            <table width="100%" cellpadding="0" cellspacing="0">
+            <table width="100%" cellpadding="0" cellspacing="0" style="margin:0 0 16px;">
               <tr><td align="center">
                 <a href="${trialUrl}" style="display:inline-block;background:linear-gradient(135deg,#1a6fb8,#4db8e8);color:#ffffff;font-size:15px;font-weight:bold;text-decoration:none;padding:16px 40px;border-radius:50px;letter-spacing:0.5px;">Claim My Free Month</a>
               </td></tr>
             </table>
+            <p style="margin:0;font-size:13px;color:#6b7280;text-align:center;">Or go directly to <a href="https://app.lorettabates.com" style="color:#4db8e8;">app.lorettabates.com</a> and enter code <strong style="color:#4db8e8;">${referralCode}</strong> at signup</p>
           </td>
         </tr>
         <tr>
