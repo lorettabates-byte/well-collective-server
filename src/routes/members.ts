@@ -788,6 +788,21 @@ router.post("/admin/crown-previous-month", requireAdmin, async (req, res) => {
 const VIDEOLIBRARY_URL = process.env.VIDEOLIBRARY_URL || "https://lorettabates.com/videolibrary.lorettabates.com";
 const WELL_API_KEY = process.env.WELL_API_KEY || "";
 
+// GET /api/admin/wp-members-raw — temporary debug: raw WP member list without comparison
+router.get("/admin/wp-members-raw", requireAdmin, async (_req, res) => {
+  try {
+    const wpRes = await fetch(
+      `${VIDEOLIBRARY_URL}/wp-json/well/v1/all-members`,
+      { headers: { "X-WELL-API-KEY": WELL_API_KEY }, signal: AbortSignal.timeout(15000) }
+    );
+    const body = await wpRes.text();
+    if (!wpRes.ok) return res.status(502).json({ status: wpRes.status, body: body.slice(0, 500) });
+    res.json(JSON.parse(body));
+  } catch (err) {
+    res.status(500).json({ error: String(err) });
+  }
+});
+
 // GET /api/admin/campaign-preview
 // Fetches active + lapsed WP members, compares with app member list, returns both groups.
 router.get("/admin/campaign-preview", requireAdmin, async (_req, res) => {
