@@ -788,6 +788,24 @@ router.post("/admin/crown-previous-month", requireAdmin, async (req, res) => {
 const VIDEOLIBRARY_URL = process.env.VIDEOLIBRARY_URL || "https://lorettabates.com/videolibrary.lorettabates.com";
 const WELL_API_KEY = process.env.WELL_API_KEY || "";
 
+// POST /api/admin/mark-monthly-winner  { email, month: "YYYY-MM" }
+// Manually sets last_monthly_win_at for a member (for cases where the scheduler ran
+// while the member was invisible and didn't record the win).
+router.post("/admin/mark-monthly-winner", requireAdmin, async (req, res) => {
+  const { email, month } = req.body as { email?: string; month?: string };
+  if (!email || !month) return res.status(400).json({ error: "email and month required" });
+  try {
+    const { rowCount } = await pool.query(
+      `UPDATE members SET last_monthly_win_at = $2::timestamptz WHERE email = $1`,
+      [email.toLowerCase(), `${month}-01T00:00:00Z`]
+    );
+    if (!rowCount) return res.status(404).json({ error: "Member not found" });
+    res.json({ ok: true, email, last_monthly_win_at: `${month}-01` });
+  } catch (err) {
+    res.status(500).json({ error: String(err) });
+  }
+});
+
 // GET /api/admin/wp-members-raw — temporary debug: raw WP member list without comparison
 router.get("/admin/wp-members-raw", requireAdmin, async (_req, res) => {
   try {
