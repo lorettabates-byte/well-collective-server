@@ -879,6 +879,21 @@ router.post("/admin/campaign-send-winback", requireAdmin, async (req, res) => {
   res.json({ sent, errors });
 });
 
+// POST /api/admin/campaign-backfill  { entries: [{email, name, campaignType, sentAt?}] }
+router.post("/admin/campaign-backfill", requireAdmin, async (req, res) => {
+  const { entries } = req.body as { entries?: Array<{ email: string; name: string; campaignType: string; sentAt?: string }> };
+  if (!Array.isArray(entries) || entries.length === 0) return res.status(400).json({ error: "entries array required" });
+  let inserted = 0;
+  for (const { email, name, campaignType, sentAt } of entries) {
+    await pool.query(
+      `INSERT INTO campaign_emails (email, name, campaign_type, sent_at) VALUES ($1, $2, $3, $4) ON CONFLICT DO NOTHING`,
+      [email.toLowerCase(), name, campaignType, sentAt ? new Date(sentAt) : new Date()]
+    );
+    inserted++;
+  }
+  res.json({ inserted });
+});
+
 // GET /api/admin/campaign-history  — log of every campaign email sent
 router.get("/admin/campaign-history", requireAdmin, async (_req, res) => {
   try {
