@@ -797,7 +797,7 @@ router.post("/admin/mark-monthly-winner", requireAdmin, async (req, res) => {
   try {
     const { rowCount } = await pool.query(
       `UPDATE members SET last_monthly_win_at = $2::timestamptz WHERE email = $1`,
-      [email.toLowerCase(), `${month}-01T00:00:00Z`]
+      [email.toLowerCase(), `${month}-15T12:00:00Z`]
     );
     if (!rowCount) return res.status(404).json({ error: "Member not found" });
     res.json({ ok: true, email, last_monthly_win_at: `${month}-01` });
