@@ -912,6 +912,18 @@ export async function initDb(): Promise<void> {
   await pool.query(`ALTER TABLE members ADD COLUMN IF NOT EXISTS mood_status_expires_at TIMESTAMPTZ;`);
 
   // Content reports — Apple App Store guideline 1.2 (UGC safety)
+  // Caches the weekly Community Spotlight winner per Monday. Written once by the
+  // lucky-draw endpoint (first request each week) and overridable by an admin.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS weekly_spotlight (
+      week_start DATE PRIMARY KEY,
+      email TEXT NOT NULL,
+      name TEXT NOT NULL,
+      avatar TEXT,
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    );
+  `);
+
   await pool.query(`
     CREATE TABLE IF NOT EXISTS content_reports (
       id SERIAL PRIMARY KEY,

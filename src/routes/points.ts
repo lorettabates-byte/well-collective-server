@@ -652,16 +652,24 @@ router.get("/leaderboard/weekend-warrior", async (_req, res) => {
 });
 
 // Weekly Lucky Draw — deterministic-random pick among all members with 20+ pts this week.
-// Seed is derived from the current week number so the winner is stable within a week
-// but changes every Monday. Everyone who participates gets one equal ticket.
 // Weekly Spotlight — deterministic pick from members who earned 20+ pts LAST week.
 // Using last week (not this week) keeps the pool stable all week long; this week's
 // pool grows as people log points, which would cause the selected winner to change
-// throughout the day.
+// throughout the day. The winner is cached in weekly_spotlight on first request and
+// can be manually overridden by an admin via PATCH /leaderboard/spotlight-override.
 router.get("/leaderboard/lucky-draw", async (_req, res) => {
   const SQL_WEEK_START      = `date_trunc('week', now() AT TIME ZONE '${TIMEZONE}') AT TIME ZONE '${TIMEZONE}'`;
   const SQL_PREV_WEEK_START = `(date_trunc('week', now() AT TIME ZONE '${TIMEZONE}') AT TIME ZONE '${TIMEZONE}' - INTERVAL '7 days')`;
   try {
+    // Return the cached winner for this week if it exists (includes manual overrides)
+    const { rows: cached } = await pool.query(
+      `SELECT email, name, avatar FROM weekly_spotlight WHERE week_start = (${SQL_WEEK_START})::date`
+    );
+    if (cached.length) {
+      return res.json({ leader: { name: cached[0].name, avatar: cached[0].avatar ?? null, email: cached[0].email } });
+    }
+
+    // Compute winner from last week's pool
     const { rows } = await pool.query(`
       SELECT m.email, m.name, m.avatar
       FROM members m
@@ -678,10 +686,42 @@ router.get("/leaderboard/lucky-draw", async (_req, res) => {
     const startOfYear = new Date(now.getFullYear(), 0, 1);
     const weekNum = Math.floor((now.getTime() - startOfYear.getTime()) / (7 * 24 * 60 * 60 * 1000));
     const winner = rows[weekNum % rows.length];
+
+    // Cache so the winner stays stable even if the pool changes
+    await pool.query(
+      `INSERT INTO weekly_spotlight (week_start, email, name, avatar)
+       VALUES ((${SQL_WEEK_START})::date, $1, $2, $3)
+       ON CONFLICT (week_start) DO NOTHING`,
+      [winner.email, winner.name, winner.avatar ?? null]
+    );
+
     res.json({ leader: { name: winner.name, avatar: winner.avatar ?? null, email: winner.email } });
   } catch (err) {
     console.error("Lucky draw error:", err);
     res.status(500).json({ error: "Failed to fetch lucky draw" });
+  }
+});
+
+// Admin — manually set this week's Community Spotlight winner.
+// Body: { email: string }
+router.patch("/leaderboard/spotlight-override", requireAdmin, async (req, res) => {
+  const { email } = req.body as { email?: string };
+  if (!email) return res.status(400).json({ error: "email required" });
+  const SQL_WEEK_START = `date_trunc('week', now() AT TIME ZONE '${TIMEZONE}') AT TIME ZONE '${TIMEZONE}'`;
+  try {
+    const { rows } = await pool.query(`SELECT email, name, avatar FROM members WHERE email = $1`, [email.toLowerCase()]);
+    if (!rows.length) return res.status(404).json({ error: "Member not found" });
+    const m = rows[0];
+    await pool.query(
+      `INSERT INTO weekly_spotlight (week_start, email, name, avatar, updated_at)
+       VALUES ((${SQL_WEEK_START})::date, $1, $2, $3, now())
+       ON CONFLICT (week_start) DO UPDATE SET email = $1, name = $2, avatar = $3, updated_at = now()`,
+      [m.email, m.name, m.avatar ?? null]
+    );
+    res.json({ ok: true, leader: { email: m.email, name: m.name, avatar: m.avatar ?? null } });
+  } catch (err) {
+    console.error("Spotlight override error:", err);
+    res.status(500).json({ error: "Failed to set spotlight override" });
   }
 });
 
