@@ -520,40 +520,46 @@ router.get("/leaderboard/most-rounded", async (_req, res) => {
   }
 });
 
-// Most Improved this week — biggest increase in points vs the previous week.
-// Someone already at peak engagement can't win this — only members who stepped
-// up meaningfully compared to last week qualify.
+// Most Improved this week — biggest increase vs previous week.
+// Falls back to last week vs two weeks ago when current week has no data yet (e.g. Monday morning).
 router.get("/leaderboard/most-improved", async (_req, res) => {
-  const SQL_WEEK_START = `date_trunc('week', now() AT TIME ZONE '${TIMEZONE}') AT TIME ZONE '${TIMEZONE}'`;
+  const SQL_WEEK_START    = `date_trunc('week', now() AT TIME ZONE '${TIMEZONE}') AT TIME ZONE '${TIMEZONE}'`;
   const SQL_PREV_WEEK_START = `(date_trunc('week', now() AT TIME ZONE '${TIMEZONE}') AT TIME ZONE '${TIMEZONE}' - INTERVAL '7 days')`;
+  const SQL_TWO_WEEKS_AGO   = `(date_trunc('week', now() AT TIME ZONE '${TIMEZONE}') AT TIME ZONE '${TIMEZONE}' - INTERVAL '14 days')`;
+
+  const query = (windowStart: string, windowEnd: string, baselineStart: string, baselineEnd: string) => pool.query(`
+    WITH curr AS (
+      SELECT member_email, COALESCE(SUM(points), 0) AS pts
+      FROM activity_logs
+      WHERE created_at >= ${windowStart} AND created_at < ${windowEnd}
+      GROUP BY member_email
+    ),
+    prev AS (
+      SELECT member_email, COALESCE(SUM(points), 0) AS pts
+      FROM activity_logs
+      WHERE created_at >= ${baselineStart} AND created_at < ${baselineEnd}
+      GROUP BY member_email
+    )
+    SELECT m.email, m.name, m.avatar,
+           COALESCE(c.pts, 0) AS this_week_pts,
+           COALESCE(p.pts, 0) AS last_week_pts,
+           COALESCE(c.pts, 0) - COALESCE(p.pts, 0) AS improvement
+    FROM members m
+    LEFT JOIN curr c ON c.member_email = m.email
+    LEFT JOIN prev p ON p.member_email = m.email
+    WHERE m.show_on_leaderboard = TRUE
+      AND COALESCE(c.pts, 0) > 0
+      AND COALESCE(c.pts, 0) > COALESCE(p.pts, 0)
+    ORDER BY improvement DESC
+    LIMIT 1
+  `);
+
   try {
-    const { rows } = await pool.query(`
-      WITH this_week AS (
-        SELECT member_email, COALESCE(SUM(points), 0) AS pts
-        FROM activity_logs
-        WHERE created_at >= ${SQL_WEEK_START}
-        GROUP BY member_email
-      ),
-      last_week AS (
-        SELECT member_email, COALESCE(SUM(points), 0) AS pts
-        FROM activity_logs
-        WHERE created_at >= ${SQL_PREV_WEEK_START}
-          AND created_at < ${SQL_WEEK_START}
-        GROUP BY member_email
-      )
-      SELECT m.email, m.name, m.avatar,
-             COALESCE(tw.pts, 0) AS this_week_pts,
-             COALESCE(lw.pts, 0) AS last_week_pts,
-             COALESCE(tw.pts, 0) - COALESCE(lw.pts, 0) AS improvement
-      FROM members m
-      LEFT JOIN this_week tw ON tw.member_email = m.email
-      LEFT JOIN last_week lw ON lw.member_email = m.email
-      WHERE m.show_on_leaderboard = TRUE
-        AND COALESCE(tw.pts, 0) > 0
-        AND COALESCE(tw.pts, 0) > COALESCE(lw.pts, 0)
-      ORDER BY improvement DESC
-      LIMIT 1
-    `);
+    // Try current week first; if empty fall back to last week vs two weeks ago
+    let { rows } = await query(SQL_WEEK_START, "NOW()", SQL_PREV_WEEK_START, SQL_WEEK_START);
+    if (!rows.length) {
+      ({ rows } = await query(SQL_PREV_WEEK_START, SQL_WEEK_START, SQL_TWO_WEEKS_AGO, SQL_PREV_WEEK_START));
+    }
     res.json({
       leader: rows[0]
         ? {
@@ -572,36 +578,42 @@ router.get("/leaderboard/most-improved", async (_req, res) => {
   }
 });
 
-// Comeback Story this week — highest points this week among members who earned 0 pts last week.
-// An always-active member can NEVER qualify because they always have last-week points.
+// Comeback Story — highest points in the active window among members who earned 0 in the prior window.
+// Falls back to last week vs two weeks ago when current week has no data yet (e.g. Monday morning).
 router.get("/leaderboard/comeback", async (_req, res) => {
-  const SQL_WEEK_START = `date_trunc('week', now() AT TIME ZONE '${TIMEZONE}') AT TIME ZONE '${TIMEZONE}'`;
+  const SQL_WEEK_START      = `date_trunc('week', now() AT TIME ZONE '${TIMEZONE}') AT TIME ZONE '${TIMEZONE}'`;
   const SQL_PREV_WEEK_START = `(date_trunc('week', now() AT TIME ZONE '${TIMEZONE}') AT TIME ZONE '${TIMEZONE}' - INTERVAL '7 days')`;
+  const SQL_TWO_WEEKS_AGO   = `(date_trunc('week', now() AT TIME ZONE '${TIMEZONE}') AT TIME ZONE '${TIMEZONE}' - INTERVAL '14 days')`;
+
+  const query = (windowStart: string, windowEnd: string, baselineStart: string, baselineEnd: string) => pool.query(`
+    WITH curr AS (
+      SELECT member_email, COALESCE(SUM(points), 0) AS pts
+      FROM activity_logs
+      WHERE created_at >= ${windowStart} AND created_at < ${windowEnd}
+      GROUP BY member_email
+    ),
+    prev AS (
+      SELECT member_email, COALESCE(SUM(points), 0) AS pts
+      FROM activity_logs
+      WHERE created_at >= ${baselineStart} AND created_at < ${baselineEnd}
+      GROUP BY member_email
+    )
+    SELECT m.email, m.name, m.avatar, c.pts AS this_week_pts
+    FROM members m
+    JOIN curr c ON c.member_email = m.email
+    LEFT JOIN prev p ON p.member_email = m.email
+    WHERE m.show_on_leaderboard = TRUE
+      AND c.pts > 0
+      AND COALESCE(p.pts, 0) = 0
+    ORDER BY c.pts DESC
+    LIMIT 1
+  `);
+
   try {
-    const { rows } = await pool.query(`
-      WITH this_week AS (
-        SELECT member_email, COALESCE(SUM(points), 0) AS pts
-        FROM activity_logs
-        WHERE created_at >= ${SQL_WEEK_START}
-        GROUP BY member_email
-      ),
-      last_week AS (
-        SELECT member_email, COALESCE(SUM(points), 0) AS pts
-        FROM activity_logs
-        WHERE created_at >= ${SQL_PREV_WEEK_START}
-          AND created_at < ${SQL_WEEK_START}
-        GROUP BY member_email
-      )
-      SELECT m.email, m.name, m.avatar, tw.pts AS this_week_pts
-      FROM members m
-      JOIN this_week tw ON tw.member_email = m.email
-      LEFT JOIN last_week lw ON lw.member_email = m.email
-      WHERE m.show_on_leaderboard = TRUE
-        AND tw.pts > 0
-        AND COALESCE(lw.pts, 0) = 0
-      ORDER BY tw.pts DESC
-      LIMIT 1
-    `);
+    let { rows } = await query(SQL_WEEK_START, "NOW()", SQL_PREV_WEEK_START, SQL_WEEK_START);
+    if (!rows.length) {
+      ({ rows } = await query(SQL_PREV_WEEK_START, SQL_WEEK_START, SQL_TWO_WEEKS_AGO, SQL_PREV_WEEK_START));
+    }
     res.json({
       leader: rows[0]
         ? { name: rows[0].name, avatar: rows[0].avatar ?? null, email: rows[0].email, this_week_pts: Number(rows[0].this_week_pts) }
@@ -642,26 +654,30 @@ router.get("/leaderboard/weekend-warrior", async (_req, res) => {
 // Weekly Lucky Draw — deterministic-random pick among all members with 20+ pts this week.
 // Seed is derived from the current week number so the winner is stable within a week
 // but changes every Monday. Everyone who participates gets one equal ticket.
+// Weekly Spotlight — deterministic pick from members who earned 20+ pts LAST week.
+// Using last week (not this week) keeps the pool stable all week long; this week's
+// pool grows as people log points, which would cause the selected winner to change
+// throughout the day.
 router.get("/leaderboard/lucky-draw", async (_req, res) => {
-  const SQL_WEEK_START = `date_trunc('week', now() AT TIME ZONE '${TIMEZONE}') AT TIME ZONE '${TIMEZONE}'`;
+  const SQL_WEEK_START      = `date_trunc('week', now() AT TIME ZONE '${TIMEZONE}') AT TIME ZONE '${TIMEZONE}'`;
+  const SQL_PREV_WEEK_START = `(date_trunc('week', now() AT TIME ZONE '${TIMEZONE}') AT TIME ZONE '${TIMEZONE}' - INTERVAL '7 days')`;
   try {
     const { rows } = await pool.query(`
       SELECT m.email, m.name, m.avatar
       FROM members m
       JOIN activity_logs al ON al.member_email = m.email
-        AND al.created_at >= ${SQL_WEEK_START}
+        AND al.created_at >= ${SQL_PREV_WEEK_START}
+        AND al.created_at < ${SQL_WEEK_START}
       WHERE m.show_on_leaderboard = TRUE
       GROUP BY m.email, m.name, m.avatar
       HAVING COALESCE(SUM(al.points), 0) >= 20
       ORDER BY m.email
     `);
     if (!rows.length) return res.json({ leader: null });
-    // Deterministic weekly seed: week number of current year
     const now = new Date();
     const startOfYear = new Date(now.getFullYear(), 0, 1);
     const weekNum = Math.floor((now.getTime() - startOfYear.getTime()) / (7 * 24 * 60 * 60 * 1000));
-    const idx = weekNum % rows.length;
-    const winner = rows[idx];
+    const winner = rows[weekNum % rows.length];
     res.json({ leader: { name: winner.name, avatar: winner.avatar ?? null, email: winner.email } });
   } catch (err) {
     console.error("Lucky draw error:", err);

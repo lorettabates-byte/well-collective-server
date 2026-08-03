@@ -776,12 +776,13 @@ async function sendWeeklySpotlightAwards(): Promise<void> {
     console.log(`[WELL CUP] Comeback Story spotlight sent to ${email}`);
   }
 
-  // Weekly Spotlight — deterministic-random pick among members with 20+ pts this week
+  // Weekly Spotlight — deterministic pick from members with 20+ pts LAST week (stable pool)
   const { rows: spotlightRows } = await pool.query(`
     SELECT m.email, m.name
     FROM members m
     JOIN activity_logs al ON al.member_email = m.email
-      AND al.created_at >= ${SQL_WEEK_START}
+      AND al.created_at >= ${SQL_PREV_WEEK_START}
+      AND al.created_at < ${SQL_WEEK_START}
     WHERE m.show_on_leaderboard = TRUE
     GROUP BY m.email, m.name
     HAVING COALESCE(SUM(al.points), 0) >= 20
