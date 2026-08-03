@@ -783,4 +783,137 @@ router.post("/admin/crown-previous-month", requireAdmin, async (req, res) => {
   }
 });
 
+// ─── Campaign endpoints ───────────────────────────────────────────────────────
+
+const VIDEOLIBRARY_URL = process.env.VIDEOLIBRARY_URL || "https://videolibrary.lorettabates.com";
+const WELL_API_KEY = process.env.WELL_API_KEY || "";
+
+// GET /api/admin/campaign-preview
+// Fetches active + lapsed WP members, compares with app member list, returns both groups.
+router.get("/admin/campaign-preview", requireAdmin, async (_req, res) => {
+  try {
+    // 1. Fetch all UMP members from the video library WordPress
+    const wpRes = await fetch(
+      `${VIDEOLIBRARY_URL}/wp-json/well/v1/all-members`,
+      { headers: { "X-WELL-API-KEY": WELL_API_KEY }, signal: AbortSignal.timeout(15000) }
+    );
+    if (!wpRes.ok) {
+      return res.status(502).json({ error: `WordPress returned ${wpRes.status} — is the well/v1/all-members snippet installed?` });
+    }
+    const wpData = (await wpRes.json()) as { members: Array<{ email: string; name: string; active: boolean }> };
+    const wpMembers = wpData.members ?? [];
+
+    // 2. Load all app member emails
+    const { rows: appRows } = await pool.query<{ email: string; name: string; membership_status: string; trial_ends_at: string | null }>(
+      "SELECT email, name, membership_status, trial_ends_at::text FROM members"
+    );
+    const appEmails = new Set(appRows.map((r) => r.email.toLowerCase()));
+
+    // Group A: active WP members not yet on the app
+    const notOnApp = wpMembers
+      .filter((m) => m.active && !appEmails.has(m.email.toLowerCase()))
+      .map((m) => ({ email: m.email, name: m.name }));
+
+    // Group B: lapsed WP members (was WP subscriber, now inactive)
+    const lapsed = wpMembers
+      .filter((m) => !m.active)
+      .map((m) => ({ email: m.email, name: m.name }));
+
+    res.json({ notOnApp, lapsed });
+  } catch (err) {
+    console.error("Campaign preview error:", err);
+    res.status(500).json({ error: "Failed to load campaign preview" });
+  }
+});
+
+// POST /api/admin/campaign-send-app-invite  { emails: [{email, name}] }
+router.post("/admin/campaign-send-app-invite", requireAdmin, async (req, res) => {
+  const { emails } = req.body as { emails?: Array<{ email: string; name: string }> };
+  if (!Array.isArray(emails) || emails.length === 0) {
+    return res.status(400).json({ error: "emails array required" });
+  }
+  const { sendAppInviteEmail } = await import("../brevo");
+  let sent = 0;
+  const errors: string[] = [];
+  for (const { email, name } of emails) {
+    try {
+      await sendAppInviteEmail(email, name);
+      sent++;
+    } catch (err) {
+      errors.push(email);
+      console.error(`App invite email failed for ${email}:`, err);
+    }
+  }
+  res.json({ sent, errors });
+});
+
+// POST /api/admin/campaign-send-winback  { emails: [{email, name}], referralCode: string }
+router.post("/admin/campaign-send-winback", requireAdmin, async (req, res) => {
+  const { emails, referralCode } = req.body as { emails?: Array<{ email: string; name: string }>; referralCode?: string };
+  if (!Array.isArray(emails) || emails.length === 0) {
+    return res.status(400).json({ error: "emails array required" });
+  }
+  if (!referralCode) {
+    return res.status(400).json({ error: "referralCode required" });
+  }
+  const { sendMemberWinbackEmail } = await import("../brevo");
+  let sent = 0;
+  const errors: string[] = [];
+  for (const { email, name } of emails) {
+    try {
+      await sendMemberWinbackEmail(email, name, referralCode);
+      sent++;
+    } catch (err) {
+      errors.push(email);
+      console.error(`Winback email failed for ${email}:`, err);
+    }
+  }
+  res.json({ sent, errors });
+});
+
+// GET /api/admin/push-diagnostic/:email  — check push subscription for a member
+router.get("/admin/push-diagnostic/:email", requireAdmin, async (req, res) => {
+  const email = decodeURIComponent(req.params.email).toLowerCase();
+  try {
+    const { rows } = await pool.query(
+      "SELECT endpoint, created_at FROM push_subscriptions WHERE user_email = $1 ORDER BY created_at DESC",
+      [email]
+    );
+    const appMember = await pool.query("SELECT name, membership_status, trial_ends_at::text FROM members WHERE email = $1", [email]);
+    res.json({
+      email,
+      member: appMember.rows[0] ?? null,
+      subscriptionCount: rows.length,
+      subscriptions: rows.map((r) => ({
+        platform: r.endpoint.includes("fcm") || r.endpoint.includes("googleapis") ? "Android/Chrome" :
+                  r.endpoint.includes("mozilla") ? "Firefox" :
+                  r.endpoint.includes("apple") ? "Safari/iOS" : "Unknown",
+        endpoint: r.endpoint.slice(0, 60) + "…",
+        registeredAt: r.created_at,
+      })),
+    });
+  } catch (err) {
+    console.error("Push diagnostic error:", err);
+    res.status(500).json({ error: "Failed to load push diagnostic" });
+  }
+});
+
+// POST /api/admin/prune-tribe-now  — manually trigger tribe prune
+router.post("/admin/prune-tribe-now", requireAdmin, async (_req, res) => {
+  try {
+    const { rowCount } = await pool.query(`
+      DELETE FROM tribe_members
+      WHERE member_email IN (
+        SELECT email FROM members
+        WHERE (membership_status IS NULL OR membership_status != 'active')
+          AND (trial_ends_at IS NULL OR trial_ends_at < CURRENT_DATE)
+      )
+    `);
+    res.json({ ok: true, removed: rowCount ?? 0 });
+  } catch (err) {
+    console.error("Manual tribe prune error:", err);
+    res.status(500).json({ error: "Failed to prune tribe" });
+  }
+});
+
 export default router;

@@ -621,6 +621,23 @@ async function sendMidTrialEmailBlast(): Promise<void> {
   await sendDay3EmailBlast();
 }
 
+async function pruneExpiredTribeMembers(): Promise<void> {
+  // Remove any member from all WELL Tribes if their trial has ended and they
+  // don't hold an active paid subscription. Runs nightly so the tribe lists
+  // stay clean without Loretta having to do it manually.
+  const { rowCount } = await pool.query(`
+    DELETE FROM tribe_members
+    WHERE member_email IN (
+      SELECT email FROM members
+      WHERE (membership_status IS NULL OR membership_status != 'active')
+        AND (trial_ends_at IS NULL OR trial_ends_at < CURRENT_DATE)
+    )
+  `);
+  if (rowCount && rowCount > 0) {
+    console.log(`[TRIBE] Pruned ${rowCount} expired member(s) from WELL Tribes`);
+  }
+}
+
 async function crownDailyWinner(): Promise<void> {
   // winDate = yesterday in member-facing timezone (the day we're crowning a winner for).
   // prevWinDate = the day before winDate — whoever won then must be excluded so the
@@ -1015,6 +1032,11 @@ export function startScheduler(): void {
   // trial has ended and who haven't converted to a paid membership.
   cron.schedule("0 9 * * *", () => {
     sendReferralWinbackEmails().catch((err) => console.error("Referral winback emails failed:", err));
+  }, { timezone: TIMEZONE });
+
+  // TRIBE PRUNE: 2am ET daily — remove expired/lapsed members from all tribes.
+  cron.schedule("0 2 * * *", () => {
+    pruneExpiredTribeMembers().catch((err) => console.error("Tribe prune failed:", err));
   }, { timezone: TIMEZONE });
 
   // WELL CHECK: every evening at 9pm ET, personalized per-member.

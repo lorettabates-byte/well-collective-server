@@ -800,3 +800,256 @@ Loretta Bates`;
     console.error("[BREVO] sendTrialExpiredEmail error:", err);
   }
 }
+
+/**
+ * Sent to active WELL Collective members who are NOT yet on the myWELL app.
+ * Reminds them the app is included in their membership and encourages them to download it.
+ */
+export async function sendAppInviteEmail(email: string, name: string): Promise<void> {
+  if (!BREVO_API_KEY) {
+    console.warn("[BREVO] BREVO_API_KEY not set — skipping app invite email");
+    return;
+  }
+  const firstName = name.split(" ")[0];
+  const htmlContent = `
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Your membership includes this — have you tried it?</title>
+</head>
+<body style="margin:0;padding:0;background:#0d1117;font-family:Arial,sans-serif;color:#e8e8e8;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="background:#0d1117;padding:40px 20px;">
+    <tr><td align="center">
+      <table width="560" cellpadding="0" cellspacing="0" style="background:#0d1117;border:1px solid #1e2a3a;border-radius:16px;overflow:hidden;max-width:560px;width:100%;">
+        <tr>
+          <td style="background:linear-gradient(135deg,#1a6fb8,#4db8e8);padding:28px 40px 24px;text-align:center;">
+            <img src="https://lorettabates.com/wp-content/uploads/2025/11/WELL-Logo-white.png" alt="WELL Collective" width="220" style="display:block;margin:0 auto 12px;max-width:220px;height:auto;" />
+            <p style="margin:0;font-size:13px;color:#c8e8f8;letter-spacing:1px;text-transform:uppercase;">by Loretta Bates</p>
+          </td>
+        </tr>
+        <tr>
+          <td style="padding:40px 40px 32px;">
+            <p style="margin:0 0 24px;font-size:18px;color:#e8e8e8;">Hey ${firstName},</p>
+            <p style="margin:0 0 20px;font-size:15px;line-height:1.7;color:#c8cdd6;">
+              I wanted to reach out personally because I'm so excited about something that's now a part of your WELL Collective membership and I want to make sure you know about it!
+            </p>
+            <p style="margin:0 0 20px;font-size:15px;line-height:1.7;color:#c8cdd6;">
+              The <strong style="color:#ffffff;">myWELL app</strong> is live, and it is included in your membership at no extra cost. This is where the WELL community is coming together every single day between our live classes and events.
+            </p>
+            <table width="100%" cellpadding="0" cellspacing="0" style="margin:0 0 20px;">
+              <tr><td style="background:#0a1520;border:1px solid #1e2a3a;border-radius:12px;padding:20px 24px;">
+                <p style="margin:0 0 6px;font-size:16px;font-weight:bold;color:#4db8e8;">🏆 The WELL Cup</p>
+                <p style="margin:0;font-size:14px;line-height:1.7;color:#c8cdd6;">Everything you do in the app earns points. Daily winner gets recognition, monthly winner gets a <strong style="color:#e8e8e8;">free month</strong>, and the annual WELL Crown winner receives a <strong style="color:#e8e8e8;">free WELL ESCAPE!</strong></p>
+              </td></tr>
+            </table>
+            <table width="100%" cellpadding="0" cellspacing="0" style="margin:0 0 20px;">
+              <tr><td style="background:#0a1520;border:1px solid #1e2a3a;border-radius:12px;padding:20px 24px;">
+                <p style="margin:0 0 6px;font-size:16px;font-weight:bold;color:#4db8e8;">📱 What's inside</p>
+                <p style="margin:0;font-size:14px;line-height:1.7;color:#c8cdd6;">Daily inspirations, a new recipe every day, meal planner with shopping list, breathwork, music, WELL community forum, push notifications for live classes, and your full event calendar.</p>
+              </td></tr>
+            </table>
+            <table width="100%" cellpadding="0" cellspacing="0" style="margin:0 0 20px;">
+              <tr><td style="background:#0a1520;border:1px solid #1e2a3a;border-radius:12px;padding:20px 24px;">
+                <p style="margin:0 0 6px;font-size:16px;font-weight:bold;color:#4db8e8;">💬 Your community, always with you</p>
+                <p style="margin:0;font-size:14px;line-height:1.7;color:#c8cdd6;">Connect with fellow WELL members, build your WELL Tribe, cheer each other on, and stay inspired between live sessions.</p>
+              </td></tr>
+            </table>
+            <p style="margin:0 0 28px;font-size:15px;line-height:1.7;color:#c8cdd6;">
+              <strong style="color:#ffffff;">It is already part of your membership.</strong> All you have to do is show up.
+            </p>
+            <table width="100%" cellpadding="0" cellspacing="0" style="margin:0 0 16px;">
+              <tr><td align="center">
+                <a href="https://app.lorettabates.com" style="display:inline-block;background:linear-gradient(135deg,#1a6fb8,#4db8e8);color:#ffffff;font-size:15px;font-weight:bold;text-decoration:none;padding:16px 40px;border-radius:50px;letter-spacing:0.5px;">Open the App</a>
+              </td></tr>
+            </table>
+            <p style="margin:0;font-size:12px;color:#6b7280;text-align:center;">
+              On your phone? Download <a href="https://apps.apple.com/app/mywell-with-loretta-bates/id6744754339" style="color:#4db8e8;">iOS</a> or <a href="https://play.google.com/store/apps/details?id=com.lorettabates.wellcollective" style="color:#4db8e8;">Android</a>
+            </p>
+          </td>
+        </tr>
+        <tr>
+          <td style="padding:24px 40px;border-top:1px solid #1e2a3a;text-align:center;">
+            <p style="margin:0 0 6px;font-size:13px;color:#6b7280;">With love,</p>
+            <p style="margin:0;font-size:14px;font-weight:bold;color:#c8cdd6;">Loretta</p>
+            <p style="margin:12px 0 0;font-size:11px;color:#4b5563;">You're receiving this as a WELL Collective member. Questions? Reply anytime.</p>
+          </td>
+        </tr>
+      </table>
+    </td></tr>
+  </table>
+</body>
+</html>`.trim();
+
+  const textContent = `Hey ${firstName},
+
+I wanted to reach out personally because I'm so excited about something that's now a part of your WELL Collective membership and I want to make sure you know about it!
+
+The myWELL app is live, and it is included in your membership at no extra cost. This is where the WELL community is coming together every single day between our live classes and events.
+
+What's inside:
+- The WELL Cup: earn points for everything. Monthly winner gets a free month, annual WELL Crown winner gets a free WELL ESCAPE!
+- Daily inspirations, new recipe every day, meal planner with shopping list
+- Breathwork, music, WELL community forum, event calendar
+
+It is already part of your membership. All you have to do is show up.
+
+Open the app: https://app.lorettabates.com
+iOS: https://apps.apple.com/app/mywell-with-loretta-bates/id6744754339
+Android: https://play.google.com/store/apps/details?id=com.lorettabates.wellcollective
+
+With love,
+Loretta`;
+
+  try {
+    const res = await fetch(`${BREVO_BASE}/smtp/email`, {
+      method: "POST",
+      headers: brevoHeaders(),
+      body: JSON.stringify({
+        sender: { name: SENDER_NAME, email: WELL_SENDER_EMAIL },
+        to: [{ email, name }],
+        subject: `Your membership includes this — have you tried it? 📱`,
+        htmlContent,
+        textContent,
+      }),
+    });
+    if (res.ok || res.status === 201) {
+      console.log(`[BREVO] App invite email sent to ${email}`);
+    } else {
+      const err = await res.text();
+      console.error(`[BREVO] App invite email failed (${res.status}): ${err}`);
+    }
+  } catch (err) {
+    console.error("[BREVO] sendAppInviteEmail error:", err);
+  }
+}
+
+/**
+ * Sent to lapsed (formerly active, now cancelled/expired) WELL Collective members.
+ * Includes Loretta's referral code so they get a free trial month when they return.
+ */
+export async function sendMemberWinbackEmail(
+  email: string,
+  name: string,
+  referralCode: string
+): Promise<void> {
+  if (!BREVO_API_KEY) {
+    console.warn("[BREVO] BREVO_API_KEY not set — skipping member winback email");
+    return;
+  }
+  const firstName = name.split(" ")[0];
+  const trialUrl = `https://app.lorettabates.com?ref=${encodeURIComponent(referralCode)}`;
+  const htmlContent = `
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>You're invited back — one month on me</title>
+</head>
+<body style="margin:0;padding:0;background:#0d1117;font-family:Arial,sans-serif;color:#e8e8e8;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="background:#0d1117;padding:40px 20px;">
+    <tr><td align="center">
+      <table width="560" cellpadding="0" cellspacing="0" style="background:#0d1117;border:1px solid #1e2a3a;border-radius:16px;overflow:hidden;max-width:560px;width:100%;">
+        <tr>
+          <td style="background:linear-gradient(135deg,#1a6fb8,#4db8e8);padding:28px 40px 24px;text-align:center;">
+            <img src="https://lorettabates.com/wp-content/uploads/2025/11/WELL-Logo-white.png" alt="WELL Collective" width="220" style="display:block;margin:0 auto 12px;max-width:220px;height:auto;" />
+            <p style="margin:0;font-size:13px;color:#c8e8f8;letter-spacing:1px;text-transform:uppercase;">by Loretta Bates</p>
+          </td>
+        </tr>
+        <tr>
+          <td style="padding:40px 40px 32px;">
+            <p style="margin:0 0 8px;font-size:22px;font-weight:bold;color:#ffffff;">You're invited back — one month on me</p>
+            <p style="margin:0 0 24px;font-size:18px;color:#e8e8e8;">Hi ${firstName},</p>
+            <p style="margin:0 0 20px;font-size:15px;line-height:1.7;color:#c8cdd6;">
+              I've been thinking about you. You were a part of the WELL Collective, and that means something. Wherever life took you since, I want you to know the door is always open here.
+            </p>
+            <p style="margin:0 0 20px;font-size:15px;line-height:1.7;color:#c8cdd6;">
+              A lot has changed in the WELL Collective, and I would love for you to experience it. So I want to offer you something: <strong style="color:#4db8e8;">come back for one month, completely free, on me.</strong>
+            </p>
+            <table width="100%" cellpadding="0" cellspacing="0" style="margin:28px 0;">
+              <tr>
+                <td style="background:linear-gradient(135deg,#0a1520,#0d1e30);border:2px solid #4db8e8;border-radius:12px;padding:24px;text-align:center;">
+                  <p style="margin:0 0 8px;font-size:13px;color:#6b7280;text-transform:uppercase;letter-spacing:1px;">Your free month code</p>
+                  <p style="margin:0 0 16px;font-size:28px;font-weight:bold;color:#4db8e8;letter-spacing:3px;">${referralCode}</p>
+                  <p style="margin:0;font-size:12px;color:#6b7280;">Use at signup for a free 30-day trial</p>
+                </td>
+              </tr>
+            </table>
+            <p style="margin:0 0 12px;font-size:14px;line-height:1.7;color:#c8cdd6;"><strong style="color:#e8e8e8;">What's new since you've been gone:</strong></p>
+            <ul style="margin:0 0 28px;padding-left:20px;color:#c8cdd6;font-size:14px;line-height:2;">
+              <li>The <strong style="color:#e8e8e8;">myWELL app</strong> (iOS + Android) - your wellness community in your pocket</li>
+              <li><strong style="color:#e8e8e8;">The WELL Cup</strong> - daily + monthly prizes including free months and WELL ESCAPES</li>
+              <li>New weekly recipes, breathwork sessions, and curated music</li>
+              <li>A live, active community of members showing up for themselves every day</li>
+            </ul>
+            <p style="margin:0 0 28px;font-size:15px;line-height:1.7;color:#c8cdd6;">
+              You showed up before, and that matters. I believe you're ready to show up again. Let's do this together.
+            </p>
+            <table width="100%" cellpadding="0" cellspacing="0">
+              <tr><td align="center">
+                <a href="${trialUrl}" style="display:inline-block;background:linear-gradient(135deg,#1a6fb8,#4db8e8);color:#ffffff;font-size:15px;font-weight:bold;text-decoration:none;padding:16px 40px;border-radius:50px;letter-spacing:0.5px;">Claim My Free Month</a>
+              </td></tr>
+            </table>
+          </td>
+        </tr>
+        <tr>
+          <td style="padding:24px 40px;border-top:1px solid #1e2a3a;text-align:center;">
+            <p style="margin:0 0 6px;font-size:13px;color:#6b7280;">With love and belief in you,</p>
+            <p style="margin:0;font-size:14px;font-weight:bold;color:#c8cdd6;">Loretta Bates</p>
+            <p style="margin:12px 0 0;font-size:11px;color:#4b5563;">You're receiving this because you were previously a WELL Collective member. To stop receiving emails, reply with "unsubscribe."</p>
+          </td>
+        </tr>
+      </table>
+    </td></tr>
+  </table>
+</body>
+</html>`.trim();
+
+  const textContent = `You're invited back - one month on me
+
+Hi ${firstName},
+
+I've been thinking about you. You were a part of the WELL Collective, and that means something. Wherever life took you since, I want you to know the door is always open here.
+
+A lot has changed in the WELL Collective, and I would love for you to experience it. So I want to offer you something: come back for one month, completely free, on me.
+
+YOUR FREE MONTH CODE: ${referralCode}
+Use at signup: ${trialUrl}
+
+What's new since you've been gone:
+- The myWELL app (iOS + Android) - your wellness community in your pocket
+- The WELL Cup - daily + monthly prizes including free months and WELL ESCAPES
+- New weekly recipes, breathwork sessions, and curated music
+- A live, active community of members showing up for themselves every day
+
+You showed up before, and that matters. I believe you're ready to show up again. Let's do this together.
+
+Claim My Free Month: ${trialUrl}
+
+With love and belief in you,
+Loretta Bates`;
+
+  try {
+    const res = await fetch(`${BREVO_BASE}/smtp/email`, {
+      method: "POST",
+      headers: brevoHeaders(),
+      body: JSON.stringify({
+        sender: { name: SENDER_NAME, email: WELL_SENDER_EMAIL },
+        to: [{ email, name }],
+        subject: `You're invited back - one month on me`,
+        htmlContent,
+        textContent,
+      }),
+    });
+    if (res.ok || res.status === 201) {
+      console.log(`[BREVO] Member winback email sent to ${email}`);
+    } else {
+      const err = await res.text();
+      console.error(`[BREVO] Member winback email failed (${res.status}): ${err}`);
+    }
+  } catch (err) {
+    console.error("[BREVO] sendMemberWinbackEmail error:", err);
+  }
+}
