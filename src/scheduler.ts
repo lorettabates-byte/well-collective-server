@@ -640,12 +640,9 @@ async function pruneExpiredTribeMembers(): Promise<void> {
 
 async function crownDailyWinner(): Promise<void> {
   // winDate = yesterday in member-facing timezone (the day we're crowning a winner for).
-  // prevWinDate = the day before winDate — whoever won then must be excluded so the
-  // same person can't win two consecutive days. We use well_cup_wins.win_date (a DATE
-  // column) as the source of truth instead of last_daily_win_at (a TIMESTAMPTZ) because
-  // a timestamp comparison is vulnerable to sub-second scheduler jitter near midnight.
+  // A member who has already won any day in the same calendar month is excluded —
+  // one win per month maximum.
   const winDate = addDays(todayInTimezone(), -1);
-  const prevWinDate = addDays(winDate, -1);
 
   const { rows } = await pool.query(`
     SELECT al.member_email, SUM(al.points)::int AS total
@@ -657,12 +654,12 @@ async function crownDailyWinner(): Promise<void> {
       AND NOT EXISTS (
         SELECT 1 FROM well_cup_wins wcw
         WHERE wcw.member_email = m.email
-          AND wcw.win_date = $1
+          AND DATE_TRUNC('month', wcw.win_date) = DATE_TRUNC('month', $1::date)
       )
     GROUP BY al.member_email
     ORDER BY total DESC
     LIMIT 1
-  `, [prevWinDate]);
+  `, [winDate]);
   if (rows.length === 0) return;
 
   const { rowCount } = await pool.query(
