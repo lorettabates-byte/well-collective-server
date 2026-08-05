@@ -10,6 +10,13 @@ const JWT_SECRET = process.env.JWT_SECRET || "well-collective-secret-key-change-
 const WORDPRESS_URL = process.env.WORDPRESS_URL || "https://lorettabates.com";
 const WELL_API_KEY = process.env.WELL_API_KEY || "";
 
+// Demo accounts for app-store reviewers. These always get a far-future
+// trial so reviewers can log in and see the full app without a subscription.
+const DEMO_ACCOUNTS = new Set([
+  "rettabates@yahoo.com",
+  "demo@wellcollective.app",
+]);
+
 export interface AuthTokenPayload {
   adminId: number;
   email: string;
@@ -120,6 +127,20 @@ router.post("/start-trial", async (req, res) => {
   }
 
   const normalizedEmail = email.trim().toLowerCase();
+
+  // Reviewer/demo accounts always get full access regardless of trial state.
+  if (DEMO_ACCOUNTS.has(normalizedEmail)) {
+    const farFuture = new Date();
+    farFuture.setFullYear(farFuture.getFullYear() + 10);
+    const trialEndsAt = farFuture.toISOString().slice(0, 10);
+    await pool.query(
+      `INSERT INTO members (email, name, trial_started_at, trial_ends_at)
+       VALUES ($1, 'Demo Account', now(), $2)
+       ON CONFLICT (email) DO UPDATE SET trial_ends_at = $2`,
+      [normalizedEmail, trialEndsAt]
+    ).catch(() => {});
+    return res.json({ trialEndsAt, name: "Demo Account", resumed: true });
+  }
 
   try {
     const { rows } = await pool.query(
