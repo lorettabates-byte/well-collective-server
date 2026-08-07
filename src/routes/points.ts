@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { pool } from "../db";
-import { todayInTimezone, addDays, SQL_DAY_START, SQL_MONTH_START, SQL_YEAR_START, sqlSameDay, TIMEZONE } from "../dateUtils";
+import { todayInTimezone, addDays, SQL_DAY_START, SQL_MONTH_START, SQL_YEAR_START, sqlSameDay, TIMEZONE, CRON_TIMEZONE } from "../dateUtils";
 import { isAnthropicConfigured, parseMealDescriptionForNutritionLookup } from "../anthropic";
 import { isUsdaConfigured, computeNutritionFromIngredients } from "../usda";
 import { requireAdmin } from "../middleware/adminAuth";
@@ -341,7 +341,7 @@ router.post("/activity", async (req, res) => {
       streakData = await updateLoginStreak(email).catch(() => null);
 
       // morning-ritual-5 challenge: WELL Check before noon in the server tz.
-      const hour = new Date().toLocaleString("en-US", { timeZone: TIMEZONE, hour: "numeric", hour12: false });
+      const hour = new Date().toLocaleString("en-US", { timeZone: CRON_TIMEZONE, hour: "numeric", hour12: false });
       if (Number(hour) < 12) {
         autoAdvanceChallengeGoal(email, "morning-ritual-5").catch(() => {});
       }

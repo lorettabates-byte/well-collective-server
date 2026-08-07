@@ -1,4 +1,13 @@
-export const TIMEZONE = process.env.SCHEDULE_TIMEZONE || "America/New_York";
+// Day-boundary timezone: UTC keeps the WELL Cup and points calculations
+// consistent globally. Members in any timezone see the same reset moment
+// (midnight UTC) rather than the server's local midnight, which caused
+// international users to span two "server days" in a single waking day.
+export const TIMEZONE = "UTC";
+
+// Cron scheduling timezone: notifications fire at clock times meaningful
+// to the primary audience (US Eastern). This is intentionally separate from
+// TIMEZONE so we can use UTC for data boundaries without shifting push times.
+export const CRON_TIMEZONE = process.env.SCHEDULE_TIMEZONE || "America/New_York";
 
 export function todayInTimezone(): string {
   const formatter = new Intl.DateTimeFormat("en-CA", {
@@ -17,9 +26,7 @@ export function addDays(dateStr: string, days: number): string {
   return date.toISOString().slice(0, 10);
 }
 
-// Reusable SQL fragments — filter timestamptz columns by the configured
-// timezone's calendar day/month/year rather than the UTC calendar boundary,
-// so "today" in queries matches "today" as members actually experience it.
+// Reusable SQL fragments — filter timestamptz columns by UTC calendar day.
 export const SQL_DAY_START = `date_trunc('day', now() AT TIME ZONE '${TIMEZONE}') AT TIME ZONE '${TIMEZONE}'`;
 export const SQL_MONTH_START = `date_trunc('month', now() AT TIME ZONE '${TIMEZONE}') AT TIME ZONE '${TIMEZONE}'`;
 export const SQL_YEAR_START = `date_trunc('year', now() AT TIME ZONE '${TIMEZONE}') AT TIME ZONE '${TIMEZONE}'`;

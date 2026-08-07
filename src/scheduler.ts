@@ -16,7 +16,7 @@ import { broadcastNotification, sendNotificationToUser } from "./push";
 import { computeNutritionFromIngredients, isUsdaConfigured } from "./usda";
 import { addTrialContactToBrevo, moveTrialContactToCompleted, sendMidTrialEmail, sendTrialExpiredEmail, sendReferralWeek1Email, sendReferralWinbackEmail } from "./brevo";
 import { awardPoints } from "./routes/points";
-import { TIMEZONE, todayInTimezone, addDays, SQL_DAY_START, SQL_MONTH_START, SQL_YEAR_START } from "./dateUtils";
+import { TIMEZONE, CRON_TIMEZONE, todayInTimezone, addDays, SQL_DAY_START, SQL_MONTH_START, SQL_YEAR_START } from "./dateUtils";
 // scheduledNotifications import removed — it duplicated content-driven sends
 
 // Weekly themes are only stored on the Monday row, so to find "this week's"
@@ -404,7 +404,7 @@ async function sendLivestreamReminder(): Promise<void> {
 // markSent make sendLivestreamReminder itself safe to call redundantly.
 async function checkLivestreamReminderWindow(): Promise<void> {
   const formatter = new Intl.DateTimeFormat("en-US", {
-    timeZone: TIMEZONE,
+    timeZone: CRON_TIMEZONE,
     weekday: "short",
     hour: "numeric",
     hour12: false,
@@ -947,33 +947,33 @@ export function startScheduler(): void {
   // (including anything an admin edited by hand) are left alone.
   cron.schedule("30 5 * * *", () => {
     generateAIContentForUpcomingWeek().catch((err) => console.error("AI content generation failed:", err));
-  }, { timezone: TIMEZONE });
+  }, { timezone: CRON_TIMEZONE });
 
   // Weekly theme: every Monday at 7:00am
   cron.schedule("0 7 * * 1", () => {
     sendWeeklyTheme().catch((err) => console.error("Weekly theme send failed:", err));
-  }, { timezone: TIMEZONE });
+  }, { timezone: CRON_TIMEZONE });
 
   // Weekly spotlight awards: every Monday at 8:00am — Most Improved, Comeback Story, Weekly Spotlight
   cron.schedule("0 8 * * 1", () => {
     sendWeeklySpotlightAwards().catch((err) => console.error("Weekly spotlight awards failed:", err));
-  }, { timezone: TIMEZONE });
+  }, { timezone: CRON_TIMEZONE });
 
   // Daily inspiration: every day EXCEPT Monday at 7:00am
   // (Monday morning only sends the weekly theme to avoid notification overload)
   cron.schedule("0 7 * * 0,2-6", () => {
     sendDailyInspiration().catch((err) => console.error("Daily inspiration send failed:", err));
-  }, { timezone: TIMEZONE });
+  }, { timezone: CRON_TIMEZONE });
 
   // Motivation boost: every day at 3:00pm (15:00)
   cron.schedule("0 15 * * *", () => {
     sendMotivationBoost().catch((err) => console.error("Motivation boost send failed:", err));
-  }, { timezone: TIMEZONE });
+  }, { timezone: CRON_TIMEZONE });
 
   // Livestream reminder: every Tuesday at 8:00am (1 hour before 9am livestream)
   cron.schedule("0 8 * * 2", () => {
     sendLivestreamReminder().catch((err) => console.error("Livestream reminder send failed:", err));
-  }, { timezone: TIMEZONE });
+  }, { timezone: CRON_TIMEZONE });
 
   // Check for new blog posts: every hour on the hour
   cron.schedule("0 * * * *", () => {
@@ -1005,48 +1005,48 @@ export function startScheduler(): void {
   // DAY-3 MID-TRIAL EMAIL: 9am ET, same schedule as win-back.
   cron.schedule("0 9 * * *", () => {
     sendMidTrialEmails().catch((err) => console.error("Mid-trial emails failed:", err));
-  }, { timezone: TIMEZONE });
+  }, { timezone: CRON_TIMEZONE });
 
   // BREVO LIST SYNC: every morning at 6am ET — keeps "App Free Trial" and
   // "App Trial Completed" lists current so Loretta can run campaigns against them.
   cron.schedule("0 6 * * *", () => {
     syncMembersToBrevoLists().catch((err) => console.error("Brevo list sync failed:", err));
-  }, { timezone: TIMEZONE });
+  }, { timezone: CRON_TIMEZONE });
 
   // Post-trial win-back: every day at 9am ET, finds any members whose trial
   // ended yesterday (or earlier) and haven't received the email yet. The
   // trial_winback_sent flag is the idempotency guard — safe to restart/redeploy.
   cron.schedule("0 9 * * *", () => {
     sendTrialWinbackEmails().catch((err) => console.error("Trial win-back emails failed:", err));
-  }, { timezone: TIMEZONE });
+  }, { timezone: CRON_TIMEZONE });
 
   // REFERRAL WEEK-1 EMAIL: 9am ET — sent to referred members (30-day trial)
   // who joined exactly 7 days ago and haven't converted yet.
   cron.schedule("0 9 * * *", () => {
     sendReferralWeek1Emails().catch((err) => console.error("Referral week-1 emails failed:", err));
-  }, { timezone: TIMEZONE });
+  }, { timezone: CRON_TIMEZONE });
 
   // REFERRAL WINBACK EMAIL: 9am ET — sent to referred members whose 30-day
   // trial has ended and who haven't converted to a paid membership.
   cron.schedule("0 9 * * *", () => {
     sendReferralWinbackEmails().catch((err) => console.error("Referral winback emails failed:", err));
-  }, { timezone: TIMEZONE });
+  }, { timezone: CRON_TIMEZONE });
 
   // TRIBE PRUNE: 2am ET daily — remove expired/lapsed members from all tribes.
   cron.schedule("0 2 * * *", () => {
     pruneExpiredTribeMembers().catch((err) => console.error("Tribe prune failed:", err));
-  }, { timezone: TIMEZONE });
+  }, { timezone: CRON_TIMEZONE });
 
   // WELL CHECK: every evening at 9pm ET, personalized per-member.
   cron.schedule("0 21 * * *", () => {
     sendPersonalizedWellChecks().catch((err) => console.error("Well Check notifications failed:", err));
-  }, { timezone: TIMEZONE });
+  }, { timezone: CRON_TIMEZONE });
 
   // WELL CUP: midnight ET — crown yesterday's top scorer.
   // Runs at 00:00 America/New_York so the member-facing day has fully closed before we tally.
   cron.schedule("0 0 * * *", () => {
     crownDailyWinner().catch((err) => console.error("Crown daily winner failed:", err));
-  }, { timezone: TIMEZONE });
+  }, { timezone: CRON_TIMEZONE });
 
   // WELL CUP: last day of each month at 11:45 PM ET — notify monthly leader.
   cron.schedule("45 23 28-31 * *", async () => {
@@ -1057,12 +1057,12 @@ export function startScheduler(): void {
     if (tomorrow.getMonth() !== now.getMonth()) {
       crownMonthlyWinner().catch((err) => console.error("Crown monthly winner failed:", err));
     }
-  }, { timezone: TIMEZONE });
+  }, { timezone: CRON_TIMEZONE });
 
   // WELL CUP: Dec 31 at 11:50 PM ET — crown the yearly champion (5 min after monthly).
   cron.schedule("50 23 31 12 *", () => {
     crownYearlyWinner().catch((err) => console.error("Crown yearly winner failed:", err));
-  }, { timezone: TIMEZONE });
+  }, { timezone: CRON_TIMEZONE });
 
   // WELL CUP: award event_attend points for events that passed yesterday.
   cron.schedule("5 0 * * *", async () => {
@@ -1081,7 +1081,7 @@ export function startScheduler(): void {
     } catch (err) {
       console.error("Event attend points error:", err);
     }
-  }, { timezone: TIMEZONE });
+  }, { timezone: CRON_TIMEZONE });
 
   // SCHEDULED NOTIFICATIONS: check every minute for due notifications.
   cron.schedule("* * * * *", async () => {
@@ -1127,7 +1127,7 @@ export function startScheduler(): void {
     } catch (err) {
       console.error("Re-engagement push error:", err);
     }
-  }, { timezone: TIMEZONE });
+  }, { timezone: CRON_TIMEZONE });
 
   // NOTE: scheduledNotifications.ts (timezone 7am/3pm/9pm) is intentionally
   // disabled — it duplicated the content-driven sends above with generic
