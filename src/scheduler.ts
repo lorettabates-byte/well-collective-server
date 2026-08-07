@@ -1042,30 +1042,28 @@ export function startScheduler(): void {
     sendPersonalizedWellChecks().catch((err) => console.error("Well Check notifications failed:", err));
   }, { timezone: CRON_TIMEZONE });
 
-  // WELL CUP: midnight ET — crown yesterday's top scorer.
-  // Runs at 00:00 America/New_York so the member-facing day has fully closed before we tally.
-  cron.schedule("0 0 * * *", () => {
+  // WELL CUP: 05:05 UTC — crown yesterday's top scorer.
+  // Runs 5 minutes after the 05:00 UTC day boundary so the competition day
+  // has fully closed before we tally (US East = 1:05 AM, Netherlands = 7:05 AM).
+  cron.schedule("5 5 * * *", () => {
     crownDailyWinner().catch((err) => console.error("Crown daily winner failed:", err));
-  }, { timezone: CRON_TIMEZONE });
+  }, { timezone: "UTC" });
 
-  // WELL CUP: last day of each month at 11:45 PM ET — notify monthly leader.
-  cron.schedule("45 23 28-31 * *", async () => {
-    const now = new Date();
-    const tomorrow = new Date(now);
-    tomorrow.setDate(now.getDate() + 1);
-    // Only run on the actual last day of the month
-    if (tomorrow.getMonth() !== now.getMonth()) {
-      crownMonthlyWinner().catch((err) => console.error("Crown monthly winner failed:", err));
-    }
-  }, { timezone: CRON_TIMEZONE });
+  // WELL CUP: 05:15 UTC on the 1st of each month — crown the monthly leader.
+  // Runs after the 05:00 UTC boundary so the final day of the previous month
+  // is fully closed before we tally.
+  cron.schedule("15 5 1 * *", () => {
+    crownMonthlyWinner().catch((err) => console.error("Crown monthly winner failed:", err));
+  }, { timezone: "UTC" });
 
-  // WELL CUP: Dec 31 at 11:50 PM ET — crown the yearly champion (5 min after monthly).
-  cron.schedule("50 23 31 12 *", () => {
+  // WELL CUP: Jan 1 at 05:20 UTC — crown the yearly champion (5 min after monthly).
+  cron.schedule("20 5 1 1 *", () => {
     crownYearlyWinner().catch((err) => console.error("Crown yearly winner failed:", err));
-  }, { timezone: CRON_TIMEZONE });
+  }, { timezone: "UTC" });
 
   // WELL CUP: award event_attend points for events that passed yesterday.
-  cron.schedule("5 0 * * *", async () => {
+  // Runs at 05:10 UTC, after the day boundary closes.
+  cron.schedule("10 5 * * *", async () => {
     try {
       const yesterday = addDays(todayInTimezone(), -1);
       const { rows: rsvpRows } = await pool.query<{ member_email: string }>(

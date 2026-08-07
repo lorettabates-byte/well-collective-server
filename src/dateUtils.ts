@@ -1,22 +1,28 @@
-// Day-boundary timezone: UTC keeps the WELL Cup and points calculations
-// consistent globally. Members in any timezone see the same reset moment
-// (midnight UTC) rather than the server's local midnight, which caused
-// international users to span two "server days" in a single waking day.
-export const TIMEZONE = "UTC";
+// Competition day boundary: 05:00 UTC. This gives the best global spread:
+//   US Pacific  → 10 PM local  (activities done for the day)
+//   US East     →  1 AM local  (effectively overnight)
+//   Netherlands →  7 AM local  (fresh start of their day)
+//   Asia/Pacific → midday local (no great option exists for all zones)
+//
+// The "Resets in X" countdown already accounts for this automatically because
+// it's computed client-side as (resetAt UTC) - Date.now(), which is always
+// expressed in the viewer's local wall-clock time.
+const DAY_OFFSET_HOURS = 5;
 
-// Cron scheduling timezone: notifications fire at clock times meaningful
-// to the primary audience (US Eastern). This is intentionally separate from
-// TIMEZONE so we can use UTC for data boundaries without shifting push times.
+// Cron scheduling timezone: notifications fire at clock times meaningful to the
+// primary audience (US Eastern). Kept separate from day-boundary logic so
+// changing the reset time doesn't shift push notification times.
 export const CRON_TIMEZONE = process.env.SCHEDULE_TIMEZONE || "America/New_York";
 
+// TIMEZONE is kept as an alias used by existing imports elsewhere in the
+// codebase; point it at UTC since all the SQL expressions below compute their
+// own offset independently.
+export const TIMEZONE = "UTC";
+
 export function todayInTimezone(): string {
-  const formatter = new Intl.DateTimeFormat("en-CA", {
-    timeZone: TIMEZONE,
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  });
-  return formatter.format(new Date()); // en-CA gives YYYY-MM-DD
+  // Return the current competition date (YYYY-MM-DD) in the 5-hour-offset "day".
+  const offsetDate = new Date(Date.now() - DAY_OFFSET_HOURS * 60 * 60 * 1000);
+  return offsetDate.toISOString().slice(0, 10);
 }
 
 export function addDays(dateStr: string, days: number): string {
@@ -26,11 +32,12 @@ export function addDays(dateStr: string, days: number): string {
   return date.toISOString().slice(0, 10);
 }
 
-// Reusable SQL fragments — filter timestamptz columns by UTC calendar day.
-export const SQL_DAY_START = `date_trunc('day', now() AT TIME ZONE '${TIMEZONE}') AT TIME ZONE '${TIMEZONE}'`;
-export const SQL_MONTH_START = `date_trunc('month', now() AT TIME ZONE '${TIMEZONE}') AT TIME ZONE '${TIMEZONE}'`;
-export const SQL_YEAR_START = `date_trunc('year', now() AT TIME ZONE '${TIMEZONE}') AT TIME ZONE '${TIMEZONE}'`;
+// Reusable SQL fragments. All use the same 5-hour offset so every query
+// agrees on what "today", "this month", and "this year" mean.
+export const SQL_DAY_START   = `(date_trunc('day', now() - INTERVAL '${DAY_OFFSET_HOURS} hours') + INTERVAL '${DAY_OFFSET_HOURS} hours')`;
+export const SQL_MONTH_START = `(date_trunc('month', now() - INTERVAL '${DAY_OFFSET_HOURS} hours') + INTERVAL '${DAY_OFFSET_HOURS} hours')`;
+export const SQL_YEAR_START  = `(date_trunc('year', now() - INTERVAL '${DAY_OFFSET_HOURS} hours') + INTERVAL '${DAY_OFFSET_HOURS} hours')`;
 
 export function sqlSameDay(column: string): string {
-  return `(${column} AT TIME ZONE '${TIMEZONE}')::date = (now() AT TIME ZONE '${TIMEZONE}')::date`;
+  return `(${column} - INTERVAL '${DAY_OFFSET_HOURS} hours')::date = (now() - INTERVAL '${DAY_OFFSET_HOURS} hours')::date`;
 }
