@@ -74,12 +74,19 @@ router.post("/member-login", async (req, res) => {
     return res.status(400).json({ error: "Username and password required" });
   }
 
+  // Forward the real client IP so WordPress rate-limiters count per-user,
+  // not per our server's fixed IP (which would accumulate across all users).
+  const clientIp = (req.headers["x-forwarded-for"] as string | undefined)?.split(",")[0].trim()
+    ?? req.socket.remoteAddress
+    ?? "unknown";
+
   try {
     const wpRes = await fetch(`${WORDPRESS_URL}/wp-json/well/v1/member-login`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
         "X-WELL-API-KEY": WELL_API_KEY,
+        "X-Forwarded-For": clientIp,
       },
       body: JSON.stringify({ username, password }),
       signal: AbortSignal.timeout(10000),
@@ -92,7 +99,9 @@ router.post("/member-login", async (req, res) => {
     };
 
     if (!wpRes.ok) {
-      const message = (wpData.message || "Invalid username or password").replace(/<[^>]*>/g, "");
+      // Strip HTML tags, fix missing punctuation between sentences
+      const raw = (wpData.message || "Invalid username or password").replace(/<[^>]*>/g, "");
+      const message = raw.replace(/([a-z])\s+(Please|Try|Wait)/g, "$1. $2");
       return res.status(401).json({ error: message });
     }
 
