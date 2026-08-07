@@ -145,7 +145,7 @@ router.post("/start-trial", async (req, res) => {
     await pool.query(
       `INSERT INTO members (email, name, trial_started_at, trial_ends_at)
        VALUES ($1, 'Demo Account', now(), $2)
-       ON CONFLICT (email) DO UPDATE SET trial_ends_at = $2`,
+       ON CONFLICT (email) DO UPDATE SET trial_ends_at = $2, name = 'Demo Account'`,
       [normalizedEmail, trialEndsAt]
     ).catch(() => {});
     return res.json({ trialEndsAt, name: "Demo Account", resumed: true });
