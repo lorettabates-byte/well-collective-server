@@ -256,14 +256,10 @@ export async function awardPoints(
 
   const cap = DAILY_CAPS[activityType];
   if (cap !== undefined) {
-    // Use the member's own timezone so their "day" matches their local clock,
-    // not the server's Eastern timezone.
-    const memberTz = await getMemberTimezone(memberEmail);
-    const dayStart = sqlDayStartFor(memberTz);
     const { rows } = await pool.query(
       `SELECT COUNT(*) AS count FROM activity_logs
        WHERE member_email = $1 AND activity_type = $2
-         AND created_at >= ${dayStart}`,
+         AND created_at >= ${SQL_DAY_START}`,
       [memberEmail, activityType]
     );
     if (Number(rows[0].count) >= cap) return { awarded: false, points: 0 };
@@ -288,14 +284,12 @@ router.delete("/activity", async (req, res) => {
     return res.status(400).json({ error: "Unknown activity type" });
   }
   try {
-    const memberTz = await getMemberTimezone(memberEmail.toLowerCase());
-    const dayStart = sqlDayStartFor(memberTz);
     await pool.query(
       `DELETE FROM activity_logs
        WHERE id = (
          SELECT id FROM activity_logs
          WHERE member_email = $1 AND activity_type = $2
-           AND created_at >= ${dayStart}
+           AND created_at >= ${SQL_DAY_START}
          ORDER BY created_at DESC
          LIMIT 1
        )`,
@@ -800,14 +794,12 @@ router.get("/activity/today", async (req, res) => {
 
   try {
     const memberEmail = email.toLowerCase();
-    const memberTz = await getMemberTimezone(memberEmail);
-    const dayStart = sqlDayStartFor(memberTz);
 
     const { rows } = await pool.query(`
       SELECT activity_type, SUM(points) AS points, COUNT(*) AS count
       FROM activity_logs
       WHERE member_email = $1
-        AND created_at >= ${dayStart}
+        AND created_at >= ${SQL_DAY_START}
       GROUP BY activity_type
     `, [memberEmail]);
 
