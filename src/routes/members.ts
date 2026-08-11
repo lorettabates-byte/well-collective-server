@@ -485,6 +485,33 @@ router.post("/admin/members", requireAdmin, async (req, res) => {
   }
 });
 
+// Admin: extend a member's trial by N days from today (minimum of current end date preserved).
+router.patch("/admin/members/:email/trial", requireAdmin, async (req, res) => {
+  const email = decodeURIComponent(req.params.email).toLowerCase().trim();
+  const { days } = req.body as { days?: number };
+  if (!days || days < 1 || days > 365) {
+    return res.status(400).json({ error: "days must be 1–365" });
+  }
+  try {
+    const trialEnd = new Date();
+    trialEnd.setDate(trialEnd.getDate() + days);
+    const trialEndsAt = trialEnd.toISOString().slice(0, 10);
+    const { rowCount } = await pool.query(
+      `UPDATE members
+         SET trial_ends_at = GREATEST(COALESCE(trial_ends_at, CURRENT_DATE), $1::date),
+             trial_started_at = COALESCE(trial_started_at, now()),
+             updated_at = now()
+       WHERE email = $2`,
+      [trialEndsAt, email]
+    );
+    if (!rowCount) return res.status(404).json({ error: "Member not found" });
+    res.json({ ok: true, trialEndsAt });
+  } catch (err) {
+    console.error("Extend trial error:", err);
+    res.status(500).json({ error: "Failed to extend trial" });
+  }
+});
+
 // Includes badge fields so any page rendering another member's avatar
 // (DMs, the new-message picker, forum posts/messages via deriveMemberId)
 // can show their badge, not just the WELL Tribe pages.
