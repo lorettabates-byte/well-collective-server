@@ -5,6 +5,9 @@ import { sendNotificationToUser } from "../push";
 import { requireAdmin } from "../middleware/adminAuth";
 import crypto from "crypto";
 
+const WORDPRESS_URL = process.env.WORDPRESS_URL || "https://lorettabates.com";
+const WELL_API_KEY = process.env.WELL_API_KEY || "";
+
 const router = Router();
 
 const REFERRAL_BONUS_POINTS = 25;
@@ -167,7 +170,28 @@ router.post("/apply", async (req, res) => {
       }).catch(() => {});
     }
 
-    res.json({ ok: true, trialDays: REFERRAL_TRIAL_DAYS });
+    // Extend the referred member's trial to 30 days from today
+    const trialEnd = new Date();
+    trialEnd.setDate(trialEnd.getDate() + REFERRAL_TRIAL_DAYS);
+    const trialEndsAt = trialEnd.toISOString().slice(0, 10);
+    await pool.query(
+      `UPDATE members
+         SET trial_ends_at = GREATEST(COALESCE(trial_ends_at, CURRENT_DATE), $1::date),
+             trial_started_at = COALESCE(trial_started_at, now()),
+             updated_at = now()
+       WHERE email = $2`,
+      [trialEndsAt, email]
+    );
+    if (WELL_API_KEY) {
+      fetch(`${WORDPRESS_URL}/videolibrary.lorettabates.com/wp-json/well/v1/assign-level`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "X-WELL-API-KEY": WELL_API_KEY },
+        body: JSON.stringify({ email, level_id: 7, days: REFERRAL_TRIAL_DAYS }),
+        signal: AbortSignal.timeout(8000),
+      }).catch((err) => console.error("[REFERRALS] UMP trial extend error:", err));
+    }
+
+    res.json({ ok: true, trialDays: REFERRAL_TRIAL_DAYS, trialEndsAt });
   } catch (err) {
     console.error("[REFERRALS] Apply error:", err);
     res.status(500).json({ error: "Failed to apply referral" });
