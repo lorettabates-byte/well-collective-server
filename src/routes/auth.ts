@@ -191,7 +191,7 @@ router.post("/start-trial", async (req, res) => {
 
     // Validate referral code (if provided) and extend trial to 30 days
     let validReferrer: string | null = null;
-    let trialDays = 7;
+    let trialDays = 30;
     if (hasReferralCode) {
       const { rows: refRows } = await pool.query(
         "SELECT email FROM members WHERE referral_code = $1",
