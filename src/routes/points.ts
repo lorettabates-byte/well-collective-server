@@ -807,6 +807,55 @@ router.get("/leaderboard/yesterday", async (_req, res) => {
   }
 });
 
+// Admin: show all members' raw points for a competition day window plus eligibility flags.
+// ?date=YYYY-MM-DD  (win_date — competition runs from that date 05:00 UTC to +24h)
+router.get("/admin/competition-day-scores", requireAdmin, async (req, res) => {
+  const { date } = req.query as { date?: string };
+  if (!date || !/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+    return res.status(400).json({ error: "date required (YYYY-MM-DD)" });
+  }
+  try {
+    const { rows } = await pool.query(`
+      SELECT
+        m.email, m.name,
+        COALESCE(SUM(al.points),0)::int AS total,
+        m.show_on_leaderboard,
+        m.last_monthly_win_at,
+        EXISTS (
+          SELECT 1 FROM well_cup_wins wcw
+          WHERE wcw.member_email = m.email AND wcw.win_date = ($1::date - 1)
+        ) AS won_yesterday,
+        (m.last_monthly_win_at IS NOT NULL
+         AND date_trunc('month', m.last_monthly_win_at AT TIME ZONE 'UTC')
+             = date_trunc('month', $1::date) - INTERVAL '1 month') AS won_last_month_prize
+      FROM members m
+      LEFT JOIN activity_logs al ON al.member_email = m.email
+        AND al.created_at >= $1::date + INTERVAL '5 hours'
+        AND al.created_at <  $1::date + INTERVAL '29 hours'
+      WHERE m.show_on_leaderboard = TRUE
+      GROUP BY m.email, m.name, m.show_on_leaderboard, m.last_monthly_win_at
+      HAVING COALESCE(SUM(al.points),0) > 0
+      ORDER BY total DESC
+      LIMIT 30
+    `, [date]);
+    res.json({
+      date,
+      scores: rows.map(r => ({
+        email: r.email,
+        name: r.name,
+        points: r.total,
+        eligible: !r.won_yesterday && !r.won_last_month_prize,
+        wonYesterday: r.won_yesterday,
+        wonLastMonthPrize: r.won_last_month_prize,
+        lastMonthlyWinAt: r.last_monthly_win_at,
+      }))
+    });
+  } catch (err) {
+    console.error("Competition day scores error:", err);
+    res.status(500).json({ error: "Failed to fetch scores" });
+  }
+});
+
 // Admin: re-run winner selection for a specific past date and correct the record.
 // Use this to fix cases where an ineligible member was crowned (e.g. after a bug).
 // Body: { date: "YYYY-MM-DD" }
