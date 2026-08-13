@@ -699,6 +699,26 @@ router.get("/leaderboard/lucky-draw", async (_req, res) => {
   }
 });
 
+// Admin: list all daily WELL Cup wins, optionally filtered by member email.
+router.get("/admin/well-cup-wins", requireAdmin, async (req, res) => {
+  const { email } = req.query as { email?: string };
+  try {
+    const { rows } = await pool.query(
+      `SELECT w.win_date, w.total_points, w.member_email, m.name
+       FROM well_cup_wins w
+       JOIN members m ON m.email = w.member_email
+       ${email ? "WHERE w.member_email = $1" : ""}
+       ORDER BY w.win_date DESC
+       LIMIT 60`,
+      email ? [email.toLowerCase().trim()] : []
+    );
+    res.json({ wins: rows.map(r => ({ date: r.win_date, email: r.member_email, name: r.name, points: Number(r.total_points) })) });
+  } catch (err) {
+    console.error("Well cup wins error:", err);
+    res.status(500).json({ error: "Failed to fetch wins" });
+  }
+});
+
 // Admin — manually set this week's Community Spotlight winner.
 // Body: { email: string }
 router.patch("/leaderboard/spotlight-override", requireAdmin, async (req, res) => {
