@@ -376,11 +376,11 @@ router.get("/leaderboard", async (req, res) => {
         AND NOT EXISTS (
           SELECT 1 FROM well_cup_wins wcw
           WHERE wcw.member_email = m.email
-            AND (
-              wcw.win_date = (now() - INTERVAL '5 hours')::date - INTERVAL '1 day'
-              OR DATE_TRUNC('month', wcw.win_date) = DATE_TRUNC('month', (now() - INTERVAL '5 hours')::date) - INTERVAL '1 month'
-            )
+            AND wcw.win_date = (now() - INTERVAL '5 hours')::date - INTERVAL '1 day'
         )
+        AND (m.last_monthly_win_at IS NULL
+             OR date_trunc('month', m.last_monthly_win_at AT TIME ZONE 'UTC')
+                != date_trunc('month', (now() - INTERVAL '5 hours')::date) - INTERVAL '1 month')
       GROUP BY m.email, m.name, m.avatar
       ORDER BY total_points DESC
       ${limitClause}
@@ -838,11 +838,11 @@ router.post("/admin/recrown-daily-winner", requireAdmin, async (req, res) => {
         AND NOT EXISTS (
           SELECT 1 FROM well_cup_wins wcw
           WHERE wcw.member_email = m.email
-            AND (
-              wcw.win_date = ($1::date - 1)
-              OR DATE_TRUNC('month', wcw.win_date) = DATE_TRUNC('month', $1::date) - INTERVAL '1 month'
-            )
+            AND wcw.win_date = ($1::date - 1)
         )
+        AND (m.last_monthly_win_at IS NULL
+             OR date_trunc('month', m.last_monthly_win_at AT TIME ZONE 'UTC')
+                != date_trunc('month', $1::date) - INTERVAL '1 month')
       GROUP BY al.member_email
       ORDER BY total DESC
       LIMIT 1
