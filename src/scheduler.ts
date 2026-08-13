@@ -654,7 +654,10 @@ async function crownDailyWinner(): Promise<void> {
       AND NOT EXISTS (
         SELECT 1 FROM well_cup_wins wcw
         WHERE wcw.member_email = m.email
-          AND wcw.win_date = ($1::date - 1)
+          AND (
+            wcw.win_date = ($1::date - 1)
+            OR DATE_TRUNC('month', wcw.win_date) = DATE_TRUNC('month', $1::date) - INTERVAL '1 month'
+          )
       )
     GROUP BY al.member_email
     ORDER BY total DESC

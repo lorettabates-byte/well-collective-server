@@ -376,7 +376,10 @@ router.get("/leaderboard", async (req, res) => {
         AND NOT EXISTS (
           SELECT 1 FROM well_cup_wins wcw
           WHERE wcw.member_email = m.email
-            AND wcw.win_date = (now() - INTERVAL '5 hours')::date - INTERVAL '1 day'
+            AND (
+              wcw.win_date = (now() - INTERVAL '5 hours')::date - INTERVAL '1 day'
+              OR DATE_TRUNC('month', wcw.win_date) = DATE_TRUNC('month', (now() - INTERVAL '5 hours')::date) - INTERVAL '1 month'
+            )
         )
       GROUP BY m.email, m.name, m.avatar
       ORDER BY total_points DESC
@@ -781,6 +784,96 @@ router.get("/leaderboard/yesterday", async (_req, res) => {
   } catch (err) {
     console.error("Yesterday winner error:", err);
     res.status(500).json({ error: "Failed to fetch yesterday's winner" });
+  }
+});
+
+// Admin: re-run winner selection for a specific past date and correct the record.
+// Use this to fix cases where an ineligible member was crowned (e.g. after a bug).
+// Body: { date: "YYYY-MM-DD" }
+router.post("/admin/recrown-daily-winner", requireAdmin, async (req, res) => {
+  const { date } = req.body as { date?: string };
+  if (!date || !/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+    return res.status(400).json({ error: "date required (YYYY-MM-DD)" });
+  }
+
+  try {
+    // What's already recorded for this date?
+    const { rows: existing } = await pool.query(
+      `SELECT member_email, total_points FROM well_cup_wins WHERE win_date = $1`,
+      [date]
+    );
+    const oldWinner = existing[0]?.member_email ?? null;
+
+    // Re-run eligibility with correct rules:
+    //   - Can't win two days in a row (won the day before)
+    //   - Can't win if they won any day last calendar month
+    // Time window: competition day D runs from D 05:00 UTC to (D+1) 05:00 UTC.
+    const { rows } = await pool.query(`
+      SELECT al.member_email, SUM(al.points)::int AS total
+      FROM activity_logs al
+      JOIN members m ON m.email = al.member_email
+      WHERE al.created_at >= $1::date + INTERVAL '5 hours'
+        AND al.created_at <  $1::date + INTERVAL '29 hours'
+        AND m.show_on_leaderboard = TRUE
+        AND NOT EXISTS (
+          SELECT 1 FROM well_cup_wins wcw
+          WHERE wcw.member_email = m.email
+            AND (
+              wcw.win_date = ($1::date - 1)
+              OR DATE_TRUNC('month', wcw.win_date) = DATE_TRUNC('month', $1::date) - INTERVAL '1 month'
+            )
+        )
+      GROUP BY al.member_email
+      ORDER BY total DESC
+      LIMIT 1
+    `, [date]);
+
+    if (rows.length === 0) {
+      return res.json({ ok: true, oldWinner, newWinner: null, message: "No eligible winner found for that date" });
+    }
+
+    const newWinner = rows[0].member_email as string;
+    const newTotal = rows[0].total as number;
+
+    if (oldWinner === newWinner) {
+      return res.json({ ok: true, oldWinner, newWinner, message: "Winner unchanged — already correct" });
+    }
+
+    // Remove incorrect win record and clear that member's last_daily_win_at if it was set by this win
+    if (oldWinner) {
+      await pool.query(`DELETE FROM well_cup_wins WHERE win_date = $1`, [date]);
+      await pool.query(
+        `UPDATE members SET last_daily_win_at = NULL WHERE email = $1
+           AND last_daily_win_at >= $2::date + INTERVAL '5 hours'
+           AND last_daily_win_at <  $2::date + INTERVAL '29 hours'`,
+        [oldWinner, date]
+      );
+    }
+
+    // Insert correct winner
+    await pool.query(
+      `INSERT INTO well_cup_wins (member_email, win_date, total_points)
+       VALUES ($1, $2, $3) ON CONFLICT (win_date) DO UPDATE SET member_email=$1, total_points=$3`,
+      [newWinner, date, newTotal]
+    );
+    await pool.query(
+      `UPDATE members SET last_daily_win_at = NOW(), last_daily_win_pts = $2 WHERE email = $1`,
+      [newWinner, newTotal]
+    );
+
+    // Notify the real winner
+    await sendNotificationToUser(newWinner, {
+      title: "You won the WELL Cup!",
+      body: `${newTotal.toLocaleString()} points — you led the board. Open the app to see your win!`,
+      tag: "well-cup-win",
+      url: "/well-cup",
+    }).catch(() => {});
+
+    console.log(`[WELL CUP] Re-crowned ${date}: ${oldWinner} → ${newWinner} (${newTotal} pts)`);
+    res.json({ ok: true, oldWinner, newWinner, points: newTotal });
+  } catch (err) {
+    console.error("Recrown error:", err);
+    res.status(500).json({ error: "Failed to recrown winner" });
   }
 });
 
