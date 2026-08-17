@@ -696,22 +696,27 @@ async function sendWeeklySpotlightAwards(): Promise<void> {
     return;
   }
 
-  const SQL_WEEK_START = `date_trunc('week', now() AT TIME ZONE '${TIMEZONE}') AT TIME ZONE '${TIMEZONE}'`;
+  // Award the PREVIOUS completed Mon-Sun week so results are final before
+  // the cron fires. Running on Monday at 8am, "this week" has only ~8 hours
+  // of data — using last week gives the full picture.
+  const SQL_WEEK_START      = `date_trunc('week', now() AT TIME ZONE '${TIMEZONE}') AT TIME ZONE '${TIMEZONE}'`;
   const SQL_PREV_WEEK_START = `(date_trunc('week', now() AT TIME ZONE '${TIMEZONE}') AT TIME ZONE '${TIMEZONE}' - INTERVAL '7 days')`;
+  const SQL_TWO_WEEKS_AGO   = `(date_trunc('week', now() AT TIME ZONE '${TIMEZONE}') AT TIME ZONE '${TIMEZONE}' - INTERVAL '14 days')`;
 
-  // Most Improved — biggest pts increase vs last week
+  // Most Improved — biggest pts increase in the completed week vs the week before
   const { rows: improvedRows } = await pool.query(`
     WITH this_week AS (
       SELECT member_email, COALESCE(SUM(points), 0) AS pts
       FROM activity_logs
-      WHERE created_at >= ${SQL_WEEK_START}
+      WHERE created_at >= ${SQL_PREV_WEEK_START}
+        AND created_at < ${SQL_WEEK_START}
       GROUP BY member_email
     ),
     last_week AS (
       SELECT member_email, COALESCE(SUM(points), 0) AS pts
       FROM activity_logs
-      WHERE created_at >= ${SQL_PREV_WEEK_START}
-        AND created_at < ${SQL_WEEK_START}
+      WHERE created_at >= ${SQL_TWO_WEEKS_AGO}
+        AND created_at < ${SQL_PREV_WEEK_START}
       GROUP BY member_email
     )
     SELECT m.email, m.name,
@@ -731,26 +736,27 @@ async function sendWeeklySpotlightAwards(): Promise<void> {
     const firstName = (name as string).split(" ")[0];
     await sendNotificationToUser(email, {
       title: "You leveled up more than anyone this week",
-      body: `+${Number(improvement)} pts vs last week, ${firstName} — your growth earned you a WELL Cup spotlight. Open the app to see your award.`,
+      body: `+${Number(improvement)} pts vs the week before, ${firstName} — your growth earned you a WELL Cup spotlight. Open the app to see your award.`,
       tag: "well-cup-spotlight",
       url: "/well-cup",
     }).catch((err) => console.error("[WELL CUP] Most improved push failed:", err));
     console.log(`[WELL CUP] Most Improved spotlight sent to ${email}`);
   }
 
-  // Comeback Story — highest pts this week among members who had 0 pts last week
+  // Comeback Story — highest pts last week among members who had 0 pts the week before
   const { rows: comebackRows } = await pool.query(`
     WITH this_week AS (
       SELECT member_email, COALESCE(SUM(points), 0) AS pts
       FROM activity_logs
-      WHERE created_at >= ${SQL_WEEK_START}
+      WHERE created_at >= ${SQL_PREV_WEEK_START}
+        AND created_at < ${SQL_WEEK_START}
       GROUP BY member_email
     ),
     last_week AS (
       SELECT member_email, COALESCE(SUM(points), 0) AS pts
       FROM activity_logs
-      WHERE created_at >= ${SQL_PREV_WEEK_START}
-        AND created_at < ${SQL_WEEK_START}
+      WHERE created_at >= ${SQL_TWO_WEEKS_AGO}
+        AND created_at < ${SQL_PREV_WEEK_START}
       GROUP BY member_email
     )
     SELECT m.email, m.name, tw.pts AS this_week_pts

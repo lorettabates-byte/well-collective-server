@@ -517,10 +517,10 @@ router.get("/leaderboard/most-rounded", async (_req, res) => {
   }
 });
 
-// Most Improved this week — biggest increase vs previous week.
-// Falls back to last week vs two weeks ago when current week has no data yet (e.g. Monday morning).
+// Most Improved — always shows the previous completed Mon-Sun week so the award
+// stays locked in all week and doesn't shift as members earn points mid-week.
 router.get("/leaderboard/most-improved", async (_req, res) => {
-  const SQL_WEEK_START    = `date_trunc('week', now() AT TIME ZONE '${TIMEZONE}') AT TIME ZONE '${TIMEZONE}'`;
+  const SQL_WEEK_START      = `date_trunc('week', now() AT TIME ZONE '${TIMEZONE}') AT TIME ZONE '${TIMEZONE}'`;
   const SQL_PREV_WEEK_START = `(date_trunc('week', now() AT TIME ZONE '${TIMEZONE}') AT TIME ZONE '${TIMEZONE}' - INTERVAL '7 days')`;
   const SQL_TWO_WEEKS_AGO   = `(date_trunc('week', now() AT TIME ZONE '${TIMEZONE}') AT TIME ZONE '${TIMEZONE}' - INTERVAL '14 days')`;
 
@@ -552,10 +552,13 @@ router.get("/leaderboard/most-improved", async (_req, res) => {
   `);
 
   try {
-    // Try current week first; if empty fall back to last week vs two weeks ago
-    let { rows } = await query(SQL_WEEK_START, "NOW()", SQL_PREV_WEEK_START, SQL_WEEK_START);
+    // Always use the previous completed week (Mon–Sun) so the winner is locked
+    // in on Monday and doesn't change as members earn points mid-week.
+    let { rows } = await query(SQL_PREV_WEEK_START, SQL_WEEK_START, SQL_TWO_WEEKS_AGO, SQL_PREV_WEEK_START);
     if (!rows.length) {
-      ({ rows } = await query(SQL_PREV_WEEK_START, SQL_WEEK_START, SQL_TWO_WEEKS_AGO, SQL_PREV_WEEK_START));
+      // Fallback to two weeks ago vs three weeks ago when last week has no data
+      const SQL_THREE_WEEKS_AGO = `(date_trunc('week', now() AT TIME ZONE '${TIMEZONE}') AT TIME ZONE '${TIMEZONE}' - INTERVAL '21 days')`;
+      ({ rows } = await query(SQL_TWO_WEEKS_AGO, SQL_PREV_WEEK_START, SQL_THREE_WEEKS_AGO, SQL_TWO_WEEKS_AGO));
     }
     res.json({
       leader: rows[0]
@@ -575,8 +578,8 @@ router.get("/leaderboard/most-improved", async (_req, res) => {
   }
 });
 
-// Comeback Story — highest points in the active window among members who earned 0 in the prior window.
-// Falls back to last week vs two weeks ago when current week has no data yet (e.g. Monday morning).
+// Comeback Story — always shows the previous completed Mon-Sun week so the winner
+// stays locked in all week and doesn't shift as members earn points mid-week.
 router.get("/leaderboard/comeback", async (_req, res) => {
   const SQL_WEEK_START      = `date_trunc('week', now() AT TIME ZONE '${TIMEZONE}') AT TIME ZONE '${TIMEZONE}'`;
   const SQL_PREV_WEEK_START = `(date_trunc('week', now() AT TIME ZONE '${TIMEZONE}') AT TIME ZONE '${TIMEZONE}' - INTERVAL '7 days')`;
@@ -607,9 +610,12 @@ router.get("/leaderboard/comeback", async (_req, res) => {
   `);
 
   try {
-    let { rows } = await query(SQL_WEEK_START, "NOW()", SQL_PREV_WEEK_START, SQL_WEEK_START);
+    // Always use the previous completed week so the winner is locked in Monday
+    // and doesn't change as members earn points mid-week.
+    let { rows } = await query(SQL_PREV_WEEK_START, SQL_WEEK_START, SQL_TWO_WEEKS_AGO, SQL_PREV_WEEK_START);
     if (!rows.length) {
-      ({ rows } = await query(SQL_PREV_WEEK_START, SQL_WEEK_START, SQL_TWO_WEEKS_AGO, SQL_PREV_WEEK_START));
+      const SQL_THREE_WEEKS_AGO = `(date_trunc('week', now() AT TIME ZONE '${TIMEZONE}') AT TIME ZONE '${TIMEZONE}' - INTERVAL '21 days')`;
+      ({ rows } = await query(SQL_TWO_WEEKS_AGO, SQL_PREV_WEEK_START, SQL_THREE_WEEKS_AGO, SQL_TWO_WEEKS_AGO));
     }
     res.json({
       leader: rows[0]
