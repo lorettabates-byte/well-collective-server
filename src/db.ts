@@ -915,6 +915,11 @@ export async function initDb(): Promise<void> {
   // App checks this on load, shows the native review dialog, then clears it.
   await pool.query(`ALTER TABLE members ADD COLUMN IF NOT EXISTS rating_prompt_pending BOOLEAN NOT NULL DEFAULT FALSE;`);
 
+  // Timestamp of when a lapsed short trial (< 30 days) was auto-extended to
+  // give the member the remainder of their 30-day trial. NULL = not yet resumed.
+  // Prevents repeated extensions: the extension is offered exactly once.
+  await pool.query(`ALTER TABLE members ADD COLUMN IF NOT EXISTS trial_resumed_at TIMESTAMPTZ;`);
+
   // Content reports — Apple App Store guideline 1.2 (UGC safety)
   // Log of every admin-triggered campaign email send, one row per recipient.
   await pool.query(`

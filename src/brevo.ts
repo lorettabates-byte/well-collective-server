@@ -20,6 +20,7 @@ const SENDER_EMAIL = process.env.BREVO_SENDER_EMAIL || "loretta@lorettabates.com
 const WELL_SENDER_EMAIL = "well@lorettabates.com";
 const TRIAL_LIST_NAME = "App Free Trial";
 const TRIAL_COMPLETED_LIST_NAME = "App Trial Completed";
+const TRIAL_RESUMED_LIST_NAME = "App Trial Resumed";
 
 function brevoHeaders(): Record<string, string> {
   return {
@@ -180,6 +181,39 @@ export async function addTrialContactToBrevo(
     }
   } catch (err) {
     console.error("[BREVO] addTrialContactToBrevo error:", err);
+  }
+}
+
+/**
+ * Re-adds a contact to "App Free Trial" and "App Trial Resumed" when their
+ * lapsed short trial is automatically extended to the full 30 days.
+ */
+export async function addResumedTrialContactToBrevo(
+  email: string,
+  name: string,
+  trialEndsAt: string
+): Promise<void> {
+  if (!BREVO_API_KEY) return;
+  try {
+    const [firstName, ...rest] = name.split(" ");
+    const lastName = rest.join(" ") || "";
+    const [trialListId, resumedListId] = await Promise.all([
+      findOrCreateList(TRIAL_LIST_NAME),
+      findOrCreateList(TRIAL_RESUMED_LIST_NAME),
+    ]);
+    await fetch(`${BREVO_BASE}/contacts`, {
+      method: "POST",
+      headers: brevoHeaders(),
+      body: JSON.stringify({
+        email,
+        attributes: { FIRSTNAME: firstName, LASTNAME: lastName, TRIAL_ENDS: trialEndsAt },
+        listIds: [trialListId, resumedListId],
+        updateEnabled: true,
+      }),
+    });
+    console.log(`[BREVO] Resumed trial contact ${email} → "${TRIAL_LIST_NAME}" + "${TRIAL_RESUMED_LIST_NAME}"`);
+  } catch (err) {
+    console.error("[BREVO] addResumedTrialContactToBrevo error:", err);
   }
 }
 
@@ -1198,5 +1232,163 @@ Loretta Bates`;
     }
   } catch (err) {
     console.error("[BREVO] sendMemberWinbackEmail error:", err);
+  }
+}
+
+/**
+ * Sends a win-back email to members whose original trial was < 30 days,
+ * inviting them to return and claim the remainder of their 30-day trial.
+ * The link goes directly to the app — the server auto-detects and extends
+ * the trial when they log back in.
+ */
+export async function sendTrialResumeWinbackEmail(
+  email: string,
+  name: string,
+  originalDaysUsed: number
+): Promise<void> {
+  if (!BREVO_API_KEY) {
+    console.warn("[BREVO] BREVO_API_KEY not set — skipping trial resume winback email");
+    return;
+  }
+  const firstName = name.split(" ")[0];
+  const remainingDays = 30 - originalDaysUsed;
+  const appUrl = "https://app.lorettabates.com";
+  const logoUrl = "https://lorettabates.com/videolibrary.lorettabates.com/wp-content/uploads/2025/04/WELL-2048-x-2048-px.png";
+
+  const htmlContent = `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Your ${remainingDays} days are still waiting</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,500;1,400;1,500&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap');
+</style>
+</head>
+<body style="margin:0;padding:0;background:#020812;font-family:'Plus Jakarta Sans','Helvetica Neue',Arial,sans-serif;color:#f3f8fc;">
+<table width="100%" cellpadding="0" cellspacing="0" style="background:#020812;padding:32px 16px;">
+  <tr><td align="center">
+    <table width="600" cellpadding="0" cellspacing="0" style="background:#050b14;border:1px solid rgba(132,216,253,0.1);border-radius:16px;overflow:hidden;max-width:600px;width:100%;">
+
+      <!-- Logo header -->
+      <tr>
+        <td style="padding:28px 40px 24px;text-align:center;border-bottom:1px solid rgba(132,216,253,0.08);">
+          <img src="${logoUrl}" alt="WELL Collective" width="56" height="56" style="display:inline-block;border-radius:12px;width:56px;height:56px;" />
+        </td>
+      </tr>
+
+      <!-- Hero -->
+      <tr>
+        <td style="padding:48px 40px 12px;text-align:center;">
+          <p style="margin:0 0 14px;font-size:11px;font-weight:700;letter-spacing:0.14em;text-transform:uppercase;color:#84d8fd;">WELL with Loretta App</p>
+          <h1 style="margin:0 0 20px;font-family:'Cormorant Garamond',Georgia,serif;font-size:44px;font-style:italic;font-weight:500;line-height:1.1;color:#f3f8fc;">You still have ${remainingDays}&nbsp;days left.</h1>
+          <p style="margin:0;font-size:15px;line-height:1.7;color:#8da4bd;max-width:440px;display:inline-block;">
+            Hi ${firstName}, when you tried the app your trial was set to 7 days. We have extended it. The full trial is now 30 days, and you have <strong style="color:#c8e8f8;">${remainingDays} days</strong> that you never got to use.
+          </p>
+        </td>
+      </tr>
+
+      <!-- What you missed -->
+      <tr>
+        <td style="padding:32px 40px 8px;">
+          <p style="margin:0 0 16px;font-size:11px;font-weight:700;letter-spacing:0.14em;text-transform:uppercase;color:#5e7793;text-align:center;">What is waiting for you</p>
+
+          <table width="100%" cellpadding="0" cellspacing="0">
+            <tr>
+              <td style="padding:14px 20px;background:#0d1826;border:1px solid rgba(132,216,253,0.08);border-radius:12px;margin-bottom:10px;display:block;">
+                <p style="margin:0 0 4px;font-family:'Cormorant Garamond',Georgia,serif;font-size:18px;font-weight:600;color:#f3f8fc;">Daily coaching from me, personally</p>
+                <p style="margin:0;font-size:13px;color:#8da4bd;line-height:1.6;">A morning message, an afternoon check-in, and an evening recap sent straight to your phone every single day.</p>
+              </td>
+            </tr>
+          </table>
+          <table width="100%" cellpadding="0" cellspacing="10" style="margin-top:10px;">
+            <tr>
+              <td style="padding:14px 20px;background:#0d1826;border:1px solid rgba(132,216,253,0.08);border-radius:12px;">
+                <p style="margin:0 0 4px;font-family:'Cormorant Garamond',Georgia,serif;font-size:18px;font-weight:600;color:#f3f8fc;">WELL Cup leaderboard</p>
+                <p style="margin:0;font-size:13px;color:#8da4bd;line-height:1.6;">Earn points for every healthy action you take and compete with the community for daily and monthly wins.</p>
+              </td>
+            </tr>
+          </table>
+          <table width="100%" cellpadding="0" cellspacing="10" style="margin-top:10px;">
+            <tr>
+              <td style="padding:14px 20px;background:#0d1826;border:1px solid rgba(132,216,253,0.08);border-radius:12px;">
+                <p style="margin:0 0 4px;font-family:'Cormorant Garamond',Georgia,serif;font-size:18px;font-weight:600;color:#f3f8fc;">Live events, recipes, and breathwork</p>
+                <p style="margin:0;font-size:13px;color:#8da4bd;line-height:1.6;">Guided breathwork, a new healthy recipe every day, live Loretta classes, and retreats reserved for members only.</p>
+              </td>
+            </tr>
+          </table>
+        </td>
+      </tr>
+
+      <!-- CTA -->
+      <tr>
+        <td style="padding:36px 40px 20px;text-align:center;">
+          <a href="${appUrl}" style="display:inline-block;background:linear-gradient(135deg,#01519d 0%,#0191ce 55%,#84d8fd 100%);color:#ffffff;font-family:'Plus Jakarta Sans','Helvetica Neue',Arial,sans-serif;font-size:15px;font-weight:700;text-decoration:none;padding:16px 44px;border-radius:100px;letter-spacing:0.02em;">Resume My Trial</a>
+          <p style="margin:12px 0 0;font-size:12px;color:#5e7793;">Tap the button, enter your email, and you are back in. No card required.</p>
+        </td>
+      </tr>
+
+      <!-- Divider -->
+      <tr><td style="padding:0 40px;"><div style="height:1px;background:linear-gradient(90deg,transparent,rgba(132,216,253,0.15),transparent);"></div></td></tr>
+
+      <!-- Signature -->
+      <tr>
+        <td style="padding:32px 40px;">
+          <p style="margin:0 0 14px;font-size:14px;line-height:1.7;color:#8da4bd;">I saved your spot because I genuinely believe ${remainingDays} more days inside this community can change how you feel in your body. All it takes is opening the app.</p>
+          <p style="margin:0 0 6px;font-size:14px;color:#8da4bd;">With love,</p>
+          <p style="margin:0;font-family:'Cormorant Garamond',Georgia,serif;font-size:22px;font-style:italic;font-weight:500;color:#f3f8fc;">Loretta Bates</p>
+          <p style="margin:4px 0 0;font-size:12px;color:#5e7793;">Founder, WELL Collective</p>
+        </td>
+      </tr>
+
+      <!-- Logo footer -->
+      <tr>
+        <td style="padding:20px 40px 28px;text-align:center;border-top:1px solid rgba(132,216,253,0.06);">
+          <img src="${logoUrl}" alt="WELL Collective" width="40" height="40" style="display:inline-block;border-radius:10px;width:40px;height:40px;margin-bottom:10px;" />
+          <p style="margin:0;font-size:11px;color:#3d5266;line-height:1.6;">You received this because you previously trialed the WELL with Loretta App.</p>
+          <p style="margin:4px 0 0;font-size:11px;color:#3d5266;"><a href="#" style="color:#5e7793;">Unsubscribe</a> &nbsp;|&nbsp; <a href="https://lorettabates.com" style="color:#5e7793;">lorettabates.com</a></p>
+        </td>
+      </tr>
+
+    </table>
+  </td></tr>
+</table>
+</body>
+</html>`;
+
+  const textContent = `Hi ${firstName},
+
+Your ${remainingDays} days are still waiting.
+
+When you tried the WELL with Loretta App, your trial was 7 days. The trial is now 30 days total, and you have ${remainingDays} days you never used.
+
+Come back and claim them: ${appUrl}
+
+Just open the app, enter your email, and you are back in. No card required.
+
+With love,
+Loretta Bates
+Founder, WELL Collective`;
+
+  try {
+    const res = await fetch(`${BREVO_BASE}/smtp/email`, {
+      method: "POST",
+      headers: brevoHeaders(),
+      body: JSON.stringify({
+        sender: { name: SENDER_NAME, email: WELL_SENDER_EMAIL },
+        to: [{ email, name }],
+        subject: `${firstName}, your ${remainingDays} days are still waiting`,
+        htmlContent,
+        textContent,
+      }),
+    });
+    if (res.ok || res.status === 201) {
+      console.log(`[BREVO] Trial resume winback email sent to ${email}`);
+    } else {
+      const err = await res.text();
+      console.error(`[BREVO] Trial resume winback email failed (${res.status}): ${err}`);
+    }
+  } catch (err) {
+    console.error("[BREVO] sendTrialResumeWinbackEmail error:", err);
   }
 }

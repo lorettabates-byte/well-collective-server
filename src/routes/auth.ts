@@ -3,7 +3,7 @@ import { Router } from "express";
 import jwt from "jsonwebtoken";
 import { pool } from "../db";
 import { ADMIN_NOTIFY_EMAIL, sendNotificationToUser } from "../push";
-import { addTrialContactToBrevo, sendWelcomeEmail } from "../brevo";
+import { addTrialContactToBrevo, sendWelcomeEmail, addResumedTrialContactToBrevo } from "../brevo";
 
 const router = Router();
 const JWT_SECRET = process.env.JWT_SECRET || "well-collective-secret-key-change-in-production";
@@ -153,7 +153,7 @@ router.post("/start-trial", async (req, res) => {
 
   try {
     const { rows } = await pool.query(
-      "SELECT trial_started_at, trial_ends_at, name, referred_by FROM members WHERE email = $1",
+      "SELECT trial_started_at, trial_ends_at, trial_resumed_at, name, referred_by, membership_status FROM members WHERE email = $1",
       [normalizedEmail]
     );
 
@@ -167,14 +167,60 @@ router.post("/start-trial", async (req, res) => {
     const trialExpired = hasStartedTrial && (!existingEndsAt || existingEndsAt < today);
     const alreadyReferred = !!existingMember?.referred_by;
     const hasReferralCode = !!referralCode?.trim();
+    const isActiveMember = existingMember?.membership_status === "active";
 
     // Active trial with no new referral to apply — just resume the existing session.
     if (trialActive && (!hasReferralCode || alreadyReferred)) {
       return res.json({ trialEndsAt: existingEndsAt, name: existingMember!.name, resumed: true });
     }
 
-    // Expired trial with no referral code, or already used one — block.
-    if (trialExpired && (!hasReferralCode || alreadyReferred)) {
+    // Active paying member — always let them in.
+    if (isActiveMember) {
+      return res.json({ trialEndsAt: existingEndsAt, name: existingMember!.name, resumed: true });
+    }
+
+    // Expired trial with no referral — check if they qualify for the 30-day extension.
+    // Eligible if: original trial was < 30 days AND they haven't been extended before.
+    if (trialExpired && (!hasReferralCode || alreadyReferred) && !isActiveMember) {
+      const trialStartedAt = existingMember?.trial_started_at ? new Date(existingMember.trial_started_at) : null;
+      const originalEndsAt = existingMember?.trial_ends_at ? new Date(existingMember.trial_ends_at) : null;
+      const daysUsed = trialStartedAt && originalEndsAt
+        ? Math.round((originalEndsAt.getTime() - trialStartedAt.getTime()) / (1000 * 60 * 60 * 24))
+        : 30;
+      const alreadyResumed = !!existingMember?.trial_resumed_at;
+
+      if (!alreadyResumed && daysUsed < 30) {
+        // Give them the remaining days from their 30-day allocation.
+        const remainingDays = 30 - daysUsed;
+        const resumeEnd = new Date();
+        resumeEnd.setDate(resumeEnd.getDate() + remainingDays);
+        const newTrialEndsAt = resumeEnd.toISOString().slice(0, 10);
+        const memberName = existingMember!.name || "";
+
+        await pool.query(
+          `UPDATE members
+             SET trial_ends_at = $1,
+                 trial_resumed_at = now(),
+                 updated_at = now()
+           WHERE email = $2`,
+          [newTrialEndsAt, normalizedEmail]
+        );
+
+        // Mirror extension to WordPress/UMP (fire-and-forget).
+        fetch(`${WORDPRESS_URL}/wp-json/well/v1/create-trial`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "X-WELL-API-KEY": WELL_API_KEY },
+          body: JSON.stringify({ email: normalizedEmail, name: memberName, trial_days: remainingDays }),
+          signal: AbortSignal.timeout(10000),
+        }).catch((err) => console.error("WP resume-trial error:", err));
+
+        // Move back to active-trial list in Brevo.
+        addResumedTrialContactToBrevo(normalizedEmail, memberName, newTrialEndsAt)
+          .catch((err) => console.error("Brevo resume-trial sync error:", err));
+
+        return res.json({ trialEndsAt: newTrialEndsAt, name: memberName, resumed: true, trialExtended: true, daysAdded: remainingDays });
+      }
+
       return res.status(409).json({ error: "Your free trial has ended. Please log in or subscribe to continue." });
     }
 
