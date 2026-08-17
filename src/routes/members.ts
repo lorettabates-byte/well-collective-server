@@ -221,7 +221,7 @@ router.get("/members/me", async (req, res) => {
 
   try {
     const { rows } = await pool.query(
-      `SELECT name, avatar, bio, birthday, show_birthday_on_calendar, workout_log, featured_badge, created_at, saved_inspiration_ids, liked_inspiration_ids, favorite_song_ids, show_on_leaderboard, hidden_from_community, height_cm, weight_kg, age, gender, health_sync_enabled, breathwork_log, well_activity_log, resistance_log, stretching_log, goal_plan, notification_tone, movement_target, goals_completed, goals_refresh_period, last_monthly_win_at, last_monthly_win_pts, last_daily_win_at, last_daily_win_pts, last_yearly_win_at, last_yearly_win_pts, notif_quiet_start, notif_quiet_end,
+      `SELECT name, avatar, bio, birthday, show_birthday_on_calendar, workout_log, featured_badge, created_at, saved_inspiration_ids, liked_inspiration_ids, favorite_song_ids, show_on_leaderboard, hidden_from_community, height_cm, weight_kg, age, gender, health_sync_enabled, breathwork_log, well_activity_log, resistance_log, stretching_log, goal_plan, notification_tone, movement_target, goals_completed, goals_refresh_period, last_monthly_win_at, last_monthly_win_pts, last_daily_win_at, last_daily_win_pts, last_yearly_win_at, last_yearly_win_pts, notif_quiet_start, notif_quiet_end, rating_prompt_pending,
               CASE WHEN mood_status_expires_at > NOW() THEN mood_status ELSE NULL END AS mood_status
        FROM members WHERE email = $1`,
       [email]
@@ -286,6 +286,7 @@ router.get("/members/me", async (req, res) => {
         lastYearlyWinPts: row.last_yearly_win_pts ? Number(row.last_yearly_win_pts) : undefined,
         notifQuietStart: row.notif_quiet_start ?? undefined,
         notifQuietEnd: row.notif_quiet_end ?? undefined,
+        ratingPromptPending: row.rating_prompt_pending ?? false,
       },
     });
   } catch (err) {
@@ -1037,13 +1038,11 @@ router.post("/admin/prune-tribe-now", requireAdmin, async (_req, res) => {
 });
 
 // POST /api/admin/send-rating-notifications
-// One-time blast to members who joined 7+ days ago and missed the in-app
-// review prompt (which only fires mid-session at streak milestones).
-// Safe to run once — members who already rated or already saw the prompt
-// will simply see the native dialog and can dismiss it.
+// Sends push notifications to members who joined 7+ days ago. For members
+// with no push subscription, sets rating_prompt_pending so the in-app
+// dialog fires next time they open the app.
 router.post("/admin/send-rating-notifications", requireAdmin, async (_req, res) => {
   try {
-    // Members who have been around long enough to have an opinion
     const { rows } = await pool.query<{ email: string; name: string }>(
       `SELECT email, name FROM members
        WHERE trial_started_at <= now() - INTERVAL '7 days'
@@ -1052,29 +1051,64 @@ router.post("/admin/send-rating-notifications", requireAdmin, async (_req, res) 
       [ADMIN_NOTIFY_EMAILS]
     );
 
+    const { rows: subRows } = await pool.query<{ user_email: string }>(
+      `SELECT DISTINCT user_email FROM push_subscriptions WHERE user_email IS NOT NULL`
+    );
+    const subscribedEmails = new Set(subRows.map((r) => r.user_email.toLowerCase()));
+
     let sent = 0;
     let skipped = 0;
+    const needsInAppPrompt: string[] = [];
 
     for (const { email, name } of rows) {
-      try {
-        const result = await sendNotificationToUser(email, {
-          title: "Loving the app?",
-          body: `${name.split(" ")[0]}, your rating helps other women find the community. Tap to leave a review!`,
-          tag: "rate-app",
-          url: "/rate-app",
-        });
-        if (result.sent > 0) sent++;
-        else skipped++;
-      } catch {
-        skipped++;
+      if (subscribedEmails.has(email.toLowerCase())) {
+        try {
+          const result = await sendNotificationToUser(email, {
+            title: "Loving the app?",
+            body: `${name.split(" ")[0]}, your rating helps other women find the community. Tap to leave a review!`,
+            tag: "rate-app",
+            url: "/rate-app",
+          });
+          if (result.sent > 0) sent++;
+          else skipped++;
+        } catch {
+          skipped++;
+        }
+      } else {
+        needsInAppPrompt.push(email);
       }
     }
 
-    res.json({ ok: true, eligible: rows.length, sent, skipped });
+    // Flag members without push so the app shows the dialog on next open
+    if (needsInAppPrompt.length > 0) {
+      await pool.query(
+        `UPDATE members SET rating_prompt_pending = TRUE WHERE email = ANY($1::text[])`,
+        [needsInAppPrompt]
+      );
+    }
+
+    res.json({
+      ok: true,
+      eligible: rows.length,
+      sent,
+      skipped,
+      inAppPromptSet: needsInAppPrompt.length,
+    });
   } catch (err) {
     console.error("Rating notification blast error:", err);
     res.status(500).json({ error: "Failed to send rating notifications" });
   }
+});
+
+// POST /api/members/clear-rating-prompt — called by app after showing the dialog
+router.post("/members/clear-rating-prompt", async (req, res) => {
+  const { email } = req.body as { email?: string };
+  if (!email) return res.status(400).json({ error: "email required" });
+  await pool.query(
+    `UPDATE members SET rating_prompt_pending = FALSE WHERE email = $1`,
+    [email.toLowerCase()]
+  );
+  res.json({ ok: true });
 });
 
 export default router;

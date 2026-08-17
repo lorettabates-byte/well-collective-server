@@ -911,6 +911,10 @@ export async function initDb(): Promise<void> {
   await pool.query(`ALTER TABLE members ADD COLUMN IF NOT EXISTS mood_status TEXT;`);
   await pool.query(`ALTER TABLE members ADD COLUMN IF NOT EXISTS mood_status_expires_at TIMESTAMPTZ;`);
 
+  // Flag set by admin rating blast for members with no push subscription.
+  // App checks this on load, shows the native review dialog, then clears it.
+  await pool.query(`ALTER TABLE members ADD COLUMN IF NOT EXISTS rating_prompt_pending BOOLEAN NOT NULL DEFAULT FALSE;`);
+
   // Content reports — Apple App Store guideline 1.2 (UGC safety)
   // Log of every admin-triggered campaign email send, one row per recipient.
   await pool.query(`
