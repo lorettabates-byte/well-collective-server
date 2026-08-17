@@ -1241,6 +1241,174 @@ Loretta Bates`;
  * The link goes directly to the app — the server auto-detects and extends
  * the trial when they log back in.
  */
+/**
+ * Sends the "Did you get my message?" notification opt-in email to encourage
+ * members to enable push notifications for daily coaching, WELL Cup updates,
+ * and evening recaps.
+ */
+export async function sendNotificationOptInEmail(
+  email: string,
+  name: string
+): Promise<void> {
+  if (!BREVO_API_KEY) {
+    console.warn("[BREVO] BREVO_API_KEY not set — skipping notification opt-in email");
+    return;
+  }
+  const firstName = name.split(" ")[0];
+  const appUrl = "wellcollective://notifications";
+  const logoUrl = "https://lorettabates.com/videolibrary.lorettabates.com/wp-content/uploads/2025/04/WELL-2048-x-2048-px.png";
+
+  const htmlContent = `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Did you get my message? - WELL Collective</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;1,400;1,500;1,600&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap');
+</style>
+</head>
+<body style="margin:0;padding:0;background:#020812;font-family:'Plus Jakarta Sans','Segoe UI',system-ui,sans-serif;color:#f3f8fc;">
+<table width="100%" cellpadding="0" cellspacing="0" style="background:#020812;padding:32px 16px;">
+  <tr><td align="center">
+    <table width="600" cellpadding="0" cellspacing="0" style="background:#050b14;border:1px solid rgba(132,216,253,0.1);border-radius:16px;overflow:hidden;max-width:600px;width:100%;">
+
+      <!-- Header -->
+      <tr>
+        <td style="padding:28px 40px 24px;text-align:center;border-bottom:1px solid rgba(132,216,253,0.08);">
+          <img src="${logoUrl}" alt="WELL Collective" width="56" height="56" style="display:inline-block;border-radius:14px;" />
+        </td>
+      </tr>
+
+      <!-- Hero -->
+      <tr>
+        <td style="padding:48px 40px 28px;text-align:center;">
+          <p style="margin:0 0 12px;font-size:11px;font-weight:700;letter-spacing:0.14em;text-transform:uppercase;color:#84d8fd;">WELL with Loretta App</p>
+          <h1 style="margin:0 0 16px;font-family:'Cormorant Garamond',Georgia,serif;font-size:46px;font-style:italic;font-weight:500;line-height:1.12;color:#f3f8fc;">Did you get my message?</h1>
+          <p style="margin:0;font-size:15px;line-height:1.65;color:#8da4bd;max-width:420px;display:inline-block;">I send personal messages to your app every single day, but if you have not turned on notifications, they are just sitting there waiting for you. Here is what you are missing:</p>
+        </td>
+      </tr>
+
+      <!-- Divider -->
+      <tr><td style="padding:0 40px;"><div style="height:1px;background:linear-gradient(90deg,transparent,rgba(132,216,253,0.18),transparent);"></div></td></tr>
+
+      <!-- Notification cards -->
+      <tr>
+        <td style="padding:28px 40px;">
+          <p style="margin:0 0 16px;font-size:10px;font-weight:700;letter-spacing:0.14em;text-transform:uppercase;color:#5e7793;text-align:center;">Daily messages from Loretta</p>
+
+          <!-- Morning -->
+          <div style="background:#0d1826;border:1px solid rgba(132,216,253,0.09);border-radius:14px;padding:20px 24px;margin-bottom:12px;">
+            <p style="margin:0 0 4px;font-size:10px;font-weight:700;letter-spacing:0.1em;text-transform:uppercase;color:#84d8fd;">Morning</p>
+            <p style="margin:0 0 6px;font-family:'Cormorant Garamond',Georgia,serif;font-size:19px;font-weight:600;color:#f3f8fc;">Daily Motivation</p>
+            <p style="margin:0;font-size:13px;color:#8da4bd;line-height:1.6;">A fresh message to set the tone for your day before you even get out of bed. Something real, something personal, and something that will actually make a difference.</p>
+          </div>
+
+          <!-- Afternoon -->
+          <div style="background:#0d1826;border:1px solid rgba(132,216,253,0.09);border-radius:14px;padding:20px 24px;margin-bottom:12px;">
+            <p style="margin:0 0 4px;font-size:10px;font-weight:700;letter-spacing:0.1em;text-transform:uppercase;color:#84d8fd;">Afternoon</p>
+            <p style="margin:0 0 6px;font-family:'Cormorant Garamond',Georgia,serif;font-size:19px;font-weight:600;color:#f3f8fc;">Personalized Encouragement</p>
+            <p style="margin:0;font-size:13px;color:#8da4bd;line-height:1.6;">Based on what you have been working on in the app, I send you a midday check-in tailored to your goals. Think of it as a personal message from your coach, just for you.</p>
+          </div>
+
+          <!-- Evening -->
+          <div style="background:#0d1826;border:1px solid rgba(132,216,253,0.09);border-radius:14px;padding:20px 24px;">
+            <p style="margin:0 0 4px;font-size:10px;font-weight:700;letter-spacing:0.1em;text-transform:uppercase;color:#84d8fd;">Evening</p>
+            <p style="margin:0 0 6px;font-family:'Cormorant Garamond',Georgia,serif;font-size:19px;font-weight:600;color:#f3f8fc;">Your Day at a Glance</p>
+            <p style="margin:0;font-size:13px;color:#8da4bd;line-height:1.6;">A recap of what you accomplished today, your WELL Cup points, and a preview of what tomorrow holds so you can go to sleep with a plan and wake up with intention.</p>
+          </div>
+        </td>
+      </tr>
+
+      <!-- Customize -->
+      <tr>
+        <td style="padding:0 28px 28px;">
+          <div style="background:#0d1826;border:1px solid rgba(132,216,253,0.09);border-radius:14px;padding:20px 24px;">
+            <p style="margin:0;font-size:13.5px;line-height:1.65;color:#8da4bd;"><strong style="color:#84d8fd;font-weight:600;">You are in control.</strong> Not a music person on Mondays? Turn off the new release notification. Prefer to ease into mornings quietly? Adjust the timing. Every notification type can be turned on or off individually inside the app under Profile, so you only hear from me when it works for your life.</p>
+          </div>
+        </td>
+      </tr>
+
+      <!-- CTA -->
+      <tr>
+        <td style="padding:28px 40px;text-align:center;">
+          <a href="${appUrl}" style="display:inline-block;background:linear-gradient(135deg,#01519d 0%,#0191ce 55%,#84d8fd 100%);color:#ffffff;font-family:'Plus Jakarta Sans','Segoe UI',system-ui,sans-serif;font-size:15px;font-weight:700;text-decoration:none;padding:15px 38px;border-radius:100px;letter-spacing:0.02em;">Turn On Notifications</a>
+          <p style="margin:12px 0 0;font-size:12px;color:#5e7793;">Open the WELL app, tap Profile, then Notifications to enable from there.</p>
+        </td>
+      </tr>
+
+      <!-- Divider -->
+      <tr><td style="padding:0 40px;"><div style="height:1px;background:linear-gradient(90deg,transparent,rgba(132,216,253,0.15),transparent);"></div></td></tr>
+
+      <!-- Signature -->
+      <tr>
+        <td style="padding:28px 40px;">
+          <p style="margin:0 0 12px;font-size:14.5px;line-height:1.65;color:#8da4bd;">I put time into each of these messages because I know what it feels like to need someone in your corner. I want to be that for you. The only thing I ask is that you let me in.</p>
+          <p style="margin:0 0 4px;font-size:14px;color:#8da4bd;">See you inside,</p>
+          <p style="margin:8px 0 0;font-family:'Cormorant Garamond',Georgia,serif;font-size:22px;font-style:italic;font-weight:500;color:#f3f8fc;">Loretta Bates</p>
+          <p style="margin:4px 0 0;font-size:12px;color:#5e7793;">Founder, WELL Collective</p>
+        </td>
+      </tr>
+
+      <!-- Footer -->
+      <tr>
+        <td style="padding:20px 40px 28px;text-align:center;border-top:1px solid rgba(132,216,253,0.06);">
+          <img src="${logoUrl}" alt="WELL Collective" width="40" height="40" style="display:inline-block;border-radius:10px;margin-bottom:10px;" />
+          <p style="margin:0;font-size:11px;color:#3d5266;line-height:1.6;">You are receiving this because you signed up for or trialed the WELL with Loretta App.</p>
+          <p style="margin:4px 0 0;font-size:11px;color:#3d5266;"><a href="#" style="color:#5e7793;">Unsubscribe</a> &nbsp;|&nbsp; <a href="https://lorettabates.com" style="color:#5e7793;">lorettabates.com</a></p>
+        </td>
+      </tr>
+
+    </table>
+  </td></tr>
+</table>
+</body>
+</html>`;
+
+  const textContent = `Did you get my message?
+
+I send personal messages to your app every single day:
+
+MORNING: Daily Motivation
+A fresh message to set the tone for your day. Something real, something personal, and something that will actually make a difference.
+
+AFTERNOON: Personalized Encouragement
+A midday check-in tailored to your goals. Think of it as a personal message from your coach, just for you.
+
+EVENING: Your Day at a Glance
+A recap of what you accomplished, your WELL Cup points, and a preview of what tomorrow holds.
+
+You are in control. Turn any notification type on or off individually in the app under Profile → Notifications.
+
+Enable notifications now: ${appUrl}
+
+See you inside,
+Loretta Bates
+Founder, WELL Collective`;
+
+  try {
+    const res = await fetch(`${BREVO_BASE}/smtp/email`, {
+      method: "POST",
+      headers: brevoHeaders(),
+      body: JSON.stringify({
+        sender: { name: SENDER_NAME, email: WELL_SENDER_EMAIL },
+        to: [{ email, name }],
+        subject: "Did you get my message?",
+        htmlContent,
+        textContent,
+      }),
+    });
+    if (res.ok || res.status === 201) {
+      console.log(`[BREVO] Notification opt-in email sent to ${email}`);
+    } else {
+      const err = await res.text();
+      console.error(`[BREVO] Notification opt-in email failed (${res.status}): ${err}`);
+    }
+  } catch (err) {
+    console.error("[BREVO] sendNotificationOptInEmail error:", err);
+  }
+}
+
 export async function sendTrialResumeWinbackEmail(
   email: string,
   name: string,

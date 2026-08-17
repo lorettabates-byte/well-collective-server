@@ -961,6 +961,40 @@ router.post("/admin/campaign-send-winback", requireAdmin, async (req, res) => {
   res.json({ sent, errors });
 });
 
+// POST /api/admin/campaign-send-notification-optin
+// Sends "Did you get my message?" to all members to encourage push notification opt-in.
+// Returns { total, sent, errors }.
+router.post("/admin/campaign-send-notification-optin", requireAdmin, async (_req, res) => {
+  const { sendNotificationOptInEmail } = await import("../brevo");
+  try {
+    const { rows } = await pool.query<{ email: string; name: string }>(
+      `SELECT email, name FROM members WHERE email IS NOT NULL ORDER BY name ASC`
+    );
+
+    let sent = 0;
+    const errors: string[] = [];
+
+    for (const { email, name } of rows) {
+      try {
+        await sendNotificationOptInEmail(email, name);
+        await pool.query(
+          `INSERT INTO campaign_emails (email, name, campaign_type) VALUES ($1, $2, 'notification-optin')`,
+          [email.toLowerCase(), name]
+        );
+        sent++;
+      } catch (err) {
+        errors.push(email);
+        console.error(`Notification opt-in email failed for ${email}:`, err);
+      }
+    }
+
+    res.json({ total: rows.length, sent, errors });
+  } catch (err) {
+    console.error("Notification opt-in campaign error:", err);
+    res.status(500).json({ error: "Failed to send notification opt-in campaign" });
+  }
+});
+
 // POST /api/admin/campaign-send-trial-resume-winback
 // Auto-discovers all lapsed < 30-day trial members who haven't been emailed
 // yet and blasts the "your days are still waiting" win-back email to them.
