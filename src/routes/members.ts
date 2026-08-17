@@ -1036,4 +1036,45 @@ router.post("/admin/prune-tribe-now", requireAdmin, async (_req, res) => {
   }
 });
 
+// POST /api/admin/send-rating-notifications
+// One-time blast to members who joined 7+ days ago and missed the in-app
+// review prompt (which only fires mid-session at streak milestones).
+// Safe to run once — members who already rated or already saw the prompt
+// will simply see the native dialog and can dismiss it.
+router.post("/admin/send-rating-notifications", requireAdmin, async (_req, res) => {
+  try {
+    // Members who have been around long enough to have an opinion
+    const { rows } = await pool.query<{ email: string; name: string }>(
+      `SELECT email, name FROM members
+       WHERE trial_started_at <= now() - INTERVAL '7 days'
+         AND email NOT IN (SELECT unnest($1::text[]))
+       ORDER BY trial_started_at`,
+      [ADMIN_NOTIFY_EMAILS]
+    );
+
+    let sent = 0;
+    let skipped = 0;
+
+    for (const { email, name } of rows) {
+      try {
+        const result = await sendNotificationToUser(email, {
+          title: "Loving the app?",
+          body: `${name.split(" ")[0]}, your rating helps other women find the community. Tap to leave a review!`,
+          tag: "rate-app",
+          url: "/rate-app",
+        });
+        if (result.sent > 0) sent++;
+        else skipped++;
+      } catch {
+        skipped++;
+      }
+    }
+
+    res.json({ ok: true, eligible: rows.length, sent, skipped });
+  } catch (err) {
+    console.error("Rating notification blast error:", err);
+    res.status(500).json({ error: "Failed to send rating notifications" });
+  }
+});
+
 export default router;
