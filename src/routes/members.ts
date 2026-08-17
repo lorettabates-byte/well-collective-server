@@ -961,6 +961,65 @@ router.post("/admin/campaign-send-winback", requireAdmin, async (req, res) => {
   res.json({ sent, errors });
 });
 
+// POST /api/admin/campaign-send-trial-resume-winback
+// Auto-discovers all lapsed < 30-day trial members who haven't been emailed
+// yet and blasts the "your days are still waiting" win-back email to them.
+// Returns { eligible, sent, alreadySent, errors }.
+router.post("/admin/campaign-send-trial-resume-winback", requireAdmin, async (_req, res) => {
+  const { sendTrialResumeWinbackEmail } = await import("../brevo");
+  try {
+    const { rows } = await pool.query<{
+      email: string;
+      name: string;
+      trial_started_at: Date;
+      trial_ends_at: Date;
+    }>(
+      `SELECT email, name, trial_started_at, trial_ends_at
+       FROM members
+       WHERE trial_started_at IS NOT NULL
+         AND trial_ends_at IS NOT NULL
+         AND trial_ends_at < CURRENT_DATE
+         AND trial_resumed_at IS NULL
+         AND (membership_status IS NULL OR membership_status != 'active')
+         AND ROUND(EXTRACT(EPOCH FROM (trial_ends_at - trial_started_at)) / 86400) < 30
+       ORDER BY trial_ends_at DESC`
+    );
+
+    const { rows: alreadySentRows } = await pool.query<{ email: string }>(
+      `SELECT DISTINCT email FROM campaign_emails WHERE campaign_type = 'trial-resume-winback'`
+    );
+    const alreadySentEmails = new Set(alreadySentRows.map((r) => r.email.toLowerCase()));
+
+    let sent = 0;
+    let alreadySent = 0;
+    const errors: string[] = [];
+
+    for (const row of rows) {
+      const email = row.email.toLowerCase();
+      if (alreadySentEmails.has(email)) { alreadySent++; continue; }
+      const daysUsed = Math.round(
+        (row.trial_ends_at.getTime() - row.trial_started_at.getTime()) / (1000 * 60 * 60 * 24)
+      );
+      try {
+        await sendTrialResumeWinbackEmail(email, row.name, daysUsed);
+        await pool.query(
+          `INSERT INTO campaign_emails (email, name, campaign_type) VALUES ($1, $2, 'trial-resume-winback')`,
+          [email, row.name]
+        );
+        sent++;
+      } catch (err) {
+        errors.push(email);
+        console.error(`Trial resume winback failed for ${email}:`, err);
+      }
+    }
+
+    res.json({ eligible: rows.length, sent, alreadySent, errors });
+  } catch (err) {
+    console.error("Trial resume winback blast error:", err);
+    res.status(500).json({ error: "Failed to run trial resume winback blast" });
+  }
+});
+
 // POST /api/admin/campaign-backfill  { entries: [{email, name, campaignType, sentAt?}] }
 router.post("/admin/campaign-backfill", requireAdmin, async (req, res) => {
   const { entries } = req.body as { entries?: Array<{ email: string; name: string; campaignType: string; sentAt?: string }> };
