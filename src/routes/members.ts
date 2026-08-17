@@ -9,6 +9,23 @@ import { deriveMemberId, findEmailByMemberId } from "../utils/memberUtils";
 
 const router = Router();
 
+// Fire-and-forget — syncs a birthday (MM-DD) to WordPress user meta so UMP
+// birthday emails trigger on the correct day. Never blocks the member response.
+function syncBirthdayToWordPress(email: string, birthday: string): void {
+  const videolibraryUrl = process.env.VIDEOLIBRARY_URL || "https://videolibrary.lorettabates.com";
+  const apiKey = process.env.WELL_API_KEY || "";
+  fetch(`${videolibraryUrl}/wp-json/well/v1/update-birthday`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "X-WELL-API-KEY": apiKey },
+    body: JSON.stringify({ email, birthday }),
+    signal: AbortSignal.timeout(8000),
+  })
+    .then(async (r) => {
+      if (!r.ok) console.error("WP birthday sync failed:", r.status, await r.text().catch(() => ""));
+    })
+    .catch((err) => console.error("WP birthday sync error:", err));
+}
+
 router.post("/members/sync", async (req, res) => {
   const { email, name, avatar, bio, birthday, showBirthdayOnCalendar, workoutLog, savedInspirationIds, likedInspirationIds, favoriteSongIds, heightCm, weightKg, age, gender, healthSyncEnabled, breathworkLog, wellActivityLog, resistanceLog, stretchingLog } = req.body as {
     email?: string;
@@ -113,6 +130,10 @@ router.post("/members/sync", async (req, res) => {
           url: "/admin",
         }).catch((err) => console.error("Admin signup notification failed:", err));
       }
+    }
+
+    if (birthday) {
+      syncBirthdayToWordPress(normalizedEmail, birthday);
     }
 
     res.json({ ok: true });
