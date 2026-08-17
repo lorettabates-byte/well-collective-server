@@ -7,6 +7,7 @@ import { parseIngredientsForNutritionLookup } from "../anthropic";
 import { computeNutritionFromIngredients } from "../usda";
 import { PHOTOS, resolveCategory } from "../recipePhotos";
 import { generateAIContent, generateAIContentForUpcomingWeek } from "../scheduler";
+import { todayInTimezone } from "../dateUtils";
 
 const router = Router();
 
@@ -32,13 +33,12 @@ router.get("/content-schedule", requireAdmin, async (_req, res) => {
 // Public: today's content only, for the member-facing app (no admin auth needed).
 router.get("/content-today", async (_req, res) => {
   try {
-    const formatter = new Intl.DateTimeFormat("en-CA", {
-      timeZone: process.env.SCHEDULE_TIMEZONE || "America/New_York",
-      year: "numeric",
-      month: "2-digit",
-      day: "2-digit",
-    });
-    const today = formatter.format(new Date());
+    // Use the same 5-hour UTC offset as the competition day boundary (SQL_DAY_START)
+    // and the client's todayISO(). Eastern midnight was previously used here,
+    // causing a 1-hour mismatch between midnight and 1 AM ET where the server
+    // returned the next day's content but the client still considered it the
+    // previous day, disabling the Well Activity button for completed users.
+    const today = todayInTimezone();
 
     const { rows } = await pool.query(
       `SELECT date, weekly_theme, daily_inspiration, well_activity, recipe, motivation_boost, nutrition_tip
