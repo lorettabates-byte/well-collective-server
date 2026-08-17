@@ -184,6 +184,137 @@ export async function addTrialContactToBrevo(
 }
 
 /**
+ * Sends an immediate welcome email when a member starts their free trial for the first time.
+ * Warm and brief — the day-3 email handles the full feature tour.
+ */
+export async function sendWelcomeEmail(
+  email: string,
+  name: string
+): Promise<void> {
+  if (!BREVO_API_KEY) {
+    console.warn("[BREVO] BREVO_API_KEY not set — skipping welcome email");
+    return;
+  }
+
+  const firstName = name.split(" ")[0];
+
+  const htmlContent = `
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Welcome to WELL with Loretta!</title>
+</head>
+<body style="margin:0;padding:0;background:#0a0e1a;font-family:'Helvetica Neue',Arial,sans-serif;color:#e8e8e8;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="background:#0a0e1a;padding:40px 20px;">
+    <tr>
+      <td align="center">
+        <table width="560" cellpadding="0" cellspacing="0" style="background:#0d1117;border:1px solid #1e2a3a;border-radius:16px;overflow:hidden;max-width:560px;width:100%;">
+
+          <!-- Header -->
+          <tr>
+            <td style="background:linear-gradient(135deg,#1a6fb8,#4db8e8);padding:32px 40px 28px;text-align:center;">
+              <img src="https://lorettabates.com/wp-content/uploads/2025/11/WELL-Logo-white.png"
+                   alt="WELL with Loretta"
+                   width="200"
+                   style="display:block;margin:0 auto 10px;max-width:200px;height:auto;" />
+              <p style="margin:0;font-family:Arial,sans-serif;font-size:12px;color:#c8e8f8;letter-spacing:1.5px;text-transform:uppercase;">by Loretta Bates</p>
+            </td>
+          </tr>
+
+          <!-- Body -->
+          <tr>
+            <td style="padding:40px 40px 36px;">
+              <p style="margin:0 0 20px;font-size:22px;font-weight:bold;color:#ffffff;line-height:1.3;">Welcome, ${firstName}!</p>
+
+              <p style="margin:0 0 20px;font-size:15px;line-height:1.75;color:#c8cdd6;">
+                I am so glad you are here. Your 30-day free trial is officially active and everything inside the WELL with Loretta App is yours to explore.
+              </p>
+
+              <p style="margin:0 0 20px;font-size:15px;line-height:1.75;color:#c8cdd6;">
+                Live fitness classes, breathwork, meal plans, a curated playlist, and a community of people on the same journey — it is all waiting for you. And every time you show up, you earn points in the <strong style="color:#4db8e8;">WELL Cup</strong>, where daily and monthly winners take home real prizes.
+              </p>
+
+              <p style="margin:0 0 32px;font-size:15px;line-height:1.75;color:#c8cdd6;">
+                Start by opening the app and completing your profile. Then come say hello in the Community tab — I would love to see you there.
+              </p>
+
+              <!-- CTA -->
+              <table width="100%" cellpadding="0" cellspacing="0" style="margin:0 0 32px;">
+                <tr>
+                  <td align="center">
+                    <a href="https://app.lorettabates.com"
+                       style="display:inline-block;background:linear-gradient(135deg,#1a6fb8,#4db8e8);color:#ffffff;font-family:Arial,sans-serif;font-size:15px;font-weight:bold;text-decoration:none;padding:16px 44px;border-radius:50px;letter-spacing:0.5px;">
+                      Open the App
+                    </a>
+                  </td>
+                </tr>
+              </table>
+
+              <p style="margin:0;font-size:15px;line-height:1.75;color:#c8cdd6;">
+                With love,<br />
+                <strong style="color:#e8e8e8;">Loretta</strong>
+              </p>
+            </td>
+          </tr>
+
+          <!-- Footer -->
+          <tr>
+            <td style="padding:20px 40px 28px;border-top:1px solid #1e2a3a;text-align:center;">
+              <p style="margin:0;font-size:11px;color:#4b5563;line-height:1.6;">
+                You're receiving this because you started a free trial at the WELL with Loretta App.<br />
+                Questions? Reply to this email anytime.
+              </p>
+            </td>
+          </tr>
+
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>
+  `.trim();
+
+  const textContent = `Welcome, ${firstName}!
+
+I am so glad you are here. Your 30-day free trial is officially active and everything inside the WELL with Loretta App is yours to explore.
+
+Live fitness classes, breathwork, meal plans, a curated playlist, and a community of people on the same journey — it is all waiting for you. And every time you show up, you earn points in the WELL Cup, where daily and monthly winners take home real prizes.
+
+Start by opening the app and completing your profile. Then come say hello in the Community tab.
+
+Open the App: https://app.lorettabates.com
+
+With love,
+Loretta`;
+
+  try {
+    const res = await fetch(`${BREVO_BASE}/smtp/email`, {
+      method: "POST",
+      headers: brevoHeaders(),
+      body: JSON.stringify({
+        sender: { name: SENDER_NAME, email: WELL_SENDER_EMAIL },
+        to: [{ email, name }],
+        subject: `Welcome, ${firstName}! Your 30-day trial starts now.`,
+        htmlContent,
+        textContent,
+      }),
+    });
+
+    if (res.ok || res.status === 201) {
+      console.log(`[BREVO] Welcome email sent to ${email}`);
+    } else {
+      const err = await res.text();
+      console.error(`[BREVO] Failed to send welcome email (${res.status}): ${err}`);
+    }
+  } catch (err) {
+    console.error("[BREVO] sendWelcomeEmail error:", err);
+  }
+}
+
+/**
  * Sends the day-3 mid-trial email via Brevo transactional email API.
  * Called by the daily scheduler for members whose trial started exactly 3 days ago.
  */

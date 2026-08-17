@@ -3,7 +3,7 @@ import { Router } from "express";
 import jwt from "jsonwebtoken";
 import { pool } from "../db";
 import { ADMIN_NOTIFY_EMAIL, sendNotificationToUser } from "../push";
-import { addTrialContactToBrevo } from "../brevo";
+import { addTrialContactToBrevo, sendWelcomeEmail } from "../brevo";
 
 const router = Router();
 const JWT_SECRET = process.env.JWT_SECRET || "well-collective-secret-key-change-in-production";
@@ -281,6 +281,8 @@ router.post("/start-trial", async (req, res) => {
 
       addTrialContactToBrevo(normalizedEmail, effectiveName, trialEndsAt)
         .catch((err) => console.error("Brevo trial sync failed:", err));
+      sendWelcomeEmail(normalizedEmail, effectiveName)
+        .catch((err) => console.error("Brevo welcome email failed:", err));
     }
 
     res.json({ trialEndsAt, referralApplied: !!validReferrer, trialDays });
