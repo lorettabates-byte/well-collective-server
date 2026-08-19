@@ -834,7 +834,7 @@ router.post("/admin/crown-previous-month", requireAdmin, async (req, res) => {
 
 // ─── Campaign endpoints ───────────────────────────────────────────────────────
 
-const VIDEOLIBRARY_URL = process.env.VIDEOLIBRARY_URL || "https://lorettabates.com/videolibrary.lorettabates.com";
+const VIDEOLIBRARY_URL = process.env.VIDEOLIBRARY_URL || "https://videolibrary.lorettabates.com";
 const WELL_API_KEY = process.env.WELL_API_KEY || "";
 
 // POST /api/admin/mark-monthly-winner  { email, month: "YYYY-MM" }
