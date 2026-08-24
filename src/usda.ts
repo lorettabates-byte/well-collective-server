@@ -146,13 +146,11 @@ export async function computeNutritionFromIngredients(
   let protein = 0;
   let carbs = 0;
   let fat = 0;
-  let allResolved = true;
+  let resolved = 0;
 
   for (const r of results) {
-    if (!r) {
-      allResolved = false;
-      continue;
-    }
+    if (!r) continue;
+    resolved++;
     const factor = r.grams / 100;
     calories += r.calories * factor;
     protein += r.protein * factor;
@@ -160,11 +158,15 @@ export async function computeNutritionFromIngredients(
     fat += r.fat * factor;
   }
 
+  // If no ingredients matched at all, return null so callers can distinguish
+  // "all USDA lookups failed" from "food genuinely has 0 calories".
+  if (resolved === 0) return null;
+
   return {
     calories: Math.round(calories),
     protein: `${Math.round(protein)}g`,
     carbs: `${Math.round(carbs)}g`,
     fat: `${Math.round(fat)}g`,
-    verified: allResolved,
+    verified: resolved === results.length,
   };
 }
