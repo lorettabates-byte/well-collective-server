@@ -85,6 +85,7 @@ export interface GeneratedRecipe {
   ingredients: string[];
   steps: string[];
   imageCategory: string;
+  servings: number;
   nutrition: {
     calories: number;
     protein: string;
@@ -164,7 +165,9 @@ For foodQuery, use USDA's own naming convention as closely as you can recall it,
 Also provide a fallback nutrition total (only used if the lookup above is unavailable): work it out ingredient by ingredient using standard USDA values for each quantity, then sum.
 
 Do not use em dashes (—) anywhere in your response. Respond with ONLY a JSON object, no other text, in this exact shape:
-{"name": "recipe name", "description": "1 short sentence on why it fits this week", "ingredients": ["...", "..."], "steps": ["...", "..."], "imageCategory": "one_of_the_categories", "nutritionLookup": [{"foodQuery": "cooked quinoa", "grams": 185}, {"foodQuery": "tahini", "grams": 30}], "nutrition": {"calories": 350, "protein": "20g", "carbs": "30g", "fat": "12g"}}`;
+{"name": "recipe name", "description": "1 short sentence on why it fits this week", "servings": 4, "ingredients": ["...", "..."], "steps": ["...", "..."], "imageCategory": "one_of_the_categories", "nutritionLookup": [{"foodQuery": "cooked quinoa", "grams": 185}, {"foodQuery": "tahini", "grams": 30}], "nutrition": {"calories": 350, "protein": "20g", "carbs": "30g", "fat": "12g"}}
+
+The "nutrition" field and the nutritionLookup grams should reflect the FULL RECIPE total (all servings combined). The server will divide by "servings" to get per-serving values for display.`;
 
   const text = await callClaude(prompt, 1100);
   const parsed = extractJson(text) as GeneratedRecipe;

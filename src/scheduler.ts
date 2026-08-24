@@ -169,11 +169,24 @@ export async function generateAIContent(targetDate?: string): Promise<void> {
       // only falls back to the AI's guess if FDC_API_KEY isn't configured
       // or none of the ingredients resolved in the database.
       const usdaNutrition = await computeNutritionFromIngredients(recipe.nutritionLookup);
-      const { verified, ...usdaTotals } = usdaNutrition ?? { verified: false };
+      const servings = Math.max(1, Math.round(recipe.servings ?? 4));
+      let finalNutrition = recipe.nutrition;
+      let nutritionVerified = false;
+      if (usdaNutrition) {
+        const { verified } = usdaNutrition;
+        nutritionVerified = verified;
+        finalNutrition = {
+          calories: Math.round(usdaNutrition.calories / servings),
+          protein: `${Math.round(parseInt(usdaNutrition.protein, 10) / servings)}g`,
+          carbs: `${Math.round(parseInt(usdaNutrition.carbs, 10) / servings)}g`,
+          fat: `${Math.round(parseInt(usdaNutrition.fat, 10) / servings)}g`,
+        };
+      }
       const finalRecipe = {
         ...recipe,
-        nutrition: usdaNutrition ? usdaTotals : recipe.nutrition,
-        nutritionVerified: usdaNutrition ? verified : false,
+        servings,
+        nutrition: finalNutrition,
+        nutritionVerified,
       };
 
       await pool.query(
