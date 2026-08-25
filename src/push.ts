@@ -1,6 +1,7 @@
 import webpush from "web-push";
 import { pool } from "./db";
 import { verifyMembership } from "./membership";
+import { deriveMemberId } from "./utils/memberUtils";
 
 const LOGO_URL = "https://app.lorettabates.com/icons/notification-icon-v2.png";
 const BADGE_URL = "https://app.lorettabates.com/icons/notification-badge-v2.png";
@@ -169,11 +170,8 @@ export async function sendNotificationToUser(
 
     if (payload.senderEmail) {
       const { rows: blockRows } = await pool.query(
-        `SELECT 1 FROM user_blocks ub
-         JOIN members blocker ON blocker.id = ub.blocker_id
-         JOIN members sender ON sender.id = ub.blocked_id
-         WHERE blocker.email = $1 AND sender.email = $2`,
-        [email.toLowerCase(), payload.senderEmail.toLowerCase()]
+        `SELECT 1 FROM user_blocks WHERE blocker_id = $1 AND blocked_id = $2`,
+        [deriveMemberId(email.toLowerCase()), deriveMemberId(payload.senderEmail.toLowerCase())]
       );
       if (blockRows.length > 0) {
         console.log(`[PUSH] Blocked notification to ${email} - sender ${payload.senderEmail} is blocked`);
