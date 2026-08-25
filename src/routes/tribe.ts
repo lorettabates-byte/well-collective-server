@@ -755,7 +755,10 @@ router.post("/member/mood-status", async (req, res) => {
   const { email, moodStatusId } = req.body as { email?: string; moodStatusId?: string | null };
   if (!email) return res.status(400).json({ error: "email required" });
 
-  const VALID_IDS = ["need-encouragement", "tough-day", "feeling-good", "celebrating", "crushing-it"];
+  const VALID_IDS = [
+    "need-encouragement", "tough-day", "stressed", "tired-but-showing-up",
+    "resting-recovering", "feeling-good", "grateful", "proud", "celebrating", "crushing-it",
+  ];
   if (moodStatusId !== null && moodStatusId !== undefined && !VALID_IDS.includes(moodStatusId)) {
     return res.status(400).json({ error: "invalid moodStatusId" });
   }
