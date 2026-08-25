@@ -292,10 +292,6 @@ router.get("/members/me", async (req, res) => {
         timezone: row.timezone ?? undefined,
         notificationSchedule: row.notification_schedule ?? undefined,
         notificationSettings: row.notification_settings ?? undefined,
-        hiddenFromCommunity: row.hidden_from_community ?? false,
-        showOnLeaderboard: row.show_on_leaderboard ?? true,
-        lastYearlyWinAt: row.last_yearly_win_at ? new Date(row.last_yearly_win_at).toISOString() : undefined,
-        lastYearlyWinPts: row.last_yearly_win_pts ? Number(row.last_yearly_win_pts) : undefined,
       },
     });
   } catch (err) {
