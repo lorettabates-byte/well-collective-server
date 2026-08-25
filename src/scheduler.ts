@@ -14,7 +14,7 @@ import { checkForNewVideos } from "./routes/video-notifications";
 import { pool } from "./db";
 import { broadcastNotification, sendNotificationToUser } from "./push";
 import { computeNutritionFromIngredients, isUsdaConfigured } from "./usda";
-import { addTrialContactToBrevo, moveTrialContactToCompleted, sendMidTrialEmail, sendTrialExpiredEmail, sendReferralWeek1Email, sendReferralWinbackEmail } from "./brevo";
+import { addTrialContactToBrevo, moveTrialContactToCompleted, sendMidTrialEmail, sendTrialExpiredEmail, sendReferralWeek1Email, sendReferralWinbackEmail, sendWellCupWinnerAdminAlert } from "./brevo";
 import { awardPoints } from "./routes/points";
 import { TIMEZONE, CRON_TIMEZONE, todayInTimezone, addDays, SQL_DAY_START, SQL_MONTH_START, SQL_YEAR_START } from "./dateUtils";
 // scheduledNotifications import removed — it duplicated content-driven sends
@@ -859,6 +859,16 @@ async function crownMonthlyWinner(): Promise<void> {
     `UPDATE members SET last_monthly_win_at = NOW(), last_monthly_win_pts = $2 WHERE email = $1`,
     [rows[0].member_email, rows[0].total]
   ).catch((err) => console.error("[WELL CUP] Monthly win record update failed:", err));
+
+  // Alert admin to manually skip the winner's next payment in the payment processor.
+  // Changing the UMP expiry date does not prevent the payment processor from charging,
+  // so this step must be done manually in Stripe or PayPal until a processor API is integrated.
+  await sendWellCupWinnerAdminAlert(
+    rows[0].member_email,
+    rows[0].name,
+    rows[0].total,
+    monthName
+  ).catch((err) => console.error("[WELL CUP] Admin alert email failed:", err));
 }
 
 async function crownYearlyWinner(): Promise<void> {

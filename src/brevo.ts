@@ -1560,3 +1560,74 @@ Founder, WELL Collective`;
     console.error("[BREVO] sendTrialResumeWinbackEmail error:", err);
   }
 }
+
+export async function sendWellCupWinnerAdminAlert(
+  winnerEmail: string,
+  winnerName: string,
+  points: number,
+  monthName: string
+): Promise<void> {
+  if (!BREVO_API_KEY) return;
+  const adminEmail = "loretta@lorettabates.com";
+  const htmlContent = `
+<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="UTF-8" /><style>body{font-family:Arial,sans-serif;background:#0d1117;color:#e8e8e8;margin:0;padding:40px 20px;}</style></head>
+<body>
+  <table width="100%" cellpadding="0" cellspacing="0" style="max-width:560px;margin:0 auto;background:#111827;border:1px solid #1e2a3a;border-radius:12px;overflow:hidden;">
+    <tr>
+      <td style="background:linear-gradient(135deg,#1a6fb8,#4db8e8);padding:24px 32px;text-align:center;">
+        <img src="https://lorettabates.com/wp-content/uploads/2025/11/WELL-Logo-white.png" alt="WELL Collective" width="200" style="display:block;margin:0 auto 8px;max-width:200px;height:auto;" />
+        <p style="margin:0;font-size:12px;color:#c8e8f8;letter-spacing:1px;text-transform:uppercase;">Admin Alert</p>
+      </td>
+    </tr>
+    <tr>
+      <td style="padding:32px;">
+        <p style="margin:0 0 16px;font-size:20px;font-weight:bold;color:#ffffff;">WELL Cup Monthly Winner</p>
+        <p style="margin:0 0 24px;font-size:15px;color:#c8cdd6;">The ${monthName} WELL Cup winner has been crowned automatically. You need to skip their next membership payment.</p>
+
+        <table width="100%" cellpadding="0" cellspacing="0" style="background:#0a1520;border-radius:8px;padding:20px;margin:0 0 24px;">
+          <tr><td style="padding:6px 0;font-size:13px;color:#8899aa;text-transform:uppercase;letter-spacing:1px;">Winner</td></tr>
+          <tr><td style="padding:0 0 12px;font-size:18px;font-weight:bold;color:#ffffff;">${winnerName}</td></tr>
+          <tr><td style="padding:6px 0;font-size:13px;color:#8899aa;text-transform:uppercase;letter-spacing:1px;">Email</td></tr>
+          <tr><td style="padding:0 0 12px;font-size:15px;color:#4db8e8;">${winnerEmail}</td></tr>
+          <tr><td style="padding:6px 0;font-size:13px;color:#8899aa;text-transform:uppercase;letter-spacing:1px;">Points This Month</td></tr>
+          <tr><td style="padding:0;font-size:18px;font-weight:bold;color:#4db8e8;">${points.toLocaleString()} pts</td></tr>
+        </table>
+
+        <p style="margin:0 0 12px;font-size:15px;color:#c8cdd6;font-weight:bold;">Action required:</p>
+        <ol style="margin:0 0 24px;padding-left:20px;font-size:14px;color:#c8cdd6;line-height:1.8;">
+          <li>Log in to your payment processor (Stripe or PayPal)</li>
+          <li>Find <strong style="color:#ffffff;">${winnerEmail}</strong></li>
+          <li>Skip or credit their next billing cycle</li>
+          <li>Their UMP expiry date was already extended in WordPress</li>
+        </ol>
+
+        <p style="margin:0;font-size:13px;color:#556677;">This alert was sent automatically when the monthly winner was crowned.</p>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>`;
+
+  try {
+    const res = await fetch(`${BREVO_BASE}/smtp/email`, {
+      method: "POST",
+      headers: brevoHeaders(),
+      body: JSON.stringify({
+        sender: { name: "WELL Collective App", email: WELL_SENDER_EMAIL },
+        to: [{ email: adminEmail, name: "Loretta Bates" }],
+        subject: `Action required: Skip payment for ${monthName} WELL Cup winner (${winnerName})`,
+        htmlContent,
+      }),
+    });
+    if (res.ok || res.status === 201) {
+      console.log(`[BREVO] WELL Cup admin alert sent for winner ${winnerEmail}`);
+    } else {
+      const err = await res.text();
+      console.error(`[BREVO] WELL Cup admin alert failed (${res.status}): ${err}`);
+    }
+  } catch (err) {
+    console.error("[BREVO] sendWellCupWinnerAdminAlert error:", err);
+  }
+}
