@@ -221,7 +221,7 @@ router.get("/members/me", async (req, res) => {
 
   try {
     const { rows } = await pool.query(
-      `SELECT name, avatar, bio, birthday, show_birthday_on_calendar, workout_log, featured_badge, created_at, saved_inspiration_ids, liked_inspiration_ids, favorite_song_ids, show_on_leaderboard, hidden_from_community, height_cm, weight_kg, age, gender, health_sync_enabled, breathwork_log, well_activity_log, resistance_log, stretching_log, goal_plan, notification_tone, movement_target, goals_completed, goals_refresh_period, last_monthly_win_at, last_monthly_win_pts, last_daily_win_at, last_daily_win_pts, last_yearly_win_at, last_yearly_win_pts, notif_quiet_start, notif_quiet_end, rating_prompt_pending,
+      `SELECT name, avatar, bio, birthday, show_birthday_on_calendar, workout_log, featured_badge, created_at, saved_inspiration_ids, liked_inspiration_ids, favorite_song_ids, show_on_leaderboard, hidden_from_community, height_cm, weight_kg, age, gender, health_sync_enabled, breathwork_log, well_activity_log, resistance_log, stretching_log, goal_plan, notification_tone, movement_target, goals_completed, goals_refresh_period, last_monthly_win_at, last_monthly_win_pts, last_daily_win_at, last_daily_win_pts, last_yearly_win_at, last_yearly_win_pts, notif_quiet_start, notif_quiet_end, rating_prompt_pending, timezone, notification_schedule,
               CASE WHEN mood_status_expires_at > NOW() THEN mood_status ELSE NULL END AS mood_status
        FROM members WHERE email = $1`,
       [email]
@@ -289,6 +289,8 @@ router.get("/members/me", async (req, res) => {
         notifQuietEnd: row.notif_quiet_end ?? undefined,
         ratingPromptPending: row.rating_prompt_pending ?? false,
         tutorialCompleted: tutorialRows.rows.length > 0,
+        timezone: row.timezone ?? undefined,
+        notificationSchedule: row.notification_schedule ?? undefined,
       },
     });
   } catch (err) {
