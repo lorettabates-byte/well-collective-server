@@ -270,14 +270,20 @@ export async function broadcastNotification(
 
   let blockedBySenderEmails = new Set<string>();
   if (payload.senderEmail) {
-    const { rows: blockRows } = await pool.query<{ email: string }>(
-      `SELECT blocker.email FROM user_blocks ub
-       JOIN members sender ON sender.id = ub.blocked_id
-       JOIN members blocker ON blocker.id = ub.blocker_id
-       WHERE sender.email = $1`,
-      [payload.senderEmail.toLowerCase()]
+    const senderId = deriveMemberId(payload.senderEmail.toLowerCase());
+    const { rows: blockerIdRows } = await pool.query<{ blocker_id: string }>(
+      `SELECT blocker_id FROM user_blocks WHERE blocked_id = $1`,
+      [senderId]
     );
-    blockedBySenderEmails = new Set(blockRows.map((r) => r.email.toLowerCase()));
+    if (blockerIdRows.length > 0) {
+      const blockerIdSet = new Set(blockerIdRows.map((r) => r.blocker_id));
+      const { rows: allMemberRows } = await pool.query<{ email: string }>("SELECT email FROM members");
+      blockedBySenderEmails = new Set(
+        allMemberRows
+          .filter((m) => blockerIdSet.has(deriveMemberId(m.email.toLowerCase())))
+          .map((m) => m.email.toLowerCase())
+      );
+    }
   }
 
   let joinedAfterContentEmails = new Set<string>();

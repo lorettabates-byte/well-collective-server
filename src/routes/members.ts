@@ -232,13 +232,14 @@ router.get("/members/me", async (req, res) => {
     }
 
     const row = rows[0];
-    const [msgRows, cheerRows, badgeRows, tribeAddedRows, tribeAddedByRows, totalPtsRows] = await Promise.all([
+    const [msgRows, cheerRows, badgeRows, tribeAddedRows, tribeAddedByRows, totalPtsRows, tutorialRows] = await Promise.all([
       pool.query("SELECT COUNT(*) FROM forum_messages WHERE author_id = $1", [deriveMemberId(email)]),
       pool.query("SELECT COUNT(*) FROM tribe_cheers WHERE sender_email = $1", [email]),
       pool.query("SELECT badge_id FROM member_badges WHERE member_email = $1", [email]),
       pool.query("SELECT COUNT(*) FROM tribe_members WHERE owner_email = $1", [email]),
       pool.query("SELECT COUNT(*) FROM tribe_members WHERE member_email = $1", [email]),
       pool.query("SELECT COALESCE(SUM(points), 0) AS total FROM activity_logs WHERE member_email = $1", [email]),
+      pool.query("SELECT 1 FROM activity_logs WHERE member_email = $1 AND activity_type = 'tutorial_complete' LIMIT 1", [email]),
     ]);
 
     const messageCount = Number(msgRows.rows[0].count);
@@ -287,6 +288,7 @@ router.get("/members/me", async (req, res) => {
         notifQuietStart: row.notif_quiet_start ?? undefined,
         notifQuietEnd: row.notif_quiet_end ?? undefined,
         ratingPromptPending: row.rating_prompt_pending ?? false,
+        tutorialCompleted: tutorialRows.rows.length > 0,
       },
     });
   } catch (err) {

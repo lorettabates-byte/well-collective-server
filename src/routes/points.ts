@@ -154,6 +154,9 @@ export const POINT_VALUES: Record<string, number> = {
   login_streak_bonus: 0, // variable — awarded directly in updateLoginStreak
 };
 
+// Activities that can only ever award points once per member lifetime (not just once per day).
+const LIFETIME_CAPS = new Set(["tutorial_complete", "notifications_enabled", "add_to_homescreen"]);
+
 // Max times a given activity type can earn points in one calendar day (member-facing timezone) per member.
 const DAILY_CAPS: Record<string, number> = {
   app_open: 1,
@@ -253,6 +256,14 @@ export async function awardPoints(
 ): Promise<{ awarded: boolean; points: number }> {
   const points = POINT_VALUES[activityType];
   if (!points) return { awarded: false, points: 0 };
+
+  if (LIFETIME_CAPS.has(activityType)) {
+    const { rows } = await pool.query(
+      `SELECT COUNT(*) AS count FROM activity_logs WHERE member_email = $1 AND activity_type = $2`,
+      [memberEmail, activityType]
+    );
+    if (Number(rows[0].count) >= 1) return { awarded: false, points: 0 };
+  }
 
   const cap = DAILY_CAPS[activityType];
   if (cap !== undefined) {
