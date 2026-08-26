@@ -1677,6 +1677,42 @@ router.get("/points/guide", async (_req, res) => {
   res.json({ pointValues: POINT_VALUES, dailyCaps: DAILY_CAPS });
 });
 
+// Admin: remove all event_attend points awarded at RSVP time (before the post-event
+// scheduler fix). Deletes the activity_log rows and reports how many points were removed.
+// Pass dryRun=true to preview without changing anything.
+router.post("/points/admin-remove-rsvp-points", requireAdmin, async (req, res) => {
+  const { memberEmail, dryRun } = req.body as { memberEmail?: string; dryRun?: boolean };
+  if (!memberEmail) return res.status(400).json({ error: "memberEmail required" });
+
+  const email = memberEmail.toLowerCase().trim();
+  try {
+    const { rows } = await pool.query(
+      `SELECT id, points, created_at FROM activity_logs
+       WHERE member_email = $1 AND activity_type = 'event_attend'
+       ORDER BY created_at DESC`,
+      [email]
+    );
+
+    const totalPoints = rows.reduce((sum: number, r: { points: number }) => sum + Number(r.points), 0);
+    const count = rows.length;
+
+    if (dryRun || count === 0) {
+      return res.json({ dryRun: true, email, count, totalPoints, rows });
+    }
+
+    await pool.query(
+      `DELETE FROM activity_logs WHERE member_email = $1 AND activity_type = 'event_attend'`,
+      [email]
+    );
+
+    console.log(`[ADMIN] Removed ${count} event_attend entries (${totalPoints} pts) for ${email}`);
+    res.json({ ok: true, email, removed: count, pointsRemoved: totalPoints });
+  } catch (err) {
+    console.error("Remove RSVP points error:", err);
+    res.status(500).json({ error: "Failed to remove points" });
+  }
+});
+
 // Admin: manually award points to any member.
 router.post("/points/admin-award", requireAdmin, async (req, res) => {
   const { memberEmail, points, reason } = req.body as {

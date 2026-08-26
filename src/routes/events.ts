@@ -2,7 +2,6 @@ import { Router } from "express";
 import { pool } from "../db";
 import { requireAdmin } from "../middleware/adminAuth";
 import { broadcastNotification } from "../push";
-import { awardPoints } from "./points";
 
 const router = Router();
 
@@ -252,9 +251,10 @@ router.post("/events/:id/rsvp", async (req, res) => {
           "INSERT INTO event_rsvps (event_id, member_email) VALUES ($1, $2) ON CONFLICT DO NOTHING",
           [req.params.id, memberEmail]
         );
-        // Award attendance points once per event (awardPoints is idempotent per activity type per day,
-        // but events can be on any day so we guard with the event_rsvps unique constraint above)
-        awardPoints(memberEmail, "event_attend").catch(() => {});
+        // Points are awarded by the nightly scheduler AFTER the event date passes,
+        // not at RSVP time. This prevents members from farming points by registering
+        // and immediately cancelling. Cancelling removes the event_rsvps row so the
+        // scheduler skips them automatically.
       }
     }
 
