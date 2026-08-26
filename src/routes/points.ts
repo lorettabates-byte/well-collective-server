@@ -140,6 +140,7 @@ export const POINT_VALUES: Record<string, number> = {
   stretching: 15,
   resistance_training: 20,
   well_activity: 15,
+  brain_game: 20,
   event_attend: 25,
   well_escape: 100,
   tribe_add: 5,
@@ -179,6 +180,7 @@ const DAILY_CAPS: Record<string, number> = {
   stretching: 1,
   resistance_training: 1,
   well_activity: 1,
+  brain_game: 1,
 };
 
 const HISTORY_ACTIVITY_MET: Record<string, { met: number; minutes: number }> = {
@@ -500,7 +502,7 @@ router.get("/leaderboard/most-rounded", async (_req, res) => {
   const WELL_ACTIVITY_TYPES = [
     "cardio", "class_watch", "sleep_log", "meal_log",
     "breathwork", "breathwork_extended", "breathwork_calm_kit",
-    "stretching", "resistance_training", "well_activity",
+    "stretching", "resistance_training", "well_activity", "brain_game",
     "forum_post", "event_attend", "tribe_challenge_complete",
   ];
   const SQL_WEEK_START = `date_trunc('week', now() AT TIME ZONE '${TIMEZONE}') AT TIME ZONE '${TIMEZONE}'`;
