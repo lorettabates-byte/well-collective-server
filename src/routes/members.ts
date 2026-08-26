@@ -488,7 +488,7 @@ router.post("/admin/members", requireAdmin, async (req, res) => {
   let trialEndsAt: string | null = null;
   if (grantTrial) {
     const trialEnd = new Date();
-    trialEnd.setDate(trialEnd.getDate() + 7);
+    trialEnd.setDate(trialEnd.getDate() + 30);
     trialEndsAt = trialEnd.toISOString().slice(0, 10);
   }
 
@@ -551,7 +551,7 @@ router.get("/members", async (req, res) => {
               CASE WHEN mood_status_expires_at > NOW() THEN mood_status ELSE NULL END AS mood_status
        FROM members
        WHERE email != $1
-         AND (trial_ends_at IS NULL OR trial_ends_at >= CURRENT_DATE)
+         AND (membership_status = 'active' OR (trial_ends_at IS NOT NULL AND trial_ends_at >= CURRENT_DATE))
          AND (hidden_from_community IS NULL OR hidden_from_community = false)
        ORDER BY name ASC`,
       [excludeEmail || ""]
