@@ -618,7 +618,8 @@ router.get("/members/:memberId/profile", async (req, res) => {
     }
 
     const { rows } = await pool.query(
-      `SELECT name, avatar, bio, birthday, show_birthday_on_calendar, workout_log, featured_badge, created_at
+      `SELECT name, avatar, bio, birthday, show_birthday_on_calendar, workout_log, featured_badge, created_at,
+              CASE WHEN mood_status_expires_at > NOW() THEN mood_status ELSE NULL END AS mood_status
        FROM members WHERE email = $1`,
       [email]
     );
@@ -660,6 +661,7 @@ router.get("/members/:memberId/profile", async (req, res) => {
         grantedBadges: badgeRows.map((b) => b.badge_id),
         featuredBadge: row.featured_badge ?? undefined,
         tribeConnections: Number(tribeCountRows[0].count),
+        moodStatus: row.mood_status ?? null,
       },
     });
   } catch (err) {
