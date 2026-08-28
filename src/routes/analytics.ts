@@ -316,6 +316,73 @@ router.get("/analytics/dashboard", requireAdmin, async (_req, res) => {
     ORDER BY total_bonus_pts DESC
   `);
 
+  // ── Brain Games: plays by game (last 30 days) ─────────────────────
+  // Cast metadata to jsonb explicitly to handle any stored-as-text rows.
+  const brainGameByTypeRows = await q("brainGameByType", `
+    SELECT
+      (al.metadata::jsonb)->>'game' AS game_id,
+      COUNT(*) AS plays,
+      COUNT(DISTINCT al.member_email) AS unique_players,
+      SUM(al.points) AS total_points
+    FROM activity_logs al
+    WHERE al.activity_type = 'brain_game'
+      AND al.created_at >= NOW() - INTERVAL '30 days'
+    GROUP BY game_id
+    ORDER BY plays DESC
+  `);
+
+  // ── Brain Games: raw total count (diagnostic — catches cast failures) ─
+  const brainGameTotalRows = await q("brainGameTotal", `
+    SELECT COUNT(*) AS total_all_time
+    FROM activity_logs
+    WHERE activity_type = 'brain_game'
+  `);
+
+  // ── Brain Games: daily breakdown per game (last 14 days) ─────────────
+  const brainGameDailyByGameRows = await q("brainGameDailyByGame", `
+    SELECT
+      DATE(al.created_at AT TIME ZONE 'UTC') AS day,
+      (al.metadata::jsonb)->>'game' AS game_id,
+      COUNT(*) AS plays,
+      COUNT(DISTINCT al.member_email) AS unique_players
+    FROM activity_logs al
+    WHERE al.activity_type = 'brain_game'
+      AND al.created_at >= NOW() - INTERVAL '14 days'
+    GROUP BY day, game_id
+    ORDER BY day, game_id
+  `);
+
+  // ── Brain Games: top players (last 30 days) ───────────────────────
+  const brainGameTopPlayersRows = await q("brainGameTopPlayers", `
+    SELECT
+      al.member_email,
+      m.name,
+      COUNT(*) AS total_plays,
+      COUNT(DISTINCT (al.metadata::jsonb)->>'game') AS games_variety,
+      SUM(al.points) AS total_points,
+      MAX(al.created_at) AS last_played
+    FROM activity_logs al
+    LEFT JOIN members m ON m.email = al.member_email
+    WHERE al.activity_type = 'brain_game'
+      AND al.created_at >= NOW() - INTERVAL '30 days'
+    GROUP BY al.member_email, m.name
+    ORDER BY total_plays DESC
+    LIMIT 20
+  `);
+
+  // ── Brain Games: daily play trend (last 14 days) ──────────────────
+  const brainGameDailyRows = await q("brainGameDaily", `
+    SELECT
+      DATE(al.created_at AT TIME ZONE 'UTC') AS day,
+      COUNT(*) AS plays,
+      COUNT(DISTINCT al.member_email) AS unique_players
+    FROM activity_logs al
+    WHERE al.activity_type = 'brain_game'
+      AND al.created_at >= NOW() - INTERVAL '14 days'
+    GROUP BY day
+    ORDER BY day
+  `);
+
   res.json({
     summary: summaryRows[0] ?? null,
     dau: dauRows,
@@ -336,6 +403,11 @@ router.get("/analytics/dashboard", requireAdmin, async (_req, res) => {
     rsvpEvents: rsvpEventRows,
     streaks: streakRows,
     streakBonuses: streakBonusRows,
+    brainGameByType: brainGameByTypeRows,
+    brainGameTotal: brainGameTotalRows[0] ?? null,
+    brainGameDailyByGame: brainGameDailyByGameRows,
+    brainGameTopPlayers: brainGameTopPlayersRows,
+    brainGameDaily: brainGameDailyRows,
   });
 });
 
