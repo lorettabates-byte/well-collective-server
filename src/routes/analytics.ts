@@ -383,6 +383,27 @@ router.get("/analytics/dashboard", requireAdmin, async (_req, res) => {
     ORDER BY day
   `);
 
+  // ── Tribe Game Challenges (invites) ──────────────────────────────
+  const gameChallengeStatsRows = await q("gameChallengeStats", `
+    SELECT
+      COUNT(*) FILTER (WHERE status = 'pending') AS pending,
+      COUNT(*) FILTER (WHERE status = 'completed') AS total_completed,
+      COUNT(*) AS total_sent,
+      COUNT(*) FILTER (WHERE status = 'completed' AND created_at >= NOW() - INTERVAL '30 days') AS completed_30d,
+      COUNT(*) FILTER (WHERE created_at >= NOW() - INTERVAL '30 days') AS sent_30d
+    FROM game_challenges
+  `);
+
+  const gameChallengesByGameRows = await q("gameChallengesByGame", `
+    SELECT
+      game_id,
+      COUNT(*) AS sent,
+      COUNT(*) FILTER (WHERE status = 'completed') AS completed
+    FROM game_challenges
+    GROUP BY game_id
+    ORDER BY sent DESC
+  `);
+
   res.json({
     summary: summaryRows[0] ?? null,
     dau: dauRows,
@@ -408,6 +429,8 @@ router.get("/analytics/dashboard", requireAdmin, async (_req, res) => {
     brainGameDailyByGame: brainGameDailyByGameRows,
     brainGameTopPlayers: brainGameTopPlayersRows,
     brainGameDaily: brainGameDailyRows,
+    gameChallengeStats: gameChallengeStatsRows[0] ?? null,
+    gameChallengesByGame: gameChallengesByGameRows,
   });
 });
 
