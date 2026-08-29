@@ -54,6 +54,7 @@ const TAG_TO_CATEGORY: Record<string, string> = {
   "tribe-challenge": "mentions",
   "tribe-event": "mentions",
   "tribe-cheer": "mentions",
+  "game-invite": "mentions",
 };
 
 const DEFAULT_NOTIFICATION_SETTINGS: Record<string, boolean> = {
