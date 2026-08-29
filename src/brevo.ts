@@ -234,14 +234,16 @@ export async function sendWelcomeEmail(
 
   const htmlContent = `
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" style="color-scheme:dark;background-color:#020810;">
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>Welcome to WELL with Loretta!</title>
+<meta name="color-scheme" content="dark">
+<meta name="supported-color-schemes" content="dark">
 </head>
-<body style="margin:0;padding:0;background:#0a0e1a;font-family:'Helvetica Neue',Arial,sans-serif;color:#e8e8e8;">
-  <table width="100%" cellpadding="0" cellspacing="0" style="background:#0a0e1a;padding:40px 20px;">
+<body bgcolor="#0a0e1a" style="margin:0;padding:0;background-color:#0a0e1a !important;font-family:'Helvetica Neue',Arial,sans-serif;color:#e8e8e8;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="background-color:#0a0e1a !important;padding:40px 20px;">
     <tr>
       <td align="center">
         <table width="560" cellpadding="0" cellspacing="0" style="background:#0d1117;border:1px solid #1e2a3a;border-radius:16px;overflow:hidden;max-width:560px;width:100%;">
@@ -368,15 +370,17 @@ export async function sendDay3Email(
 
   const htmlContent = `
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" style="color-scheme:dark;background-color:#020810;">
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>You're 3 days in — here's what you might be missing!</title>
 <style>@import url('https://fonts.googleapis.com/css2?family=Poppins:wght@400;600;700&display=swap');</style>
+<meta name="color-scheme" content="dark">
+<meta name="supported-color-schemes" content="dark">
 </head>
-<body style="margin:0;padding:0;background:#0d1117;font-family:'Poppins',Arial,sans-serif;color:#e8e8e8;">
-  <table width="100%" cellpadding="0" cellspacing="0" style="background:#0d1117;padding:40px 20px;">
+<body bgcolor="#0d1117" style="margin:0;padding:0;background-color:#0d1117 !important;font-family:'Poppins',Arial,sans-serif;color:#e8e8e8;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="background-color:#0d1117 !important;padding:40px 20px;">
     <tr>
       <td align="center">
         <table width="560" cellpadding="0" cellspacing="0" style="background:#0d1117;border:1px solid #1e2a3a;border-radius:16px;overflow:hidden;max-width:560px;width:100%;">
@@ -590,15 +594,17 @@ export async function sendReferralWeek1Email(
 
   const htmlContent = `
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" style="color-scheme:dark;background-color:#020810;">
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>One week in — are you getting everything out of this?</title>
 <style>@import url('https://fonts.googleapis.com/css2?family=Poppins:wght@400;600;700&display=swap');</style>
+<meta name="color-scheme" content="dark">
+<meta name="supported-color-schemes" content="dark">
 </head>
-<body style="margin:0;padding:0;background:#0d1117;font-family:'Poppins',Arial,sans-serif;color:#e8e8e8;">
-  <table width="100%" cellpadding="0" cellspacing="0" style="background:#0d1117;padding:40px 20px;">
+<body bgcolor="#0d1117" style="margin:0;padding:0;background-color:#0d1117 !important;font-family:'Poppins',Arial,sans-serif;color:#e8e8e8;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="background-color:#0d1117 !important;padding:40px 20px;">
     <tr>
       <td align="center">
         <table width="560" cellpadding="0" cellspacing="0" style="background:#0d1117;border:1px solid #1e2a3a;border-radius:16px;overflow:hidden;max-width:560px;width:100%;">
@@ -718,15 +724,17 @@ export async function sendReferralWinbackEmail(
 
   const htmlContent = `
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" style="color-scheme:dark;background-color:#020810;">
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>We miss you — and we mean it</title>
 <style>@import url('https://fonts.googleapis.com/css2?family=Poppins:wght@400;600;700&display=swap');</style>
+<meta name="color-scheme" content="dark">
+<meta name="supported-color-schemes" content="dark">
 </head>
-<body style="margin:0;padding:0;background:#0d1117;font-family:'Poppins',Arial,sans-serif;color:#e8e8e8;">
-  <table width="100%" cellpadding="0" cellspacing="0" style="background:#0d1117;padding:40px 20px;">
+<body bgcolor="#0d1117" style="margin:0;padding:0;background-color:#0d1117 !important;font-family:'Poppins',Arial,sans-serif;color:#e8e8e8;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="background-color:#0d1117 !important;padding:40px 20px;">
     <tr>
       <td align="center">
         <table width="560" cellpadding="0" cellspacing="0" style="background:#0d1117;border:1px solid #1e2a3a;border-radius:16px;overflow:hidden;max-width:560px;width:100%;">
@@ -829,15 +837,17 @@ export async function sendTrialExpiredEmail(
 
   const htmlContent = `
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" style="color-scheme:dark;background-color:#020810;">
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>We miss what you had to offer</title>
 <style>@import url('https://fonts.googleapis.com/css2?family=Poppins:wght@400;600;700&display=swap');</style>
+<meta name="color-scheme" content="dark">
+<meta name="supported-color-schemes" content="dark">
 </head>
-<body style="margin:0;padding:0;background:#0d1117;font-family:'Poppins',Arial,sans-serif;color:#e8e8e8;">
-  <table width="100%" cellpadding="0" cellspacing="0" style="background:#0d1117;padding:40px 20px;">
+<body bgcolor="#0d1117" style="margin:0;padding:0;background-color:#0d1117 !important;font-family:'Poppins',Arial,sans-serif;color:#e8e8e8;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="background-color:#0d1117 !important;padding:40px 20px;">
     <tr>
       <td align="center">
         <table width="560" cellpadding="0" cellspacing="0" style="background:#0d1117;border:1px solid #1e2a3a;border-radius:16px;overflow:hidden;max-width:560px;width:100%;">
@@ -999,14 +1009,16 @@ export async function sendAppInviteEmail(email: string, name: string): Promise<v
   const firstName = name.split(" ")[0];
   const htmlContent = `
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" style="color-scheme:dark;background-color:#020810;">
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>Your membership includes this - have you tried it yet?</title>
+<meta name="color-scheme" content="dark">
+<meta name="supported-color-schemes" content="dark">
 </head>
-<body style="margin:0;padding:0;background:#0d1117;font-family:Arial,sans-serif;color:#e8e8e8;">
-  <table width="100%" cellpadding="0" cellspacing="0" style="background:#0d1117;padding:40px 20px;">
+<body bgcolor="#0d1117" style="margin:0;padding:0;background-color:#0d1117 !important;font-family:Arial,sans-serif;color:#e8e8e8;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="background-color:#0d1117 !important;padding:40px 20px;">
     <tr><td align="center">
       <table width="560" cellpadding="0" cellspacing="0" style="background:#0d1117;border:1px solid #1e2a3a;border-radius:16px;overflow:hidden;max-width:560px;width:100%;">
         <tr>
@@ -1123,14 +1135,16 @@ export async function sendMemberWinbackEmail(
   const trialUrl = `https://app.lorettabates.com?ref=${encodeURIComponent(referralCode)}`;
   const htmlContent = `
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" style="color-scheme:dark;background-color:#020810;">
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>You're invited back - one month on me</title>
+<meta name="color-scheme" content="dark">
+<meta name="supported-color-schemes" content="dark">
 </head>
-<body style="margin:0;padding:0;background:#0d1117;font-family:Arial,sans-serif;color:#e8e8e8;">
-  <table width="100%" cellpadding="0" cellspacing="0" style="background:#0d1117;padding:40px 20px;">
+<body bgcolor="#0d1117" style="margin:0;padding:0;background-color:#0d1117 !important;font-family:Arial,sans-serif;color:#e8e8e8;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="background-color:#0d1117 !important;padding:40px 20px;">
     <tr><td align="center">
       <table width="560" cellpadding="0" cellspacing="0" style="background:#0d1117;border:1px solid #1e2a3a;border-radius:16px;overflow:hidden;max-width:560px;width:100%;">
         <tr>
@@ -1259,17 +1273,19 @@ export async function sendNotificationOptInEmail(
   const logoUrl = "https://lorettabates.com/videolibrary.lorettabates.com/wp-content/uploads/2025/04/WELL-2048-x-2048-px.png";
 
   const htmlContent = `<!DOCTYPE html>
-<html lang="en">
+<html lang="en" style="color-scheme:dark;background-color:#020810;">
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>Did you get my message? - WELL Collective</title>
+<meta name="color-scheme" content="dark">
+<meta name="supported-color-schemes" content="dark">
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;1,400;1,500;1,600&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap');
 </style>
 </head>
-<body style="margin:0;padding:0;background:#020812;font-family:'Plus Jakarta Sans','Segoe UI',system-ui,sans-serif;color:#f3f8fc;">
-<table width="100%" cellpadding="0" cellspacing="0" style="background:#020812;padding:32px 16px;">
+<body bgcolor="#020812" style="margin:0;padding:0;background-color:#020812 !important;font-family:'Plus Jakarta Sans','Segoe UI',system-ui,sans-serif;color:#f3f8fc;">
+<table width="100%" cellpadding="0" cellspacing="0" style="background-color:#020812 !important;padding:32px 16px;">
   <tr><td align="center">
     <table width="600" cellpadding="0" cellspacing="0" style="background:#050b14;border:1px solid rgba(132,216,253,0.1);border-radius:16px;overflow:hidden;max-width:600px;width:100%;">
 
@@ -1424,7 +1440,7 @@ export async function sendTrialResumeWinbackEmail(
   const logoUrl = "https://lorettabates.com/videolibrary.lorettabates.com/wp-content/uploads/2025/04/WELL-2048-x-2048-px.png";
 
   const htmlContent = `<!DOCTYPE html>
-<html lang="en">
+<html lang="en" style="color-scheme:dark;background-color:#020810;">
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
@@ -1434,7 +1450,7 @@ export async function sendTrialResumeWinbackEmail(
 </style>
 </head>
 <body style="margin:0;padding:0;background:#020812;font-family:'Plus Jakarta Sans','Helvetica Neue',Arial,sans-serif;color:#f3f8fc;">
-<table width="100%" cellpadding="0" cellspacing="0" style="background:#020812;padding:32px 16px;">
+<table width="100%" cellpadding="0" cellspacing="0" style="background-color:#020812 !important;padding:32px 16px;">
   <tr><td align="center">
     <table width="600" cellpadding="0" cellspacing="0" style="background:#050b14;border:1px solid rgba(132,216,253,0.1);border-radius:16px;overflow:hidden;max-width:600px;width:100%;">
 
@@ -1571,7 +1587,7 @@ export async function sendWellCupWinnerAdminAlert(
   const adminEmail = "loretta@lorettabates.com";
   const htmlContent = `
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" style="color-scheme:dark;background-color:#020810;">
 <head><meta charset="UTF-8" /><style>body{font-family:Arial,sans-serif;background:#0d1117;color:#e8e8e8;margin:0;padding:40px 20px;}</style></head>
 <body>
   <table width="100%" cellpadding="0" cellspacing="0" style="max-width:560px;margin:0 auto;background:#111827;border:1px solid #1e2a3a;border-radius:12px;overflow:hidden;">
