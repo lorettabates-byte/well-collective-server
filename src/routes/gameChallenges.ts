@@ -88,7 +88,7 @@ router.post("/game-challenges", async (req, res) => {
       type: "tribe",
       title: `${challengerName} played ${label} today`,
       body: `They shared their score with you. Give it a try and see how you do!`,
-      link: `/games?challenge=${challengeId}`,
+      link: `/wellness?challenge=${challengeId}`,
       metadata: { challengeId, gameId, challengerScore: score },
     });
 
@@ -96,7 +96,7 @@ router.post("/game-challenges", async (req, res) => {
       title: `${challengerName} played ${label}!`,
       body: `They shared their score. Open the app to play and compare.`,
       tag: "game-challenge",
-      url: `/games?challenge=${challengeId}`,
+      url: `/wellness?challenge=${challengeId}`,
     });
 
     res.status(201).json({ ok: true, challengeId });
@@ -188,7 +188,7 @@ router.post("/game-challenges/:id/respond", async (req, res) => {
     );
 
     // Award 25 bonus points to both players for completing a game together
-    await Promise.all([
+    const [, opponentPointsResult] = await Promise.all([
       awardPoints(challenge.challenger_email, "tribe_challenge_complete", { source: "game_challenge", challengeId: challenge.id }),
       awardPoints(opponentEmail, "tribe_challenge_complete", { source: "game_challenge", challengeId: challenge.id }),
     ]);
@@ -213,7 +213,7 @@ router.post("/game-challenges/:id/respond", async (req, res) => {
       type: "tribe",
       title: `${opponentName} played today`,
       body: resultText,
-      link: `/games?challenge=${challenge.id}`,
+      link: `/wellness?challenge=${challenge.id}`,
       metadata: { challengeId: challenge.id, gameId: challenge.game_id },
     });
 
@@ -221,7 +221,7 @@ router.post("/game-challenges/:id/respond", async (req, res) => {
       title: `${opponentName} played ${label}!`,
       body: resultText,
       tag: "game-challenge-result",
-      url: `/games?challenge=${challenge.id}`,
+      url: `/wellness?challenge=${challenge.id}`,
     });
 
     await createMemberNotification({
@@ -238,6 +238,7 @@ router.post("/game-challenges/:id/respond", async (req, res) => {
       winnerEmail,
       challengerScore: challenge.challenger_score,
       opponentScore: score,
+      opponentPointsAwarded: opponentPointsResult?.awarded ?? false,
     });
   } catch (err) {
     console.error("Respond to game challenge error:", err);
