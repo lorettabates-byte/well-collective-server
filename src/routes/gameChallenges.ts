@@ -245,6 +245,24 @@ router.post("/game-challenges/:id/respond", async (req, res) => {
   }
 });
 
+// DELETE /api/game-challenges/:id — cancel a pending challenge you sent
+router.delete("/game-challenges/:id", async (req, res) => {
+  const email = (req.query.email as string | undefined)?.toLowerCase();
+  if (!email) return res.status(400).json({ error: "email required" });
+
+  try {
+    const { rowCount } = await pool.query(
+      `DELETE FROM game_challenges WHERE id = $1 AND challenger_email = $2 AND status = 'pending'`,
+      [req.params.id, email]
+    );
+    if (rowCount === 0) return res.status(404).json({ error: "Challenge not found or already completed" });
+    res.json({ ok: true });
+  } catch (err) {
+    console.error("Delete game challenge error:", err);
+    res.status(500).json({ error: "Failed to cancel challenge" });
+  }
+});
+
 // GET /api/game-challenges/:id — single challenge for result view
 router.get("/game-challenges/:id", async (req, res) => {
   try {
