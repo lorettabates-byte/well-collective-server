@@ -95,7 +95,7 @@ router.post("/notifications/send-game-invite", async (req, res) => {
     }
 
     const recipientEmail = rows[0].email;
-    const challengeUrl = challengeId ? `/wellness?challenge=${challengeId}` : "/wellness";
+    const challengeUrl = challengeId ? `/wellness?tab=activities&challenge=${challengeId}` : "/wellness";
 
     // Send the push notification
     await sendNotificationToUser(recipientEmail, {

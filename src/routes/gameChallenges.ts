@@ -88,7 +88,7 @@ router.post("/game-challenges", async (req, res) => {
       type: "tribe",
       title: `${challengerName} played ${label} today`,
       body: `They shared their score with you. Give it a try and see how you do!`,
-      link: `/wellness?challenge=${challengeId}`,
+      link: `/wellness?tab=activities&challenge=${challengeId}`,
       metadata: { challengeId, gameId, challengerScore: score },
     });
 
@@ -96,7 +96,7 @@ router.post("/game-challenges", async (req, res) => {
       title: `${challengerName} played ${label}!`,
       body: `They shared their score. Open the app to play and compare.`,
       tag: "game-challenge",
-      url: `/wellness?challenge=${challengeId}`,
+      url: `/wellness?tab=activities&challenge=${challengeId}`,
     });
 
     res.status(201).json({ ok: true, challengeId });
@@ -213,7 +213,7 @@ router.post("/game-challenges/:id/respond", async (req, res) => {
       type: "tribe",
       title: `${opponentName} played today`,
       body: resultText,
-      link: `/wellness?challenge=${challenge.id}`,
+      link: `/wellness?tab=activities&challenge=${challenge.id}`,
       metadata: { challengeId: challenge.id, gameId: challenge.game_id },
     });
 
@@ -221,7 +221,7 @@ router.post("/game-challenges/:id/respond", async (req, res) => {
       title: `${opponentName} played ${label}!`,
       body: resultText,
       tag: "game-challenge-result",
-      url: `/wellness?challenge=${challenge.id}`,
+      url: `/wellness?tab=activities&challenge=${challenge.id}`,
     });
 
     await createMemberNotification({
