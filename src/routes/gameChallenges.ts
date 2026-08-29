@@ -3,6 +3,7 @@ import { pool } from "../db";
 import { findEmailByMemberId, deriveMemberId } from "../utils/memberUtils";
 import { sendNotificationToUser } from "../push";
 import { createMemberNotification } from "../memberNotifications";
+import { awardPoints } from "./points";
 
 const router = Router();
 
@@ -186,17 +187,25 @@ router.post("/game-challenges/:id/respond", async (req, res) => {
       [score, winnerEmail, challenge.id]
     );
 
+    // Award 25 bonus points to both players for completing a game together
+    await Promise.all([
+      awardPoints(challenge.challenger_email, "tribe_challenge_complete", { source: "game_challenge", challengeId: challenge.id }),
+      awardPoints(opponentEmail, "tribe_challenge_complete", { source: "game_challenge", challengeId: challenge.id }),
+    ]);
+
     const nameRow = await pool.query("SELECT name FROM members WHERE email = $1", [opponentEmail]);
     const opponentName = nameRow.rows[0]?.name ?? "Your opponent";
+    const challengerNameRow = await pool.query("SELECT name FROM members WHERE email = $1", [challenge.challenger_email]);
+    const challengerName = challengerNameRow.rows[0]?.name ?? "your friend";
     const label = gameLabel(challenge.game_id);
 
     let resultText: string;
     if (winnerEmail === opponentEmail) {
-      resultText = `${opponentName} played ${label} today and scored ${score} (you scored ${challenge.challenger_score}). Great effort from you both!`;
+      resultText = `${opponentName} played ${label} today and scored ${score} (you scored ${challenge.challenger_score}). You both earned +25 bonus points for playing together!`;
     } else if (winnerEmail === null) {
-      resultText = `${opponentName} played ${label} and matched your score exactly! (${score} each). What a pair.`;
+      resultText = `${opponentName} played ${label} and matched your score exactly (${score} each). You both earned +25 bonus points!`;
     } else {
-      resultText = `${opponentName} played ${label} today - you scored ${challenge.challenger_score}, they scored ${score}. Well played by you both!`;
+      resultText = `${opponentName} played ${label} today - you scored ${challenge.challenger_score}, they scored ${score}. You both earned +25 bonus points for playing together!`;
     }
 
     await createMemberNotification({
@@ -213,6 +222,15 @@ router.post("/game-challenges/:id/respond", async (req, res) => {
       body: resultText,
       tag: "game-challenge-result",
       url: `/games?challenge=${challenge.id}`,
+    });
+
+    await createMemberNotification({
+      memberEmail: opponentEmail,
+      type: "tribe",
+      title: "+25 bonus points earned",
+      body: `You and ${challengerName} both played ${label} today. Bonus points added to your WELL Cup score!`,
+      link: `/well-cup`,
+      metadata: { challengeId: challenge.id, gameId: challenge.game_id },
     });
 
     res.json({
