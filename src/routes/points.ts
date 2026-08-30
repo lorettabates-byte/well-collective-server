@@ -181,6 +181,7 @@ const DAILY_CAPS: Record<string, number> = {
   resistance_training: 1,
   well_activity: 1,
   brain_game: 1,
+  tribe_challenge_complete: 5,
 };
 
 const HISTORY_ACTIVITY_MET: Record<string, { met: number; minutes: number }> = {
