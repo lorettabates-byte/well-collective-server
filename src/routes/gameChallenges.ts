@@ -187,25 +187,41 @@ router.post("/game-challenges/:id/respond", async (req, res) => {
       [score, winnerEmail, challenge.id]
     );
 
-    // Award 25 bonus points to both players for completing a game together
-    const [, opponentPointsResult] = await Promise.all([
+    // Award tribe game points to both players.
+    // First tribe game of the day: +25 (tribe_challenge_complete, cap 1).
+    // Subsequent tribe games: +5 each (tribe_challenge_extra, cap 5).
+    const [challengerPts, opponentPts] = await Promise.all([
       awardPoints(challenge.challenger_email, "tribe_challenge_complete", { source: "game_challenge", challengeId: challenge.id }),
       awardPoints(opponentEmail, "tribe_challenge_complete", { source: "game_challenge", challengeId: challenge.id }),
     ]);
+
+    // If either player already used their +25 cap today, try to award +5 instead
+    const [challengerExtraPts, opponentExtraPts] = await Promise.all([
+      !challengerPts.awarded
+        ? awardPoints(challenge.challenger_email, "tribe_challenge_extra", { source: "game_challenge", challengeId: challenge.id, game: challenge.game_id })
+        : Promise.resolve({ awarded: false, points: 0 }),
+      !opponentPts.awarded
+        ? awardPoints(opponentEmail, "tribe_challenge_extra", { source: "game_challenge", challengeId: challenge.id, game: challenge.game_id })
+        : Promise.resolve({ awarded: false, points: 0 }),
+    ]);
+
+    const opponentPointsAwarded = opponentPts.awarded || opponentExtraPts.awarded;
+    const opponentPointsValue = opponentPts.awarded ? 25 : opponentExtraPts.awarded ? 5 : 0;
 
     const nameRow = await pool.query("SELECT name FROM members WHERE email = $1", [opponentEmail]);
     const opponentName = nameRow.rows[0]?.name ?? "Your opponent";
     const challengerNameRow = await pool.query("SELECT name FROM members WHERE email = $1", [challenge.challenger_email]);
     const challengerName = challengerNameRow.rows[0]?.name ?? "your friend";
     const label = gameLabel(challenge.game_id);
+    const ptsSuffix = opponentPointsValue > 0 ? ` You both earned +${opponentPointsValue} bonus points for playing together!` : "";
 
     let resultText: string;
     if (winnerEmail === opponentEmail) {
-      resultText = `${opponentName} played ${label} today and scored ${score} (you scored ${challenge.challenger_score}). You both earned +25 bonus points for playing together!`;
+      resultText = `${opponentName} played ${label} today and scored ${score} (you scored ${challenge.challenger_score}).${ptsSuffix}`;
     } else if (winnerEmail === null) {
-      resultText = `${opponentName} played ${label} and matched your score exactly (${score} each). You both earned +25 bonus points!`;
+      resultText = `${opponentName} played ${label} and matched your score exactly (${score} each).${ptsSuffix}`;
     } else {
-      resultText = `${opponentName} played ${label} today - you scored ${challenge.challenger_score}, they scored ${score}. You both earned +25 bonus points for playing together!`;
+      resultText = `${opponentName} played ${label} today - you scored ${challenge.challenger_score}, they scored ${score}.${ptsSuffix}`;
     }
 
     await createMemberNotification({
@@ -224,11 +240,12 @@ router.post("/game-challenges/:id/respond", async (req, res) => {
       url: `/wellness?tab=activities&challenge=${challenge.id}`,
     });
 
+    const opponentNotifPts = opponentPts.awarded ? 25 : opponentExtraPts.awarded ? 5 : 0;
     await createMemberNotification({
       memberEmail: opponentEmail,
       type: "tribe",
-      title: "+25 bonus points earned",
-      body: `You and ${challengerName} both played ${label} today. Bonus points added to your WELL Cup score!`,
+      title: opponentNotifPts > 0 ? `+${opponentNotifPts} bonus points earned` : "Game complete",
+      body: `You and ${challengerName} both played ${label} today. ${opponentNotifPts > 0 ? "Bonus points added to your WELL Cup score!" : ""}`,
       link: `/well-cup`,
       metadata: { challengeId: challenge.id, gameId: challenge.game_id },
     });
@@ -238,7 +255,8 @@ router.post("/game-challenges/:id/respond", async (req, res) => {
       winnerEmail,
       challengerScore: challenge.challenger_score,
       opponentScore: score,
-      opponentPointsAwarded: opponentPointsResult?.awarded ?? false,
+      opponentPointsAwarded,
+      opponentPointsValue,
     });
   } catch (err) {
     console.error("Respond to game challenge error:", err);
