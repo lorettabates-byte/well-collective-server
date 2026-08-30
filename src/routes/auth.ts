@@ -10,6 +10,32 @@ const JWT_SECRET = process.env.JWT_SECRET || "well-collective-secret-key-change-
 const WORDPRESS_URL = process.env.WORDPRESS_URL || "https://lorettabates.com";
 const WELL_API_KEY = process.env.WELL_API_KEY || "";
 
+// Per-email failed login tracking — prevents WordPress's IP-level rate limiter
+// from locking all app users out after one person enters a wrong password.
+// WordPress sees all requests from the server's single IP, so we enforce our
+// own per-email limit instead and skip the WP call when already locked.
+const loginAttempts = new Map<string, { count: number; resetAt: number }>();
+const LOGIN_MAX = 8;
+const LOGIN_WINDOW_MS = 10 * 60 * 1000; // 10 minutes
+
+function rlCheck(email: string) {
+  const now = Date.now();
+  const e = loginAttempts.get(email);
+  if (!e || now > e.resetAt) return { blocked: false };
+  if (e.count >= LOGIN_MAX) {
+    const mins = Math.ceil((e.resetAt - now) / 60000);
+    return { blocked: true, mins };
+  }
+  return { blocked: false };
+}
+function rlFail(email: string) {
+  const now = Date.now();
+  const e = loginAttempts.get(email);
+  if (!e || now > e.resetAt) loginAttempts.set(email, { count: 1, resetAt: now + LOGIN_WINDOW_MS });
+  else e.count++;
+}
+function rlClear(email: string) { loginAttempts.delete(email); }
+
 // Demo accounts for app-store reviewers. These always get a far-future
 // trial so reviewers can log in and see the full app without a subscription.
 const DEMO_ACCOUNTS = new Set([
@@ -74,6 +100,16 @@ router.post("/member-login", async (req, res) => {
     return res.status(400).json({ error: "Username and password required" });
   }
 
+  const emailKey = username.trim().toLowerCase();
+
+  // Check our own per-email rate limit before hitting WordPress
+  const { blocked, mins } = rlCheck(emailKey) as { blocked: boolean; mins?: number };
+  if (blocked) {
+    return res.status(429).json({
+      error: `Too many failed attempts. Please try again in ${mins} minute${mins === 1 ? "" : "s"}.`,
+    });
+  }
+
   // Forward the real client IP so WordPress rate-limiters count per-user,
   // not per our server's fixed IP (which would accumulate across all users).
   const clientIp = (req.headers["x-forwarded-for"] as string | undefined)?.split(",")[0].trim()
@@ -99,8 +135,18 @@ router.post("/member-login", async (req, res) => {
     };
 
     if (!wpRes.ok) {
+      rlFail(emailKey);
       // Strip HTML tags, fix missing punctuation between sentences
       const raw = (wpData.message || "Invalid username or password").replace(/<[^>]*>/g, "");
+      // Suppress WordPress's own rate-limit messages — ours are clearer
+      if (/too many|maximum.*retr|exceeded/i.test(raw)) {
+        const rl = rlCheck(emailKey) as { blocked: boolean; mins?: number };
+        return res.status(429).json({
+          error: rl.blocked
+            ? `Too many failed attempts. Please try again in ${rl.mins} minute${rl.mins === 1 ? "" : "s"}.`
+            : "Incorrect password. Please try again.",
+        });
+      }
       const message = raw.replace(/([a-z])\s+(Please|Try|Wait)/g, "$1. $2");
       return res.status(401).json({ error: message });
     }
@@ -108,6 +154,7 @@ router.post("/member-login", async (req, res) => {
     const email = wpData.email || "";
     const name = wpData.name || username;
 
+    rlClear(emailKey);
     const token = jwt.sign({ email, name }, JWT_SECRET, { expiresIn: "30d" });
 
     // Track login event — fire-and-forget, never blocks the response
