@@ -862,6 +862,36 @@ router.post("/admin/mark-monthly-winner", requireAdmin, async (req, res) => {
   }
 });
 
+// POST /api/admin/award-monthly-winner  { email, month: "YYYY-MM", points: number }
+// Marks a member as monthly winner, updates DB, and sends the win push notification.
+router.post("/admin/award-monthly-winner", requireAdmin, async (req, res) => {
+  const { email, month, points } = req.body as { email?: string; month?: string; points?: number };
+  if (!email || !month || points === undefined) {
+    return res.status(400).json({ error: "email, month (YYYY-MM), and points required" });
+  }
+  try {
+    const winAt = new Date(`${month}-15T12:00:00Z`).toISOString();
+    const { rowCount } = await pool.query(
+      `UPDATE members SET last_monthly_win_at = $2, last_monthly_win_pts = $3 WHERE email = $1`,
+      [email.toLowerCase(), winAt, points]
+    );
+    if (!rowCount) return res.status(404).json({ error: "Member not found" });
+
+    const monthName = new Date(`${month}-15T12:00:00Z`).toLocaleString("default", { month: "long", year: "numeric" });
+    await sendNotificationToUser(email.toLowerCase(), {
+      title: `🏆 You're the ${monthName} WELL Cup Leader!`,
+      body: `${points.toLocaleString()} points this month — you've earned a free month of WELL Collective. Loretta will be in touch!`,
+      tag: "well-cup-monthly-win",
+      url: "/well-cup",
+    });
+
+    res.json({ ok: true, email, month: monthName, points });
+  } catch (err) {
+    console.error("Award monthly winner error:", err);
+    res.status(500).json({ error: String(err) });
+  }
+});
+
 // GET /api/admin/wp-members-raw — temporary debug: raw WP member list without comparison
 router.get("/admin/wp-members-raw", requireAdmin, async (_req, res) => {
   try {
