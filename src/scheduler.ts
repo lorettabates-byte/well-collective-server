@@ -827,24 +827,34 @@ async function sendWeeklySpotlightAwards(): Promise<void> {
 }
 
 async function crownMonthlyWinner(): Promise<void> {
-  // Runs on the last day of each month — find the member with the most points this month.
-  // Exclude whoever won last month so the same person can't win back-to-back months.
+  // Runs on the 1st of each month to crown the PREVIOUS month's winner.
+  // SQL_MONTH_START resolves to the current month (e.g. Sept 1 on Sept 1), so we
+  // must use an explicit previous-month range instead of SQL_MONTH_START.
+  const prevMonthStart = `(date_trunc('month', now() - INTERVAL '5 hours' - INTERVAL '1 month') + INTERVAL '5 hours')`;
+  const prevMonthEnd   = `(date_trunc('month', now() - INTERVAL '5 hours') + INTERVAL '5 hours')`;
+
+  // Exclude whoever won the month before the one being awarded (i.e. two months ago).
+  // Running on Sept 1 awarding August: exclude July winners (now() - 2 months).
+  // This matches the live leaderboard rule: last month's winner sits out this month.
   const { rows } = await pool.query(`
     SELECT al.member_email, m.name, SUM(al.points)::int AS total
     FROM activity_logs al
     JOIN members m ON m.email = al.member_email
-    WHERE al.created_at >= ${SQL_MONTH_START}
+    WHERE al.created_at >= ${prevMonthStart}
+      AND al.created_at < ${prevMonthEnd}
       AND m.show_on_leaderboard = TRUE
       AND (m.last_monthly_win_at IS NULL
            OR date_trunc('month', m.last_monthly_win_at AT TIME ZONE '${TIMEZONE}')
-              != date_trunc('month', (now() AT TIME ZONE '${TIMEZONE}') - INTERVAL '1 month'))
+              != date_trunc('month', (now() AT TIME ZONE '${TIMEZONE}') - INTERVAL '2 months'))
     GROUP BY al.member_email, m.name
     ORDER BY total DESC
     LIMIT 1
   `);
   if (rows.length === 0) return;
 
-  const monthName = new Date().toLocaleString("default", { month: "long", year: "numeric" });
+  const prevMonthDate = new Date();
+  prevMonthDate.setMonth(prevMonthDate.getMonth() - 1);
+  const monthName = prevMonthDate.toLocaleString("default", { month: "long", year: "numeric" });
   console.log(`[WELL CUP] ${monthName} monthly leader: ${rows[0].member_email} (${rows[0].total} pts)`);
 
   await sendNotificationToUser(rows[0].member_email, {
