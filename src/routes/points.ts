@@ -1754,4 +1754,27 @@ router.post("/points/admin-award", requireAdmin, async (req, res) => {
   }
 });
 
+router.get("/admin/member-activity", requireAdmin, async (req, res) => {
+  const { email, days } = req.query as { email?: string; days?: string };
+  if (!email) return res.status(400).json({ error: "email is required" });
+
+  const lookbackDays = Math.min(Math.max(parseInt(days ?? "30", 10) || 30, 1), 365);
+
+  try {
+    const { rows } = await pool.query(
+      `SELECT activity_type, points, metadata, created_at
+       FROM activity_logs
+       WHERE member_email = $1
+         AND created_at >= NOW() - ($2 || ' days')::interval
+       ORDER BY created_at DESC
+       LIMIT 500`,
+      [email.toLowerCase(), lookbackDays]
+    );
+    res.json({ activities: rows });
+  } catch (err) {
+    console.error("Member activity fetch error:", err);
+    res.status(500).json({ error: "Failed to fetch activity" });
+  }
+});
+
 export default router;
