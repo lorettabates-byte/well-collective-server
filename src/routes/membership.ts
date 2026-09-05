@@ -119,4 +119,58 @@ router.get("/membership/status", async (req, res) => {
   res.json({ active });
 });
 
+// One-time restoration endpoint — restores all active trial members back into UMP
+// after the trial level was accidentally deleted. Safe to call multiple times (UMP upserts).
+router.post("/admin/restore-ump-trials", async (req, res) => {
+  const adminKey = req.headers["x-admin-key"];
+  if (adminKey !== process.env.WELL_API_KEY) {
+    return res.status(401).json({ error: "Unauthorized" });
+  }
+
+  const levelId = parseInt((req.query.level_id as string) || "7", 10);
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  try {
+    const { rows } = await pool.query(`
+      SELECT name, email, trial_ends_at
+      FROM members
+      WHERE trial_ends_at >= CURRENT_DATE
+        AND membership_status != 'active'
+        AND email NOT IN ('rettabates@yahoo.com', 'demo@wellcollective.app')
+      ORDER BY trial_ends_at
+    `);
+
+    const results: { email: string; name: string; days: number; ok: boolean; error?: string }[] = [];
+
+    for (const member of rows) {
+      const endsAt = new Date(member.trial_ends_at);
+      endsAt.setHours(0, 0, 0, 0);
+      const daysRemaining = Math.max(1, Math.round((endsAt.getTime() - today.getTime()) / (1000 * 60 * 60 * 24)));
+
+      try {
+        const wpRes = await fetch(`${WORDPRESS_URL}/wp-json/well/v1/create-trial`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "X-WELL-API-KEY": WELL_API_KEY },
+          body: JSON.stringify({ email: member.email, name: member.name, trial_days: daysRemaining, level_id: levelId }),
+          signal: AbortSignal.timeout(10000),
+        });
+        const text = await wpRes.text();
+        results.push({ email: member.email, name: member.name, days: daysRemaining, ok: wpRes.ok, error: wpRes.ok ? undefined : text });
+      } catch (err) {
+        results.push({ email: member.email, name: member.name, days: daysRemaining, ok: false, error: String(err) });
+      }
+
+      await new Promise(r => setTimeout(r, 200));
+    }
+
+    const succeeded = results.filter(r => r.ok).length;
+    const failed = results.filter(r => !r.ok);
+    res.json({ total: results.length, succeeded, failed });
+  } catch (err) {
+    console.error("Restore UMP trials error:", err);
+    res.status(500).json({ error: String(err) });
+  }
+});
+
 export default router;
