@@ -119,18 +119,40 @@ router.get("/membership/status", async (req, res) => {
   res.json({ active });
 });
 
-// One-time restoration endpoint — restores all active trial members back into UMP
-// after the trial level was accidentally deleted. Safe to call multiple times (UMP upserts).
-router.post("/admin/restore-ump-trials", async (req, res) => {
+// Repair endpoint — uses assign-level to directly set UMP level for a list of members.
+// POST body: { emails: string[], level_id: number, days: number }
+// Used to repair members incorrectly assigned by the now-removed create-trial restore endpoint.
+router.post("/admin/repair-ump-levels", async (req, res) => {
   const adminKey = req.headers["x-admin-key"];
   if (adminKey !== process.env.WELL_API_KEY) {
     return res.status(401).json({ error: "Unauthorized" });
   }
 
-  const levelId = parseInt((req.query.level_id as string) || "7", 10);
+  const { emails, level_id, days } = req.body as { emails?: string[]; level_id?: number; days?: number };
+  if (Array.isArray(emails) && emails.length > 0 && level_id && days) {
+    // Manual list mode: restore specific emails to a given level
+    const results: { email: string; ok: boolean; error?: string }[] = [];
+    for (const email of emails) {
+      try {
+        const wpRes = await fetch(`${WORDPRESS_URL}/wp-json/well/v1/assign-level`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "X-WELL-API-KEY": WELL_API_KEY },
+          body: JSON.stringify({ email: email.toLowerCase().trim(), level_id, days }),
+          signal: AbortSignal.timeout(10000),
+        });
+        const text = await wpRes.text();
+        results.push({ email, ok: wpRes.ok, error: wpRes.ok ? undefined : text });
+      } catch (err) {
+        results.push({ email, ok: false, error: String(err) });
+      }
+      await new Promise(r => setTimeout(r, 200));
+    }
+    return res.json({ total: results.length, succeeded: results.filter(r => r.ok).length, failed: results.filter(r => !r.ok) });
+  }
+
+  // Auto mode: restore all DB trial members to Level 7 with correct days remaining
   const today = new Date();
   today.setHours(0, 0, 0, 0);
-
   try {
     const { rows } = await pool.query(`
       SELECT name, email, trial_ends_at
@@ -142,17 +164,15 @@ router.post("/admin/restore-ump-trials", async (req, res) => {
     `);
 
     const results: { email: string; name: string; days: number; ok: boolean; error?: string }[] = [];
-
     for (const member of rows) {
       const endsAt = new Date(member.trial_ends_at);
       endsAt.setHours(0, 0, 0, 0);
       const daysRemaining = Math.max(1, Math.round((endsAt.getTime() - today.getTime()) / (1000 * 60 * 60 * 24)));
-
       try {
-        const wpRes = await fetch(`${WORDPRESS_URL}/wp-json/well/v1/create-trial`, {
+        const wpRes = await fetch(`${WORDPRESS_URL}/wp-json/well/v1/assign-level`, {
           method: "POST",
           headers: { "Content-Type": "application/json", "X-WELL-API-KEY": WELL_API_KEY },
-          body: JSON.stringify({ email: member.email, name: member.name, trial_days: daysRemaining, level_id: levelId }),
+          body: JSON.stringify({ email: member.email, level_id: 7, days: daysRemaining }),
           signal: AbortSignal.timeout(10000),
         });
         const text = await wpRes.text();
@@ -160,15 +180,13 @@ router.post("/admin/restore-ump-trials", async (req, res) => {
       } catch (err) {
         results.push({ email: member.email, name: member.name, days: daysRemaining, ok: false, error: String(err) });
       }
-
       await new Promise(r => setTimeout(r, 200));
     }
-
     const succeeded = results.filter(r => r.ok).length;
     const failed = results.filter(r => !r.ok);
     res.json({ total: results.length, succeeded, failed });
   } catch (err) {
-    console.error("Restore UMP trials error:", err);
+    console.error("Repair UMP levels error:", err);
     res.status(500).json({ error: String(err) });
   }
 });
