@@ -164,7 +164,24 @@ router.post("/member-login", async (req, res) => {
       [email, JSON.stringify({ via: "member-login" })]
     ).catch(() => {});
 
-    res.json({ token, user: { email, name } });
+    // Look up trial end date so the app can store it in localStorage
+    // (same gate AuthGate uses: memberTrialEndsAt). Active trial members
+    // who log in via WP credentials would otherwise see SubscribeGate.
+    let trialEndsAt: string | undefined;
+    try {
+      const today = new Date().toISOString().slice(0, 10);
+      const { rows } = await pool.query(
+        "SELECT trial_ends_at FROM members WHERE email = $1 AND trial_ends_at >= $2",
+        [email, today]
+      );
+      if (rows[0]?.trial_ends_at) {
+        trialEndsAt = new Date(rows[0].trial_ends_at).toISOString().slice(0, 10);
+      }
+    } catch {
+      // Non-fatal — trial date is a convenience, not required for login
+    }
+
+    res.json({ token, user: { email, name }, trialEndsAt });
   } catch (err) {
     console.error("Member login error:", err);
     res.status(500).json({ error: "Login failed" });
