@@ -388,7 +388,8 @@ router.get("/analytics/dashboard", requireAdmin, async (_req, res) => {
     SELECT
       COUNT(*) FILTER (WHERE membership_source = 'iap_apple' AND membership_status = 'active') AS active_count,
       COUNT(*) FILTER (WHERE membership_source = 'iap_apple') AS total_count,
-      COUNT(*) FILTER (WHERE membership_source = 'iap_apple' AND created_at >= DATE_TRUNC('month', CURRENT_DATE)) AS new_this_month
+      COUNT(*) FILTER (WHERE membership_source = 'iap_apple' AND created_at >= DATE_TRUNC('month', CURRENT_DATE)) AS new_this_month,
+      COUNT(*) FILTER (WHERE COALESCE(membership_source, 'web') != 'iap_apple' AND membership_status = 'active') AS web_active_count
     FROM members
   `);
 
