@@ -878,6 +878,7 @@ export async function initDb(): Promise<void> {
   // points if the friend later converts to a paid member.
   await pool.query(`ALTER TABLE members ADD COLUMN IF NOT EXISTS membership_status TEXT DEFAULT 'trial';`);
   await pool.query(`ALTER TABLE members ADD COLUMN IF NOT EXISTS membership_source TEXT DEFAULT 'web';`);
+  await pool.query(`ALTER TABLE members ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT now();`);
   await pool.query(`ALTER TABLE members ADD COLUMN IF NOT EXISTS referral_code TEXT UNIQUE;`);
   await pool.query(`ALTER TABLE members ADD COLUMN IF NOT EXISTS referred_by TEXT;`);
   await pool.query(`ALTER TABLE members ADD COLUMN IF NOT EXISTS referral_week1_email_sent BOOLEAN NOT NULL DEFAULT FALSE;`);

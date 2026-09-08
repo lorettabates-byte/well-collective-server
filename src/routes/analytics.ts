@@ -392,6 +392,18 @@ router.get("/analytics/dashboard", requireAdmin, async (_req, res) => {
     FROM members
   `);
 
+  // ── All members with source detail (for source breakdown list) ────
+  const membersBySourceRows = await q("membersBySource", `
+    SELECT
+      email,
+      name,
+      membership_status,
+      COALESCE(membership_source, 'web') AS membership_source,
+      created_at
+    FROM members
+    ORDER BY created_at DESC NULLS LAST
+  `);
+
   // ── Tribe Game Challenges (invites) ──────────────────────────────
   const gameChallengeStatsRows = await q("gameChallengeStats", `
     SELECT
@@ -441,7 +453,23 @@ router.get("/analytics/dashboard", requireAdmin, async (_req, res) => {
     gameChallengeStats: gameChallengeStatsRows[0] ?? null,
     gameChallengesByGame: gameChallengesByGameRows,
     appleIap: appleIapRows[0] ?? null,
+    membersBySource: membersBySourceRows,
   });
+});
+
+// Update a member's membership source (e.g. retroactively tag Apple IAP members).
+router.patch("/analytics/member-source", requireAdmin, async (req, res) => {
+  const { email, source } = req.body as { email?: string; source?: string };
+  if (!email || !source) return res.status(400).json({ error: "email and source required" });
+  const allowed = ["iap_apple", "web", "trial"];
+  if (!allowed.includes(source)) return res.status(400).json({ error: "invalid source" });
+  try {
+    await pool.query("UPDATE members SET membership_source = $1 WHERE email = $2", [source, email.toLowerCase()]);
+    res.json({ ok: true });
+  } catch (err) {
+    console.error("Update member source error:", err);
+    res.status(500).json({ error: "Failed to update" });
+  }
 });
 
 // Quick stats card for the Admin home page — cheap aggregate queries only.
