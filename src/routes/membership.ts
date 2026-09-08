@@ -21,9 +21,9 @@ router.post("/iap/register", async (req, res) => {
 
   try {
     await pool.query(
-      `INSERT INTO members (email, name, membership_status)
-       VALUES ($1, $2, 'active')
-       ON CONFLICT (email) DO UPDATE SET membership_status = 'active'`,
+      `INSERT INTO members (email, name, membership_status, membership_source)
+       VALUES ($1, $2, 'active', 'iap_apple')
+       ON CONFLICT (email) DO UPDATE SET membership_status = 'active', membership_source = 'iap_apple'`,
       [email, name]
     );
 
@@ -68,9 +68,9 @@ router.post("/iap/activate", async (req, res) => {
       }).catch((err) => console.error("IAP UMP activation error:", err));
     }
 
-    // Mark active in our database
+    // Mark active in our database and record Apple IAP as the source
     await pool.query(
-      "UPDATE members SET membership_status = 'active' WHERE email = $1",
+      "UPDATE members SET membership_status = 'active', membership_source = 'iap_apple' WHERE email = $1",
       [email]
     );
 

@@ -383,6 +383,15 @@ router.get("/analytics/dashboard", requireAdmin, async (_req, res) => {
     ORDER BY day
   `);
 
+  // ── Apple IAP members & revenue ───────────────────────────────────
+  const appleIapRows = await q("appleIap", `
+    SELECT
+      COUNT(*) FILTER (WHERE membership_source = 'iap_apple' AND membership_status = 'active') AS active_count,
+      COUNT(*) FILTER (WHERE membership_source = 'iap_apple') AS total_count,
+      COUNT(*) FILTER (WHERE membership_source = 'iap_apple' AND created_at >= DATE_TRUNC('month', CURRENT_DATE)) AS new_this_month
+    FROM members
+  `);
+
   // ── Tribe Game Challenges (invites) ──────────────────────────────
   const gameChallengeStatsRows = await q("gameChallengeStats", `
     SELECT
@@ -431,6 +440,7 @@ router.get("/analytics/dashboard", requireAdmin, async (_req, res) => {
     brainGameDaily: brainGameDailyRows,
     gameChallengeStats: gameChallengeStatsRows[0] ?? null,
     gameChallengesByGame: gameChallengesByGameRows,
+    appleIap: appleIapRows[0] ?? null,
   });
 });
 

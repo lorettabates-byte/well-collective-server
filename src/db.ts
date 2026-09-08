@@ -877,6 +877,7 @@ export async function initDb(): Promise<void> {
   // The referrer gets 25 points when the friend signs up, and both get 50
   // points if the friend later converts to a paid member.
   await pool.query(`ALTER TABLE members ADD COLUMN IF NOT EXISTS membership_status TEXT DEFAULT 'trial';`);
+  await pool.query(`ALTER TABLE members ADD COLUMN IF NOT EXISTS membership_source TEXT DEFAULT 'web';`);
   await pool.query(`ALTER TABLE members ADD COLUMN IF NOT EXISTS referral_code TEXT UNIQUE;`);
   await pool.query(`ALTER TABLE members ADD COLUMN IF NOT EXISTS referred_by TEXT;`);
   await pool.query(`ALTER TABLE members ADD COLUMN IF NOT EXISTS referral_week1_email_sent BOOLEAN NOT NULL DEFAULT FALSE;`);
