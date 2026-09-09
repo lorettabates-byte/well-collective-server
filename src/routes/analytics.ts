@@ -1,6 +1,7 @@
 import { Router } from "express";
 import { pool } from "../db";
 import { requireAdmin } from "../middleware/adminAuth";
+import { sendNotificationToUser } from "../push";
 
 const router = Router();
 
@@ -507,6 +508,53 @@ router.get("/analytics/admin-stats", requireAdmin, async (_req, res) => {
     console.error("Admin stats error:", err);
     res.status(500).json({ error: "Failed to load stats" });
   }
+});
+
+// Award 100 WELL Escape points to a list of members and send them a thank-you notification.
+// Idempotent per retreat: won't double-award if the same email + retreat_name already exists.
+router.post("/admin/retreat/award-points", requireAdmin, async (req, res) => {
+  const { retreat_name, emails } = req.body as { retreat_name?: string; emails?: string[] };
+  if (!retreat_name || !Array.isArray(emails) || emails.length === 0) {
+    return res.status(400).json({ error: "retreat_name and emails[] required" });
+  }
+
+  const results: { email: string; awarded: boolean; notified: boolean; reason?: string }[] = [];
+
+  for (const rawEmail of emails) {
+    const email = rawEmail.toLowerCase().trim();
+
+    // Idempotency check — skip if already awarded for this retreat
+    const { rows: existing } = await pool.query(
+      `SELECT id FROM activity_logs
+       WHERE member_email = $1 AND activity_type = 'well_escape'
+         AND metadata->>'retreat' = $2`,
+      [email, retreat_name]
+    );
+
+    if (existing.length > 0) {
+      results.push({ email, awarded: false, notified: false, reason: "already awarded" });
+      continue;
+    }
+
+    // Award 100 points
+    await pool.query(
+      `INSERT INTO activity_logs (member_email, activity_type, points, metadata)
+       VALUES ($1, 'well_escape', 100, $2)`,
+      [email, JSON.stringify({ retreat: retreat_name })]
+    );
+
+    // Send personalised push notification
+    const { sent } = await sendNotificationToUser(email, {
+      title: "WELL Escape Points",
+      body: `I had such an incredible time with you at ${retreat_name}! You've earned 100 WELL Cup points for attending. Thank you for being there.`,
+      url: "/wellcup",
+      tag: "well-escape",
+    }).catch(() => ({ sent: 0 }));
+
+    results.push({ email, awarded: true, notified: sent > 0 });
+  }
+
+  res.json({ results });
 });
 
 export default router;
