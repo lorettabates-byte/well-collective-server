@@ -194,7 +194,7 @@ router.post("/member-login", async (req, res) => {
 // their name/email here is logged back into their existing trial (same
 // trialEndsAt) instead of being rejected or having the clock reset.
 router.post("/start-trial", async (req, res) => {
-  const { email, name, referralCode } = req.body as { email?: string; name?: string; referralCode?: string };
+  const { email, name, referralCode, password } = req.body as { email?: string; name?: string; referralCode?: string; password?: string };
   if (!email?.trim()) {
     return res.status(400).json({ error: "Email is required" });
   }
@@ -372,7 +372,7 @@ router.post("/start-trial", async (req, res) => {
     fetch(`${WORDPRESS_URL}/wp-json/well/v1/create-trial`, {
       method: "POST",
       headers: { "Content-Type": "application/json", "X-WELL-API-KEY": WELL_API_KEY },
-      body: JSON.stringify({ email: normalizedEmail, name: effectiveName, trial_days: trialDays }),
+      body: JSON.stringify({ email: normalizedEmail, name: effectiveName, trial_days: trialDays, user_pass: password || undefined }),
       signal: AbortSignal.timeout(10000),
     })
       .then(async (r) => {
