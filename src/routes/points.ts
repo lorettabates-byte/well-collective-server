@@ -142,6 +142,8 @@ export const POINT_VALUES: Record<string, number> = {
   well_activity: 15,
   brain_game: 20,
   brain_game_extra: 5,
+  brain_game_challenge: 25,
+  brain_game_challenge_extra: 5,
   event_attend: 25,
   well_escape: 100,
   tribe_add: 5,
@@ -184,6 +186,8 @@ const DAILY_CAPS: Record<string, number> = {
   well_activity: 1,
   brain_game: 1,
   brain_game_extra: 5,
+  brain_game_challenge: 1,
+  brain_game_challenge_extra: 5,
   tribe_challenge_complete: 1,
   tribe_challenge_extra: 5,
 };
