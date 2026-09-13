@@ -20,6 +20,17 @@ export async function initDb(): Promise<void> {
   await pool.query(`ALTER TABLE push_subscriptions ADD COLUMN IF NOT EXISTS user_email TEXT;`);
 
   await pool.query(`
+    CREATE TABLE IF NOT EXISTS device_tokens (
+      id SERIAL PRIMARY KEY,
+      user_email TEXT NOT NULL,
+      token TEXT NOT NULL,
+      platform TEXT NOT NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      UNIQUE (user_email, token)
+    );
+  `);
+
+  await pool.query(`
     CREATE TABLE IF NOT EXISTS content_schedule (
       date DATE PRIMARY KEY,
       weekly_theme JSONB,
@@ -566,6 +577,7 @@ export async function initDb(): Promise<void> {
   // of RSVPing into a class that's already at capacity.
   await pool.query(`ALTER TABLE events ADD COLUMN IF NOT EXISTS sold_out BOOLEAN NOT NULL DEFAULT false;`);
   await pool.query(`ALTER TABLE events ADD COLUMN IF NOT EXISTS url TEXT;`);
+  await pool.query(`ALTER TABLE events ADD COLUMN IF NOT EXISTS is_well_escape BOOLEAN NOT NULL DEFAULT false;`);
 
   await pool.query(`
     CREATE TABLE IF NOT EXISTS event_rsvps (

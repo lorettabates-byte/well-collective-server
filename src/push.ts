@@ -1,7 +1,27 @@
 import webpush from "web-push";
+import { initializeApp, getApps, cert } from "firebase-admin/app";
+import { getMessaging } from "firebase-admin/messaging";
 import { pool } from "./db";
 import { verifyMembership } from "./membership";
 import { deriveMemberId } from "./utils/memberUtils";
+
+// Initialise Firebase Admin once, using the service account JSON stored in
+// the FIREBASE_SERVICE_ACCOUNT env var (the full JSON string, not a file path).
+let fcmReady = false;
+try {
+  if (process.env.FIREBASE_SERVICE_ACCOUNT) {
+    const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
+    if (!getApps().length) {
+      initializeApp({ credential: cert(serviceAccount) });
+    }
+    fcmReady = true;
+    console.log("[FCM] Firebase Admin initialised");
+  } else {
+    console.log("[FCM] FIREBASE_SERVICE_ACCOUNT not set — native push disabled");
+  }
+} catch (err) {
+  console.error("[FCM] Failed to initialise Firebase Admin:", err);
+}
 
 const LOGO_URL = "https://app.lorettabates.com/icons/notification-icon-v2.png";
 const BADGE_URL = "https://app.lorettabates.com/icons/notification-badge-v2.png";
@@ -115,6 +135,41 @@ function buildPayload(payload: NotificationPayload): string {
   });
 }
 
+async function sendFcmToTokens(
+  tokens: { token: string; platform: string }[],
+  payload: NotificationPayload
+): Promise<{ sent: number; removed: number }> {
+  if (!fcmReady || tokens.length === 0) return { sent: 0, removed: 0 };
+  let sent = 0;
+  let removed = 0;
+  await Promise.all(
+    tokens.map(async ({ token, platform }) => {
+      try {
+        const message: import("firebase-admin/messaging").Message = {
+          token,
+          notification: { title: payload.title, body: payload.body },
+          ...(platform === "android"
+            ? { android: { notification: { color: BRAND_COLOR, icon: "notification_icon", clickAction: payload.url || "/" } } }
+            : { apns: { payload: { aps: { badge: 1, sound: "default" } } } }),
+          data: { url: payload.url || "/", tag: payload.tag || "" },
+        };
+        await getMessaging().send(message);
+        sent += 1;
+      } catch (err) {
+        const code = (err as { code?: string }).code;
+        if (code === "messaging/registration-token-not-registered" || code === "messaging/invalid-registration-token") {
+          await pool.query("DELETE FROM device_tokens WHERE token = $1", [token]);
+          removed += 1;
+          console.log(`[FCM] Removed expired token (${code})`);
+        } else {
+          console.error("[FCM] Send failed:", err);
+        }
+      }
+    })
+  );
+  return { sent, removed };
+}
+
 /**
  * Sends a notification to a specific user by email.
  * Skips if the user has no active subscription.
@@ -186,10 +241,10 @@ export async function sendNotificationToUser(
     [email]
   );
 
-  if (rows.length === 0) {
-    console.log(`[PUSH] No subscriptions found for ${email}`);
-    return { sent: 0, removed: 0, blocked: 0 };
-  }
+  const { rows: deviceRows } = await pool.query<{ token: string; platform: string }>(
+    "SELECT token, platform FROM device_tokens WHERE user_email = $1",
+    [email]
+  );
 
   const body = buildPayload(payload);
   let sent = 0;
@@ -204,7 +259,7 @@ export async function sendNotificationToUser(
       try {
         await webpush.sendNotification(subscription, body);
         sent += 1;
-        console.log(`[PUSH] Successfully sent notification to ${email}`);
+        console.log(`[PUSH] Successfully sent web notification to ${email}`);
       } catch (err) {
         const statusCode = (err as { statusCode?: number }).statusCode;
         if (statusCode === 404 || statusCode === 410) {
@@ -217,6 +272,14 @@ export async function sendNotificationToUser(
       }
     })
   );
+
+  const fcmResult = await sendFcmToTokens(deviceRows, payload);
+  sent += fcmResult.sent;
+  removed += fcmResult.removed;
+
+  if (sent === 0 && deviceRows.length === 0 && rows.length === 0) {
+    console.log(`[PUSH] No subscriptions found for ${email}`);
+  }
 
   console.log(`[PUSH] Summary for ${email} - Sent: ${sent}, Removed: ${removed}`);
   return { sent, removed, blocked: 0 };
@@ -246,6 +309,10 @@ export async function broadcastNotification(
 
   const { rows } = await pool.query<{ endpoint: string; p256dh: string; auth: string; user_email: string | null }>(
     "SELECT endpoint, p256dh, auth, user_email FROM push_subscriptions"
+  );
+
+  const { rows: allDeviceRows } = await pool.query<{ token: string; platform: string; user_email: string }>(
+    "SELECT token, platform, user_email FROM device_tokens"
   );
 
   console.log(`[PUSH] Found ${rows.length} total subscriptions`);
@@ -366,6 +433,20 @@ export async function broadcastNotification(
       }
     })
   );
+
+  // Also send to native device tokens (iOS/Android app installs)
+  const eligibleDeviceRows = allDeviceRows.filter((r) => {
+    const userEmail = r.user_email.toLowerCase();
+    if (joinedAfterContentEmails.has(userEmail)) return false;
+    if (blockedBySenderEmails.has(userEmail)) return false;
+    if (!isCategoryEnabled(payload, settingsByEmail.get(userEmail) ?? null)) return false;
+    if (!isScheduleSlotEnabled(payload, scheduleByEmail.get(userEmail) ?? null)) return false;
+    return true;
+  });
+
+  const fcmResult = await sendFcmToTokens(eligibleDeviceRows, payload);
+  sent += fcmResult.sent;
+  removed += fcmResult.removed;
 
   console.log(`[PUSH] Summary - Sent: ${sent}, Removed: ${removed}, Blocked: ${blocked}`);
   return { sent, removed, blocked };
