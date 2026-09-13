@@ -55,26 +55,40 @@ export interface NotificationPayload {
 // the client) that gates it. Tags not listed here (e.g. "test", "new-signup")
 // are admin/diagnostic notifications and are never filtered.
 const TAG_TO_CATEGORY: Record<string, string> = {
+  // Content
   "blog-post": "newBlogs",
   "loretta-note": "general",
   "weekly-theme": "weeklyTheme",
   "daily-inspiration": "dailyInspiration",
+  "motivation-boost": "dailyInspiration",
   "livestream-reminder": "general",
-  community: "community",
   "new-event": "newEvents",
   "new-video": "general",
   "new-song": "newSongs",
-  "motivation-boost": "dailyInspiration",
-  "well-check": "general",
-  "well-cup-spotlight": "general",
-  "scheduled-notification": "general",
-  message: "replies",
+  "well-escape": "newEvents",
+  // Community & mentions
+  community: "community",
+  mention: "mentions",
   tribe: "mentions",
   "tribe-card": "mentions",
   "tribe-challenge": "mentions",
   "tribe-event": "mentions",
   "tribe-cheer": "mentions",
   "game-invite": "mentions",
+  "game-challenge": "mentions",
+  "game-challenge-result": "mentions",
+  // Personal / general
+  message: "replies",
+  referral: "general",
+  "well-check": "general",
+  "rate-app": "general",
+  "admin-award": "general",
+  "well-cup-win": "general",
+  "well-cup-spotlight": "general",
+  "well-cup-monthly-win": "general",
+  "well-cup-yearly-win": "general",
+  "scheduled-notification": "general",
+  scheduled: "general",
 };
 
 const DEFAULT_NOTIFICATION_SETTINGS: Record<string, boolean> = {
