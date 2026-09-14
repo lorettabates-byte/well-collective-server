@@ -1105,18 +1105,33 @@ export function startScheduler(): void {
 
   // WELL CUP: award event_attend points for events that passed yesterday.
   // Runs at 05:10 UTC, after the day boundary closes.
+  // Covers both app events (joined via events table) and live events from
+  // lorettabates.com (tracked in event_rsvps with event_date column).
   cron.schedule("10 5 * * *", async () => {
     try {
       const yesterday = addDays(todayInTimezone(), -1);
+
+      // Regular app events
       const { rows: rsvpRows } = await pool.query<{ member_email: string }>(
         "SELECT DISTINCT member_email FROM event_rsvps WHERE event_id IN (SELECT id FROM events WHERE date = $1)",
         [yesterday]
       );
-      for (const row of rsvpRows) {
-        await awardPoints(row.member_email, "event_attend");
+      // Live events from lorettabates.com (event_date stored at RSVP time)
+      const { rows: liveRsvpRows } = await pool.query<{ member_email: string }>(
+        "SELECT DISTINCT member_email FROM event_rsvps WHERE event_date = $1",
+        [yesterday]
+      );
+
+      const allEmails = new Set([
+        ...rsvpRows.map((r) => r.member_email),
+        ...liveRsvpRows.map((r) => r.member_email),
+      ]);
+
+      for (const email of allEmails) {
+        await awardPoints(email, "event_attend");
       }
-      if (rsvpRows.length > 0) {
-        console.log(`Awarded event_attend points to ${rsvpRows.length} members for ${yesterday} events`);
+      if (allEmails.size > 0) {
+        console.log(`Awarded event_attend points to ${allEmails.size} members for ${yesterday} events`);
       }
     } catch (err) {
       console.error("Event attend points error:", err);

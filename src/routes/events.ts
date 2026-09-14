@@ -29,6 +29,7 @@ interface EventRow {
   image: string | null;
   sold_out: boolean;
   url: string | null;
+  is_well_escape: boolean;
 }
 
 function serializeEvent(row: EventRow) {
@@ -45,6 +46,7 @@ function serializeEvent(row: EventRow) {
     image: row.image ?? undefined,
     soldOut: row.sold_out ?? false,
     url: row.url ?? undefined,
+    isWellEscape: row.is_well_escape ?? false,
   };
 }
 
@@ -79,7 +81,7 @@ router.get("/events", async (req, res) => {
 // occurrences), so e.g. "every Tuesday at 9am" only needs to be set up once.
 // Only one notification is sent for the whole series, not one per occurrence.
 router.post("/events", requireAdmin, async (req, res) => {
-  const { title, description, date, time, location, color, image, recurrence, soldOut, url } = req.body as {
+  const { title, description, date, time, location, color, image, recurrence, soldOut, url, isWellEscape } = req.body as {
     title?: string;
     description?: string;
     date?: string;
@@ -90,6 +92,7 @@ router.post("/events", requireAdmin, async (req, res) => {
     recurrence?: { frequency: "weekly"; occurrences?: number };
     soldOut?: boolean;
     url?: string;
+    isWellEscape?: boolean;
   };
 
   if (!title?.trim() || !date || !time?.trim()) {
@@ -111,8 +114,8 @@ router.post("/events", requireAdmin, async (req, res) => {
       const id = uid("e");
       insertedIds.push(id);
       await pool.query(
-        `INSERT INTO events (id, title, description, date, time, location, color, recurrence_group_id, image, sold_out, url)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
+        `INSERT INTO events (id, title, description, date, time, location, color, recurrence_group_id, image, sold_out, url, is_well_escape)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
         [
           id,
           title.trim(),
@@ -125,6 +128,7 @@ router.post("/events", requireAdmin, async (req, res) => {
           image || null,
           soldOut ?? false,
           url?.trim() || null,
+          isWellEscape ?? false,
         ]
       );
     }
@@ -151,7 +155,7 @@ router.post("/events", requireAdmin, async (req, res) => {
 });
 
 router.put("/events/:id", requireAdmin, async (req, res) => {
-  const { title, description, date, time, location, color, image, soldOut, url } = req.body as {
+  const { title, description, date, time, location, color, image, soldOut, url, isWellEscape } = req.body as {
     title?: string;
     description?: string;
     date?: string;
@@ -161,6 +165,7 @@ router.put("/events/:id", requireAdmin, async (req, res) => {
     image?: string;
     soldOut?: boolean;
     url?: string;
+    isWellEscape?: boolean;
   };
 
   if (!title?.trim() || !date || !time?.trim()) {
@@ -169,7 +174,7 @@ router.put("/events/:id", requireAdmin, async (req, res) => {
 
   try {
     await pool.query(
-      `UPDATE events SET title = $2, description = $3, date = $4, time = $5, location = $6, color = $7, image = $8, sold_out = $9, url = $10
+      `UPDATE events SET title = $2, description = $3, date = $4, time = $5, location = $6, color = $7, image = $8, sold_out = $9, url = $10, is_well_escape = $11
        WHERE id = $1`,
       [
         req.params.id,
@@ -182,6 +187,7 @@ router.put("/events/:id", requireAdmin, async (req, res) => {
         image || null,
         soldOut ?? false,
         url?.trim() || null,
+        isWellEscape ?? false,
       ]
     );
     res.json({ ok: true });
@@ -267,7 +273,7 @@ router.post("/events/:id/rsvp", async (req, res) => {
 
 // Toggle RSVP for live events (from lorettabates.com)
 router.post("/live-events/:eventId/rsvp", async (req, res) => {
-  const { memberId, memberEmail } = req.body as { memberId?: string; memberEmail?: string };
+  const { memberId, memberEmail, eventDate } = req.body as { memberId?: string; memberEmail?: string; eventDate?: string };
   const eventId = req.params.eventId;
 
   if (!memberId) return res.status(400).json({ error: "memberId required" });
@@ -291,6 +297,23 @@ router.post("/live-events/:eventId/rsvp", async (req, res) => {
       );
     } else {
       await pool.query("UPDATE live_event_rsvps SET rsvps = $2 WHERE event_id = $1", [eventId, updated]);
+    }
+
+    // Also track by email in event_rsvps so the nightly scheduler can award points
+    if (memberEmail) {
+      if (isRemoving) {
+        await pool.query(
+          "DELETE FROM event_rsvps WHERE event_id = $1 AND member_email = $2",
+          [eventId, memberEmail.toLowerCase()]
+        );
+      } else {
+        await pool.query(
+          `INSERT INTO event_rsvps (event_id, member_email, event_date)
+           VALUES ($1, $2, $3)
+           ON CONFLICT (event_id, member_email) DO NOTHING`,
+          [eventId, memberEmail.toLowerCase(), eventDate ?? null]
+        );
+      }
     }
 
     res.json({ ok: true, rsvps: updated });

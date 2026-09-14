@@ -588,6 +588,8 @@ export async function initDb(): Promise<void> {
     );
   `);
 
+  await pool.query(`ALTER TABLE event_rsvps ADD COLUMN IF NOT EXISTS event_date DATE;`);
+
   // RSVP tracking for events imported from lorettabates.com (identified by
   // an external event ID rather than a row in the local `events` table), so
   // "going" counts can show on those cue cards too.
