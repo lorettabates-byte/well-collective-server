@@ -1,7 +1,8 @@
 import { Router } from "express";
 import { pool } from "../db";
 import { requireAdmin } from "../middleware/adminAuth";
-import { broadcastNotification } from "../push";
+import { broadcastNotification, sendNotificationToUser } from "../push";
+import { awardPoints } from "./points";
 
 const router = Router();
 
@@ -339,6 +340,52 @@ router.get("/live-events/rsvps/:eventId", async (req, res) => {
     console.error("Fetch live event RSVPs error:", err);
     res.status(500).json({ error: "Failed to fetch RSVPs" });
   }
+});
+
+// Admin: fetch member details for all RSVPs on an event (used for WELL Escape point awarder)
+router.get("/events/:id/rsvp-members", requireAdmin, async (req, res) => {
+  try {
+    const { rows } = await pool.query(
+      `SELECT m.email, m.name, m.avatar
+       FROM event_rsvps er
+       JOIN members m ON m.email = er.member_email
+       WHERE er.event_id = $1
+       ORDER BY m.name ASC`,
+      [req.params.id]
+    );
+    res.json({ members: rows });
+  } catch (err) {
+    console.error("RSVP members error:", err);
+    res.status(500).json({ error: "Failed to fetch RSVP members" });
+  }
+});
+
+// Admin: award 100 WELL Escape points + push notification to selected members
+router.post("/events/well-escape-award", requireAdmin, async (req, res) => {
+  const { eventTitle, emails } = req.body as { eventTitle?: string; emails?: string[] };
+  if (!Array.isArray(emails) || emails.length === 0) {
+    return res.status(400).json({ error: "emails array required" });
+  }
+
+  const results: { email: string; awarded: boolean }[] = [];
+  for (const raw of emails) {
+    const email = raw.toLowerCase().trim();
+    const { awarded } = await awardPoints(email, "well_escape", { eventTitle });
+    if (awarded) {
+      sendNotificationToUser(email, {
+        title: "You earned 100 WELL Escape points!",
+        body: eventTitle
+          ? `Thank you for attending ${eventTitle}. Your points have been added to the WELL Cup.`
+          : "Your WELL Escape retreat points have been added to the WELL Cup.",
+        tag: "well-escape",
+        url: "/well-cup",
+      }).catch(() => {});
+    }
+    results.push({ email, awarded });
+    console.log(`[WELL ESCAPE] ${awarded ? "Awarded" : "Skipped (already earned)"} 100 pts for ${email}`);
+  }
+
+  res.json({ ok: true, results });
 });
 
 export default router;
