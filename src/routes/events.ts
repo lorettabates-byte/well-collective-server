@@ -388,6 +388,13 @@ router.post("/events/well-escape-award", requireAdmin, async (req, res) => {
 
     const { awarded } = await awardPoints(email, "well_escape", { eventTitle });
     if (awarded) {
+      // Auto-grant retreat badges — well-escape and made-to-be-different
+      await pool.query(
+        `INSERT INTO member_badges (member_email, badge_id) VALUES ($1, 'well-escape'), ($1, 'made-to-be-different')
+         ON CONFLICT DO NOTHING`,
+        [email]
+      ).catch((err) => console.error(`[WELL ESCAPE] Badge grant failed for ${email}:`, err));
+
       sendNotificationToUser(email, {
         title: "You earned 100 WELL Escape points!",
         body: eventTitle
@@ -398,7 +405,7 @@ router.post("/events/well-escape-award", requireAdmin, async (req, res) => {
       }).catch(() => {});
     }
     results.push({ email, awarded });
-    console.log(`[WELL ESCAPE] ${awarded ? "Awarded" : "Skipped (no member found)"} 100 pts for ${email}`);
+    console.log(`[WELL ESCAPE] ${awarded ? "Awarded + badges granted" : "Skipped (no member found)"} for ${email}`);
   }
 
   res.json({ ok: true, results });

@@ -20,6 +20,18 @@ import { awardPoints } from "./routes/points";
 import { TIMEZONE, CRON_TIMEZONE, todayInTimezone, addDays, SQL_DAY_START, SQL_MONTH_START, SQL_YEAR_START } from "./dateUtils";
 // scheduledNotifications import removed — it duplicated content-driven sends
 
+// Strip emoji characters from push notification text. Emojis render as small
+// squares on many Android lock screens and look out of place in our brand voice.
+function stripEmoji(text: string): string {
+  return text
+    .replace(/[\u{1F000}-\u{1FFFF}]/gu, "")
+    .replace(/[\u{2600}-\u{26FF}]/gu, "")
+    .replace(/[\u{2700}-\u{27BF}]/gu, "")
+    .replace(/[︀-️]/gu, "")
+    .replace(/\s{2,}/g, " ")
+    .trim();
+}
+
 // Weekly themes are only stored on the Monday row, so to find "this week's"
 // theme from any day we scan backward up to 7 days for the most recent one.
 async function findCurrentWeeklyThemeTitle(date: string): Promise<string | undefined> {
@@ -364,11 +376,13 @@ async function sendMotivationBoost(): Promise<void> {
     return;
   }
 
+  const boostTitle = stripEmoji(boost.title);
+  const boostBody = stripEmoji(boost.body);
   console.log(`[SCHEDULER] Sending motivation boost to ${noGoalRows.length} members without a goal plan`);
   for (const row of noGoalRows) {
     await sendNotificationToUser(row.email, {
-      title: boost.title,
-      body: boost.body,
+      title: boostTitle,
+      body: boostBody,
       tag: "motivation-boost",
       url: "/inspirations",
     }).catch((err) => console.error(`[SCHEDULER] Motivation boost failed for ${row.email}:`, err));
