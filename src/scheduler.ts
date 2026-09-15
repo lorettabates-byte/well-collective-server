@@ -13,6 +13,7 @@ import { checkForNewLiveEvents } from "./routes/live-event-notifications";
 import { checkForNewVideos } from "./routes/video-notifications";
 import { pool } from "./db";
 import { broadcastNotification, sendNotificationToUser } from "./push";
+import { createMemberNotification } from "./memberNotifications";
 import { computeNutritionFromIngredients, isUsdaConfigured } from "./usda";
 import { addTrialContactToBrevo, moveTrialContactToCompleted, sendMidTrialEmail, sendTrialExpiredEmail, sendReferralWeek1Email, sendReferralWinbackEmail, sendWellCupWinnerAdminAlert } from "./brevo";
 import { awardPoints } from "./routes/points";
@@ -753,6 +754,13 @@ async function sendWeeklySpotlightAwards(): Promise<void> {
       tag: "well-cup-spotlight",
       url: "/well-cup",
     }).catch((err) => console.error("[WELL CUP] Most improved push failed:", err));
+    await createMemberNotification({
+      memberEmail: email,
+      type: "spotlight",
+      title: "You leveled up more than anyone this week",
+      body: `+${Number(improvement)} pts vs the week before, ${firstName} — your growth earned you a WELL Cup spotlight.`,
+      link: "/well-cup",
+    }).catch((err) => console.error("[WELL CUP] Most improved in-app notif failed:", err));
     console.log(`[WELL CUP] Most Improved spotlight sent to ${email}`);
   }
 
@@ -779,6 +787,7 @@ async function sendWeeklySpotlightAwards(): Promise<void> {
     WHERE m.show_on_leaderboard = TRUE
       AND tw.pts > 0
       AND COALESCE(lw.pts, 0) = 0
+      AND m.created_at < ${SQL_TWO_WEEKS_AGO}
     ORDER BY tw.pts DESC
     LIMIT 1
   `);
@@ -792,6 +801,13 @@ async function sendWeeklySpotlightAwards(): Promise<void> {
       tag: "well-cup-spotlight",
       url: "/well-cup",
     }).catch((err) => console.error("[WELL CUP] Comeback push failed:", err));
+    await createMemberNotification({
+      memberEmail: email,
+      type: "spotlight",
+      title: "You came back — and the community noticed",
+      body: `After a quiet week you returned with ${Number(this_week_pts)} pts, ${firstName}. That's this week's Comeback Story.`,
+      link: "/well-cup",
+    }).catch((err) => console.error("[WELL CUP] Comeback in-app notif failed:", err));
     console.log(`[WELL CUP] Comeback Story spotlight sent to ${email}`);
   }
 
@@ -820,6 +836,13 @@ async function sendWeeklySpotlightAwards(): Promise<void> {
       tag: "well-cup-spotlight",
       url: "/well-cup",
     }).catch((err) => console.error("[WELL CUP] Weekly spotlight push failed:", err));
+    await createMemberNotification({
+      memberEmail: winner.email,
+      type: "spotlight",
+      title: "You're this week's WELL Community Spotlight",
+      body: `${firstName}, we're recognizing you for the energy and presence you bring to WELL Collective.`,
+      link: "/well-cup",
+    }).catch((err) => console.error("[WELL CUP] Weekly spotlight in-app notif failed:", err));
     console.log(`[WELL CUP] Weekly Spotlight sent to ${winner.email}`);
   }
 
