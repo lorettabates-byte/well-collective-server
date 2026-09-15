@@ -370,6 +370,22 @@ router.post("/events/well-escape-award", requireAdmin, async (req, res) => {
   const results: { email: string; awarded: boolean }[] = [];
   for (const raw of emails) {
     const email = raw.toLowerCase().trim();
+
+    // Dedup per event: skip if this member already has a well_escape log for this exact event title
+    const { rows: existing } = await pool.query(
+      `SELECT id FROM activity_logs
+       WHERE member_email = $1
+         AND activity_type = 'well_escape'
+         AND metadata->>'eventTitle' = $2
+       LIMIT 1`,
+      [email, eventTitle ?? ""]
+    );
+    if (existing.length > 0) {
+      results.push({ email, awarded: false });
+      console.log(`[WELL ESCAPE] Skipped (already earned for this event) ${email}`);
+      continue;
+    }
+
     const { awarded } = await awardPoints(email, "well_escape", { eventTitle });
     if (awarded) {
       sendNotificationToUser(email, {
@@ -382,10 +398,37 @@ router.post("/events/well-escape-award", requireAdmin, async (req, res) => {
       }).catch(() => {});
     }
     results.push({ email, awarded });
-    console.log(`[WELL ESCAPE] ${awarded ? "Awarded" : "Skipped (already earned)"} 100 pts for ${email}`);
+    console.log(`[WELL ESCAPE] ${awarded ? "Awarded" : "Skipped (no member found)"} 100 pts for ${email}`);
   }
 
   res.json({ ok: true, results });
+});
+
+// Remove duplicate well_escape points — keeps the first entry per member per event, deletes extras
+router.post("/events/well-escape-fix-duplicates", requireAdmin, async (req, res) => {
+  try {
+    const { rows } = await pool.query(`
+      DELETE FROM activity_logs
+      WHERE id IN (
+        SELECT id FROM (
+          SELECT id,
+                 ROW_NUMBER() OVER (
+                   PARTITION BY member_email, activity_type, metadata->>'eventTitle'
+                   ORDER BY created_at ASC
+                 ) AS rn
+          FROM activity_logs
+          WHERE activity_type = 'well_escape'
+        ) ranked
+        WHERE rn > 1
+      )
+      RETURNING member_email, metadata->>'eventTitle' AS event_title
+    `);
+    console.log(`[WELL ESCAPE FIX] Removed ${rows.length} duplicate entries`);
+    res.json({ ok: true, removed: rows.length, details: rows });
+  } catch (err) {
+    console.error("[WELL ESCAPE FIX] Error:", err);
+    res.status(500).json({ error: "Failed to fix duplicates" });
+  }
 });
 
 export default router;
