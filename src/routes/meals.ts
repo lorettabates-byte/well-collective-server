@@ -127,17 +127,27 @@ router.post("/meals/scan-photo", async (req, res) => {
           content: [
             {
               type: "image_url",
-              image_url: { url: dataUrl, detail: "low" },
+              image_url: { url: dataUrl, detail: "high" },
             },
             {
               type: "text",
-              text: `You are a nutrition assistant. Analyze this food photo and return a JSON object with this exact shape:
+              text: `You are a precise nutrition assistant. Analyze this food photo and estimate the actual quantity of food visible — not a standard serving size, but what is actually on the plate or in the bowl.
+
+Use visual reference points to judge portion size: the diameter of the plate or bowl, utensils, a hand or fingers if present, the thickness of items, and how the food fills the container. If no reference is visible, note that in the label.
+
+Return a JSON object with this exact shape:
 {
   "items": [
-    { "label": "Food name + portion", "calories": 300, "protein": 20, "carbs": 25, "fat": 8 }
+    { "label": "Food name, estimated quantity (e.g. ~6 oz / ~1.5 cups)", "calories": 300, "protein": 20, "carbs": 25, "fat": 8 }
   ]
 }
-List each distinct food item or dish visible. Estimate calories and macros (grams) per typical serving shown. If no food is detected, return { "items": [], "error": "No food detected" }. Return ONLY valid JSON, no markdown.`,
+
+Rules:
+- List each distinct food item separately
+- Include the estimated quantity in the label (weight in oz or volume in cups/tbsp)
+- Calories and macros must reflect the actual quantity visible, not a default serving
+- If no food is detected, return { "items": [], "error": "No food detected" }
+- Return ONLY valid JSON, no markdown`,
             },
           ],
         },
