@@ -394,6 +394,14 @@ router.get("/analytics/dashboard", requireAdmin, async (_req, res) => {
     FROM members
   `);
 
+  // ── WELL Escape events (for retreat points UI) ────────────────────
+  const wellEscapeEventRows = await q("wellEscapeEvents", `
+    SELECT id, title, date::text AS date
+    FROM events
+    WHERE is_well_escape = true
+    ORDER BY date DESC
+  `);
+
   // ── All members with source detail (for source breakdown list) ────
   const membersBySourceRows = await q("membersBySource", `
     SELECT
@@ -455,6 +463,7 @@ router.get("/analytics/dashboard", requireAdmin, async (_req, res) => {
     gameChallengeStats: gameChallengeStatsRows[0] ?? null,
     gameChallengesByGame: gameChallengesByGameRows,
     appleIap: appleIapRows[0] ?? null,
+    wellEscapeEvents: wellEscapeEventRows,
     membersBySource: membersBySourceRows,
   });
 });
@@ -555,6 +564,159 @@ router.post("/admin/retreat/award-points", requireAdmin, async (req, res) => {
   }
 
   res.json({ results });
+});
+
+// ── Claudio marketing agent snapshot ─────────────────────────────────────────
+// Read-only aggregate endpoint for the Claudio growth dashboard.
+// Protected by a separate CLAUDIO_API_KEY env var — never shares the admin key.
+// Returns no PII; only aggregate counts and percentages safe for a marketing tool.
+function requireClaudio(req: Parameters<typeof requireAdmin>[0], res: Parameters<typeof requireAdmin>[1], next: Parameters<typeof requireAdmin>[2]): void {
+  const key = process.env.CLAUDIO_API_KEY;
+  if (!key) { res.status(503).json({ error: "Claudio integration not configured on this server" }); return; }
+  const provided = req.header("Authorization")?.replace(/^Bearer\s+/i, "") ?? req.header("x-claudio-key") ?? "";
+  if (!provided || provided !== key) { res.status(401).json({ error: "Unauthorized" }); return; }
+  next();
+}
+
+router.get("/analytics/claudio-snapshot", requireClaudio, async (_req, res) => {
+  async function q<T>(label: string, sql: string, params?: unknown[]): Promise<T | null> {
+    try {
+      const { rows } = await pool.query(sql, params);
+      return (rows[0] ?? null) as T | null;
+    } catch (err) {
+      console.error(`[Claudio snapshot] ${label} failed:`, err);
+      return null;
+    }
+  }
+  async function qAll<T>(label: string, sql: string, params?: unknown[]): Promise<T[]> {
+    try {
+      const { rows } = await pool.query(sql, params);
+      return rows as T[];
+    } catch (err) {
+      console.error(`[Claudio snapshot] ${label} failed:`, err);
+      return [];
+    }
+  }
+
+  const [members, app, community, wellCup, retention, recentActivity] = await Promise.all([
+    // Membership counts and source breakdown
+    q<Record<string, number>>("members", `
+      SELECT
+        COUNT(*) FILTER (WHERE trial_ends_at IS NULL) AS paid_total,
+        COUNT(*) FILTER (WHERE trial_ends_at IS NULL AND COALESCE(membership_source,'web') != 'iap_apple') AS paid_web,
+        COUNT(*) FILTER (WHERE membership_source = 'iap_apple') AS paid_app_store,
+        COUNT(*) FILTER (WHERE trial_ends_at IS NOT NULL AND trial_ends_at >= CURRENT_DATE) AS active_trials,
+        COUNT(*) FILTER (WHERE created_at >= DATE_TRUNC('month', CURRENT_DATE)) AS new_this_month,
+        COUNT(*) FILTER (WHERE created_at >= DATE_TRUNC('week', CURRENT_DATE)) AS new_this_week
+      FROM members
+    `),
+    // App engagement
+    q<Record<string, number>>("app", `
+      SELECT
+        COUNT(DISTINCT member_email) FILTER (
+          WHERE event_type = 'app_open' AND created_at >= CURRENT_DATE
+        ) AS dau,
+        COUNT(DISTINCT member_email) FILTER (
+          WHERE event_type = 'app_open' AND created_at >= NOW() - INTERVAL '7 days'
+        ) AS wau,
+        COUNT(DISTINCT member_email) FILTER (
+          WHERE event_type = 'app_open' AND created_at >= NOW() - INTERVAL '30 days'
+        ) AS mau,
+        ROUND(AVG((metadata->>'duration_seconds')::int) FILTER (
+          WHERE event_type = 'session_end'
+            AND created_at >= NOW() - INTERVAL '7 days'
+            AND metadata->>'duration_seconds' ~ '^[0-9]+$'
+        )) AS avg_session_seconds_7d
+      FROM analytics_events
+    `),
+    // Community health
+    q<Record<string, number>>("community", `
+      SELECT
+        COUNT(DISTINCT ft.id) AS total_threads,
+        COUNT(DISTINCT fm.id) AS total_messages,
+        COUNT(DISTINCT fm.id) FILTER (WHERE fm.created_at >= NOW() - INTERVAL '7 days') AS messages_7d,
+        COUNT(DISTINCT ft.id) FILTER (WHERE ft.created_at >= NOW() - INTERVAL '7 days') AS new_threads_7d,
+        (SELECT COUNT(*) FROM event_rsvps WHERE created_at >= NOW() - INTERVAL '30 days') AS event_rsvps_30d,
+        (SELECT COUNT(*) FROM event_rsvps) AS event_rsvps_total
+      FROM forum_threads ft
+      LEFT JOIN forum_messages fm ON fm.thread_id = ft.id
+    `),
+    // WELL Cup engagement signal
+    q<Record<string, number>>("wellCup", `
+      SELECT
+        COUNT(DISTINCT member_email) FILTER (WHERE created_at >= NOW() - INTERVAL '7 days') AS active_earners_7d,
+        COUNT(DISTINCT member_email) FILTER (WHERE created_at >= NOW() - INTERVAL '30 days') AS active_earners_30d,
+        SUM(points) FILTER (WHERE created_at >= NOW() - INTERVAL '7 days') AS points_awarded_7d,
+        SUM(points) FILTER (WHERE created_at >= NOW() - INTERVAL '30 days') AS points_awarded_30d
+      FROM activity_logs
+    `),
+    // D7 and D30 retention
+    qAll<Record<string, number>>("retention", `
+      WITH first_open AS (
+        SELECT member_email, MIN(created_at) AS first_at
+        FROM analytics_events WHERE event_type = 'app_open'
+        GROUP BY member_email
+      )
+      SELECT w.n AS day,
+        COUNT(DISTINCT fo.member_email) AS cohort_size,
+        ROUND(100.0 * COUNT(DISTINCT ae.member_email)
+          / NULLIF(COUNT(DISTINCT fo.member_email), 0), 1) AS pct
+      FROM (VALUES (7),(30)) AS w(n)
+      CROSS JOIN first_open fo
+      LEFT JOIN analytics_events ae
+        ON ae.member_email = fo.member_email
+        AND ae.event_type = 'app_open'
+        AND ae.created_at >= fo.first_at + (w.n || ' days')::interval
+      WHERE fo.first_at <= NOW() - (w.n || ' days')::interval
+      GROUP BY w.n ORDER BY w.n
+    `),
+    // Most popular sections last 7 days — useful for content targeting
+    qAll<Record<string, unknown>>("topSections", `
+      SELECT metadata->>'section' AS section, COUNT(*) AS visits
+      FROM analytics_events
+      WHERE event_type = 'section_visit' AND created_at >= NOW() - INTERVAL '7 days'
+        AND metadata->>'section' IS NOT NULL
+      GROUP BY section ORDER BY visits DESC LIMIT 5
+    `),
+  ]);
+
+  const retentionByDay = Object.fromEntries(
+    retention.map((r) => [`d${r.day}`, { cohort_size: Number(r.cohort_size), pct: Number(r.pct) }])
+  );
+
+  res.json({
+    as_of: new Date().toISOString(),
+    members: {
+      paid_total: Number(members?.paid_total ?? 0),
+      paid_web: Number(members?.paid_web ?? 0),
+      paid_app_store: Number(members?.paid_app_store ?? 0),
+      active_trials: Number(members?.active_trials ?? 0),
+      new_this_month: Number(members?.new_this_month ?? 0),
+      new_this_week: Number(members?.new_this_week ?? 0),
+    },
+    app: {
+      dau: Number(app?.dau ?? 0),
+      wau: Number(app?.wau ?? 0),
+      mau: Number(app?.mau ?? 0),
+      avg_session_seconds_7d: Number(app?.avg_session_seconds_7d ?? 0),
+    },
+    community: {
+      total_threads: Number(community?.total_threads ?? 0),
+      total_messages: Number(community?.total_messages ?? 0),
+      messages_7d: Number(community?.messages_7d ?? 0),
+      new_threads_7d: Number(community?.new_threads_7d ?? 0),
+      event_rsvps_30d: Number(community?.event_rsvps_30d ?? 0),
+      event_rsvps_total: Number(community?.event_rsvps_total ?? 0),
+    },
+    well_cup: {
+      active_earners_7d: Number(wellCup?.active_earners_7d ?? 0),
+      active_earners_30d: Number(wellCup?.active_earners_30d ?? 0),
+      points_awarded_7d: Number(wellCup?.points_awarded_7d ?? 0),
+      points_awarded_30d: Number(wellCup?.points_awarded_30d ?? 0),
+    },
+    retention: retentionByDay,
+    top_sections_7d: recentActivity,
+  });
 });
 
 export default router;
