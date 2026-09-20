@@ -1,6 +1,6 @@
 import { Request, Response, Router } from "express";
 import { pool } from "../db";
-import { buildScriptAudio, estimateSeconds, getSpeechClip, isTtsConfigured, type ScriptSegment } from "../utils/ttsAudioBuilder";
+import { buildScriptAudio, estimateSeconds, getSpeechClip, isClaudetteTtsVoice, isTtsConfigured, type ScriptSegment } from "../utils/ttsAudioBuilder";
 
 const router = Router();
 
@@ -564,6 +564,8 @@ const BACKGROUND_SOUNDS = [
 // pipeline as the breathwork guided sessions, so quality is identical.
 router.get("/calm-cue", async (req, res): Promise<any> => {
   const text = (req.query.text as string | undefined)?.trim();
+  const requestedVoice = req.query.voice;
+  const claudetteVoice = isClaudetteTtsVoice(requestedVoice) ? requestedVoice : null;
   if (!text || text.length > 600) {
     return res.status(400).json({ error: "text query param required (max 600 chars)" });
   }
@@ -571,7 +573,11 @@ router.get("/calm-cue", async (req, res): Promise<any> => {
     return res.status(503).json({ error: "TTS not configured" });
   }
   try {
-    const buffer = await getSpeechClip(text);
+    // A requested voice is for Claudette only. Guided breathwork continues to
+    // use its existing provider and default delivery without any behavior change.
+    const buffer = claudetteVoice
+      ? await getSpeechClip(text, claudetteVoice, true)
+      : await getSpeechClip(text);
     sendAudioBuffer(req, res, buffer);
   } catch (err) {
     console.error("[CALM-CUE] TTS error:", err);

@@ -42,6 +42,13 @@ const VOICE_INSTRUCTIONS =
 // others whole, which made the counting sound unevenly spaced.
 const NUMBER_INSTRUCTIONS = "Say just this number softly and calmly, in under one second.";
 
+export const CLAUDETTE_TTS_VOICES = ["sage", "marin", "cedar", "coral", "shimmer", "nova", "ballad"] as const;
+export type ClaudetteTtsVoice = (typeof CLAUDETTE_TTS_VOICES)[number];
+const DEFAULT_TTS_VOICE: ClaudetteTtsVoice = "sage";
+export function isClaudetteTtsVoice(value: unknown): value is ClaudetteTtsVoice {
+  return typeof value === "string" && (CLAUDETTE_TTS_VOICES as readonly string[]).includes(value);
+}
+
 const ELEVENLABS_API_KEY = process.env.ELEVENLABS_API_KEY;
 // "Rachel" — ElevenLabs' warm female narration voice.
 const ELEVENLABS_VOICE_ID = process.env.ELEVENLABS_VOICE_ID || "21m00Tcm4TlvDq8ikWAM";
@@ -78,8 +85,8 @@ async function synthesizeElevenLabs(text: string): Promise<Buffer> {
   return Buffer.from(await res.arrayBuffer());
 }
 
-async function synthesizeRaw(text: string, isNumber = false): Promise<Buffer> {
-  if (ELEVENLABS_API_KEY) {
+async function synthesizeRaw(text: string, isNumber = false, voice: ClaudetteTtsVoice = DEFAULT_TTS_VOICE, forceOpenAi = false): Promise<Buffer> {
+  if (ELEVENLABS_API_KEY && !forceOpenAi) {
     return synthesizeElevenLabs(text);
   }
   if (!openai) {
@@ -87,7 +94,7 @@ async function synthesizeRaw(text: string, isNumber = false): Promise<Buffer> {
   }
   const mp3 = await openai.audio.speech.create({
     model: "gpt-4o-mini-tts",
-    voice: "sage",
+    voice,
     input: text,
     instructions: isNumber ? NUMBER_INSTRUCTIONS : VOICE_INSTRUCTIONS,
   });
@@ -204,11 +211,12 @@ async function getNumberClip(n: number): Promise<Buffer> {
 
 const speechCache = new Map<string, Buffer>();
 
-export async function getSpeechClip(text: string): Promise<Buffer> {
-  if (speechCache.has(text)) return speechCache.get(text)!;
-  const raw = await synthesizeRaw(text);
+export async function getSpeechClip(text: string, voice: ClaudetteTtsVoice = DEFAULT_TTS_VOICE, forceOpenAi = false): Promise<Buffer> {
+  const cacheKey = `${forceOpenAi ? "openai" : "default"}:${voice}:${text}`;
+  if (speechCache.has(cacheKey)) return speechCache.get(cacheKey)!;
+  const raw = await synthesizeRaw(text, false, voice, forceOpenAi);
   const warmed = await warmAndClean(raw);
-  speechCache.set(text, warmed);
+  speechCache.set(cacheKey, warmed);
   return warmed;
 }
 
