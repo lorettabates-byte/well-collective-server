@@ -603,7 +603,7 @@ router.get("/analytics/claudio-snapshot", requireClaudio, async (_req, res) => {
     }
   }
 
-  const [members, app, community, wellCup, retention, recentActivity] = await Promise.all([
+  const [members, app, community, wellCup, retention, recentActivity, activityTrend, sectionInterest, tutorialFunnel, communityTopics, wellCupActivity] = await Promise.all([
     // Membership counts and source breakdown
     q<Record<string, number>>("members", `
       SELECT
@@ -683,6 +683,51 @@ router.get("/analytics/claudio-snapshot", requireClaudio, async (_req, res) => {
         AND metadata->>'section' IS NOT NULL
       GROUP BY section ORDER BY visits DESC LIMIT 5
     `),
+    // Daily active trend — 14 days, aggregate only.
+    qAll<Record<string, unknown>>("activityTrend", `
+      SELECT DATE(created_at AT TIME ZONE 'UTC')::text AS day,
+        COUNT(DISTINCT member_email) AS active_members,
+        COUNT(*) AS app_opens
+      FROM analytics_events
+      WHERE event_type = 'app_open' AND created_at >= NOW() - INTERVAL '14 days'
+      GROUP BY day ORDER BY day
+    `),
+    // What members choose to use, not individual browsing histories.
+    qAll<Record<string, unknown>>("sectionInterest", `
+      SELECT metadata->>'section' AS section,
+        COUNT(*) AS visits,
+        COUNT(DISTINCT member_email) AS members
+      FROM analytics_events
+      WHERE event_type = 'section_visit' AND created_at >= NOW() - INTERVAL '30 days'
+        AND metadata->>'section' IS NOT NULL
+      GROUP BY section ORDER BY visits DESC LIMIT 12
+    `),
+    // Onboarding completion and drop-off points.
+    qAll<Record<string, unknown>>("tutorialFunnel", `
+      SELECT event_type AS event, COALESCE(metadata->>'at_step', metadata->>'step', '') AS step,
+        COUNT(DISTINCT member_email) AS members
+      FROM analytics_events
+      WHERE event_type IN ('tutorial_step','tutorial_complete','tutorial_skip')
+      GROUP BY event, step
+      ORDER BY event, step
+    `),
+    // Community themes used by members.
+    qAll<Record<string, unknown>>("communityTopics", `
+      SELECT fc.name AS topic, COUNT(DISTINCT ft.id) AS threads,
+        COUNT(DISTINCT fm.id) AS messages, COUNT(DISTINCT fm.author_id) AS contributors
+      FROM forum_categories fc
+      LEFT JOIN forum_threads ft ON ft.category_id = fc.id
+      LEFT JOIN forum_messages fm ON fm.thread_id = ft.id
+      GROUP BY fc.id, fc.name ORDER BY messages DESC, threads DESC LIMIT 10
+    `),
+    // Which reward actions draw participation.
+    qAll<Record<string, unknown>>("wellCupActivity", `
+      SELECT activity_type, COUNT(*) AS events, COUNT(DISTINCT member_email) AS members,
+        COALESCE(SUM(points), 0) AS points
+      FROM activity_logs
+      WHERE created_at >= NOW() - INTERVAL '30 days'
+      GROUP BY activity_type ORDER BY members DESC, events DESC LIMIT 10
+    `),
   ]);
 
   const retentionByDay = Object.fromEntries(
@@ -728,6 +773,17 @@ router.get("/analytics/claudio-snapshot", requireClaudio, async (_req, res) => {
     },
     retention: retentionByDay,
     top_sections_7d: recentActivity,
+    member_health: {
+      active_paid: paidTotal,
+      active_trials: Number(members?.active_trials ?? 0),
+      new_this_month: Number(members?.new_this_month ?? 0),
+      new_this_week: Number(members?.new_this_week ?? 0),
+    },
+    activity_trend_14d: activityTrend,
+    section_interest_30d: sectionInterest,
+    tutorial_funnel: tutorialFunnel,
+    community_topics: communityTopics,
+    well_cup_activity_30d: wellCupActivity,
     financials: {
       currency: "USD",
       estimated_monthly_recurring_revenue: Number(estimatedMonthlyRecurringRevenue.toFixed(2)),
