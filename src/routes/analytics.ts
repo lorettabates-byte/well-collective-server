@@ -579,6 +579,11 @@ function requireClaudio(req: Parameters<typeof requireAdmin>[0], res: Parameters
 }
 
 router.get("/analytics/claudio-snapshot", requireClaudio, async (_req, res) => {
+  // This is the same transparent run-rate model shown in the private app
+  // dashboard: $30 per active membership and a 30% Apple store fee estimate.
+  // It is deliberately not presented as settled cash, deposits, or payouts.
+  const MONTHLY_MEMBERSHIP_PRICE_USD = 30;
+  const APPLE_NET_FACTOR = 0.70;
   async function q<T>(label: string, sql: string, params?: unknown[]): Promise<T | null> {
     try {
       const { rows } = await pool.query(sql, params);
@@ -602,9 +607,9 @@ router.get("/analytics/claudio-snapshot", requireClaudio, async (_req, res) => {
     // Membership counts and source breakdown
     q<Record<string, number>>("members", `
       SELECT
-        COUNT(*) FILTER (WHERE trial_ends_at IS NULL) AS paid_total,
-        COUNT(*) FILTER (WHERE trial_ends_at IS NULL AND COALESCE(membership_source,'web') != 'iap_apple') AS paid_web,
-        COUNT(*) FILTER (WHERE membership_source = 'iap_apple') AS paid_app_store,
+        COUNT(*) FILTER (WHERE membership_status = 'active') AS paid_total,
+        COUNT(*) FILTER (WHERE membership_status = 'active' AND COALESCE(membership_source,'web') != 'iap_apple') AS paid_web,
+        COUNT(*) FILTER (WHERE membership_status = 'active' AND membership_source = 'iap_apple') AS paid_app_store,
         COUNT(*) FILTER (WHERE trial_ends_at IS NOT NULL AND trial_ends_at >= CURRENT_DATE) AS active_trials,
         COUNT(*) FILTER (WHERE created_at >= DATE_TRUNC('month', CURRENT_DATE)) AS new_this_month,
         COUNT(*) FILTER (WHERE created_at >= DATE_TRUNC('week', CURRENT_DATE)) AS new_this_week
@@ -683,13 +688,20 @@ router.get("/analytics/claudio-snapshot", requireClaudio, async (_req, res) => {
   const retentionByDay = Object.fromEntries(
     retention.map((r) => [`d${r.day}`, { cohort_size: Number(r.cohort_size), pct: Number(r.pct) }])
   );
+  const paidWeb = Number(members?.paid_web ?? 0);
+  const paidAppStore = Number(members?.paid_app_store ?? 0);
+  const paidTotal = Number(members?.paid_total ?? 0);
+  const directWebGross = paidWeb * MONTHLY_MEMBERSHIP_PRICE_USD;
+  const appStoreGross = paidAppStore * MONTHLY_MEMBERSHIP_PRICE_USD;
+  const appStoreNetEstimate = appStoreGross * APPLE_NET_FACTOR;
+  const estimatedMonthlyRecurringRevenue = directWebGross + appStoreNetEstimate;
 
   res.json({
     as_of: new Date().toISOString(),
     members: {
-      paid_total: Number(members?.paid_total ?? 0),
-      paid_web: Number(members?.paid_web ?? 0),
-      paid_app_store: Number(members?.paid_app_store ?? 0),
+      paid_total: paidTotal,
+      paid_web: paidWeb,
+      paid_app_store: paidAppStore,
       active_trials: Number(members?.active_trials ?? 0),
       new_this_month: Number(members?.new_this_month ?? 0),
       new_this_week: Number(members?.new_this_week ?? 0),
@@ -716,6 +728,20 @@ router.get("/analytics/claudio-snapshot", requireClaudio, async (_req, res) => {
     },
     retention: retentionByDay,
     top_sections_7d: recentActivity,
+    financials: {
+      currency: "USD",
+      estimated_monthly_recurring_revenue: Number(estimatedMonthlyRecurringRevenue.toFixed(2)),
+      direct_web_monthly_gross: Number(directWebGross.toFixed(2)),
+      app_store_monthly_gross: Number(appStoreGross.toFixed(2)),
+      app_store_monthly_net_estimate: Number(appStoreNetEstimate.toFixed(2)),
+      app_store_fee_estimate: Number((appStoreGross - appStoreNetEstimate).toFixed(2)),
+      active_paid_members: paidTotal,
+      website_active_members: paidWeb,
+      app_store_active_members: paidAppStore,
+      membership_price_usd: MONTHLY_MEMBERSHIP_PRICE_USD,
+      app_store_net_factor: APPLE_NET_FACTOR,
+      methodology: "Active memberships × $30 monthly; Apple membership revenue is modeled at 70% after an estimated 30% store fee. This is a current monthly run-rate estimate, not settled deposits or payouts.",
+    },
   });
 });
 
