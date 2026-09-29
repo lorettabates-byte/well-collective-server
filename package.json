@@ -9,7 +9,9 @@
     "start": "node dist/index.js",
     "dev": "tsx watch src/index.ts",
     "generate-vapid-keys": "node scripts/generate-vapid-keys.js",
-    "create-admin": "node scripts/create-admin.js"
+    "create-admin": "node scripts/create-admin.js",
+    "test:emails": "tsx scripts/check-email-templates.ts",
+    "test": "npm run test:emails"
   },
   "dependencies": {
     "bcrypt": "^6.0.0",

@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { pool } from "../db";
 import { requireAdmin } from "../middleware/adminAuth";
-import { sendTrialExpiredEmail } from "../brevo";
+import { sendTrialExpiredEmail, sendWelcomeEmail, sendDay3Email, sendDay15Email, sendTrialEndingEmail, sendWellCupWinnerEmail } from "../brevo";
 
 const router = Router();
 
@@ -195,10 +195,36 @@ router.post("/settings/test-winback-email", requireAdmin, async (req, res) => {
   const { email, name } = req.body as { email?: string; name?: string };
   if (!email) return res.status(400).json({ error: "email required" });
   try {
-    await sendTrialExpiredEmail(email, name || email);
-    res.json({ ok: true, sent: true });
+    const sent = await sendTrialExpiredEmail(email, name || "");
+    res.json({ ok: sent, sent });
   } catch (err) {
     console.error("Test winback email error:", err);
+    res.status(500).json({ error: "Failed to send test email" });
+  }
+});
+
+// Admin-only preview send of one lifecycle email to one address (e.g. loretta@).
+// POST /settings/test-lifecycle-email { email, kind, name? }
+// kind: welcome | day3 | day15 | trial-ending | trial-ended | wellcup-winner
+router.post("/settings/test-lifecycle-email", requireAdmin, async (req, res) => {
+  const { email, kind, name } = req.body as { email?: string; kind?: string; name?: string };
+  if (!email || !kind) return res.status(400).json({ error: "email and kind required" });
+  const n = name || "";
+  const senders: Record<string, () => Promise<boolean>> = {
+    welcome: () => sendWelcomeEmail(email, n),
+    day3: () => sendDay3Email(email, n),
+    day15: () => sendDay15Email(email, n),
+    "trial-ending": () => sendTrialEndingEmail(email, n),
+    "trial-ended": () => sendTrialExpiredEmail(email, n),
+    "wellcup-winner": () => sendWellCupWinnerEmail(email, n, 4321, "September 2026"),
+  };
+  const send = senders[kind];
+  if (!send) return res.status(400).json({ error: `unknown kind; use one of ${Object.keys(senders).join(", ")}` });
+  try {
+    const sent = await send();
+    res.json({ ok: sent, sent, kind });
+  } catch (err) {
+    console.error("Test lifecycle email error:", err);
     res.status(500).json({ error: "Failed to send test email" });
   }
 });

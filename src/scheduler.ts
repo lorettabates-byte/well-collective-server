@@ -15,7 +15,8 @@ import { pool } from "./db";
 import { broadcastNotification, sendNotificationToUser } from "./push";
 import { createMemberNotification } from "./memberNotifications";
 import { computeNutritionFromIngredients, isUsdaConfigured } from "./usda";
-import { addTrialContactToBrevo, moveTrialContactToCompleted, sendMidTrialEmail, sendTrialExpiredEmail, sendReferralWeek1Email, sendReferralWinbackEmail, sendWellCupWinnerAdminAlert } from "./brevo";
+import { addTrialContactToBrevo, moveTrialContactToCompleted, sendMidTrialEmail, sendTrialExpiredEmail, sendDay15Email, sendTrialEndingEmail, sendWellCupWinnerAdminAlert, sendWellCupWinnerEmail } from "./brevo";
+import { umpMembershipState } from "./membership";
 import { awardPoints } from "./routes/points";
 import { TIMEZONE, CRON_TIMEZONE, todayInTimezone, addDays, SQL_DAY_START, SQL_MONTH_START, SQL_YEAR_START } from "./dateUtils";
 // scheduledNotifications import removed — it duplicated content-driven sends
@@ -469,29 +470,56 @@ async function checkForNewlyReleasedSongs(): Promise<void> {
 }
 
 async function sendTrialWinbackEmails(): Promise<void> {
+  // Trial-ended email: only for people who did NOT become paying members.
+  // membership_status is only ever set to 'active' (never back), and a web
+  // payer who has not opened the app since paying can still read 'trial', so
+  // we also ask UMP live. On "unknown" (WordPress down, bad key, timeout) we
+  // skip this person for this run and retry at the next 09:00 run.
   const { rows } = await pool.query(
     `SELECT email, name FROM members
-     WHERE trial_ends_at < CURRENT_DATE
-       AND trial_ends_at IS NOT NULL
-       AND trial_winback_sent = FALSE`
+     WHERE trial_ends_at IS NOT NULL
+       AND trial_ends_at < CURRENT_DATE
+       AND trial_winback_sent = FALSE
+       AND membership_status IS DISTINCT FROM 'active'`
   );
 
   if (rows.length === 0) return;
 
-  console.log(`[BREVO] Sending win-back emails to ${rows.length} expired trial member(s)`);
+  console.log(`[BREVO] Trial-ended check for ${rows.length} expired trial member(s)`);
+  let sent = 0, converted = 0, unknown = 0;
   for (const row of rows) {
     try {
-      await sendTrialExpiredEmail(row.email, row.name);
+      const state = await umpMembershipState(row.email);
+      if (state === "unknown") {
+        unknown++;
+        continue;
+      }
+      if (state === "active") {
+        // Converted: never send, and stop re-checking. referral_winback_sent is
+        // set too so the retired referral winback can never fire for them.
+        converted++;
+        await pool.query(
+          `UPDATE members SET trial_winback_sent = TRUE, referral_winback_sent = TRUE,
+                              membership_status = 'active'
+           WHERE email = $1`,
+          [row.email]
+        );
+        continue;
+      }
+      const ok = await sendTrialExpiredEmail(row.email, row.name);
+      if (!ok) continue; // Brevo rejected or unreachable: retry next run
+      sent++;
       await pool.query(
-        "UPDATE members SET trial_winback_sent = TRUE WHERE email = $1",
+        "UPDATE members SET trial_winback_sent = TRUE, referral_winback_sent = TRUE WHERE email = $1",
         [row.email]
       );
-      // Move contact from "App Free Trial" → "App Trial Completed" in Brevo.
+      // Move contact from "App Free Trial" to "App Trial Completed" in Brevo.
       await moveTrialContactToCompleted(row.email, row.name);
     } catch (err) {
-      console.error(`[BREVO] Win-back failed for ${row.email}:`, err);
+      console.error(`[BREVO] Trial-ended email failed for ${row.email}:`, err);
     }
   }
+  console.log(`[BREVO] Trial-ended run: ${sent} sent, ${converted} converted (skipped), ${unknown} unknown (retry tomorrow)`);
 }
 
 async function sendMidTrialEmails(): Promise<void> {
@@ -516,6 +544,58 @@ async function sendMidTrialEmails(): Promise<void> {
     } catch (err) {
       console.error(`[BREVO] Day-3 email failed for ${row.email}:`, err);
     }
+  }
+}
+
+async function sendTrialDayEmails(): Promise<void> {
+  // Trials only, not paying, once per person. Exact-date equality means no
+  // backlog blast on deploy (nobody gets a stale "3 days left"), at the cost of
+  // skipping a person if the server is down at 09:00 on their day.
+  const base = `FROM members
+     WHERE trial_ends_at IS NOT NULL
+       AND membership_status IS DISTINCT FROM 'active'`;
+
+  // Day 15 of 30: exactly 15 days left.
+  const d15 = await pool.query(
+    `SELECT email, name ${base}
+       AND trial_ends_at = CURRENT_DATE + 15
+       AND day15_email_sent = FALSE`
+  );
+  for (const r of d15.rows) {
+    try {
+      if (await sendDay15Email(r.email, r.name)) {
+        await pool.query("UPDATE members SET day15_email_sent = TRUE WHERE email = $1", [r.email]);
+      }
+    } catch (err) {
+      console.error(`[BREVO] Day-15 email failed for ${r.email}:`, err);
+    }
+  }
+
+  // Day 27: exactly 3 days left (copy says "ends in 3 days").
+  const d27 = await pool.query(
+    `SELECT email, name ${base}
+       AND trial_ends_at = CURRENT_DATE + 3
+       AND trial_ending_email_sent = FALSE`
+  );
+  for (const r of d27.rows) {
+    try {
+      // Extra safety: a web payer whose DB row still says 'trial' should not be
+      // told their trial is ending. "unknown" falls through to the DB answer
+      // (not active), because this email has no retry day.
+      if ((await umpMembershipState(r.email)) === "active") {
+        await pool.query("UPDATE members SET trial_ending_email_sent = TRUE WHERE email = $1", [r.email]);
+        continue;
+      }
+      if (await sendTrialEndingEmail(r.email, r.name)) {
+        await pool.query("UPDATE members SET trial_ending_email_sent = TRUE WHERE email = $1", [r.email]);
+      }
+    } catch (err) {
+      console.error(`[BREVO] Trial-ending email failed for ${r.email}:`, err);
+    }
+  }
+
+  if (d15.rows.length || d27.rows.length) {
+    console.log(`[BREVO] Trial day emails: ${d15.rows.length} day-15, ${d27.rows.length} trial-ending candidate(s)`);
   }
 }
 
@@ -592,58 +672,12 @@ export async function sendDay3EmailBlast(): Promise<{ trial: number; full: numbe
   return { trial: trialSent, full: fullSent, total: trialSent + fullSent };
 }
 
-async function sendReferralWeek1Emails(): Promise<void> {
-  // Referred members (referred_by IS NOT NULL) who joined 7-8 days ago,
-  // haven't received the week-1 email, and haven't converted to paid.
-  const { rows } = await pool.query(
-    `SELECT email, name FROM members
-     WHERE referred_by IS NOT NULL
-       AND created_at >= now() - INTERVAL '8 days'
-       AND created_at <  now() - INTERVAL '7 days'
-       AND referral_week1_email_sent = FALSE
-       AND (membership_status IS NULL OR membership_status != 'active')`
-  );
-  if (rows.length === 0) return;
-
-  console.log(`[BREVO] Sending referral week-1 emails to ${rows.length} member(s)`);
-  for (const row of rows) {
-    try {
-      await sendReferralWeek1Email(row.email, row.name);
-      await pool.query(
-        "UPDATE members SET referral_week1_email_sent = TRUE WHERE email = $1",
-        [row.email]
-      );
-    } catch (err) {
-      console.error(`[BREVO] Referral week-1 email failed for ${row.email}:`, err);
-    }
-  }
-}
-
-async function sendReferralWinbackEmails(): Promise<void> {
-  // Referred members whose trial has ended, who haven't converted, and
-  // who haven't received the winback email yet.
-  const { rows } = await pool.query(
-    `SELECT email, name FROM members
-     WHERE referred_by IS NOT NULL
-       AND trial_ends_at IS NOT NULL AND trial_ends_at < CURRENT_DATE
-       AND referral_winback_sent = FALSE
-       AND (membership_status IS NULL OR membership_status != 'active')`
-  );
-  if (rows.length === 0) return;
-
-  console.log(`[BREVO] Sending referral winback emails to ${rows.length} member(s)`);
-  for (const row of rows) {
-    try {
-      await sendReferralWinbackEmail(row.email, row.name);
-      await pool.query(
-        "UPDATE members SET referral_winback_sent = TRUE WHERE email = $1",
-        [row.email]
-      );
-    } catch (err) {
-      console.error(`[BREVO] Referral winback email failed for ${row.email}:`, err);
-    }
-  }
-}
+// Retired 2026-09-29:
+// - sendReferralWeek1Emails (referral week-1 email) was folded into the day-15 email.
+// - sendReferralWinbackEmails (referral winback) duplicated the trial-ended email in
+//   the same 09:00 run; trial-ended now covers referred trials too and sets
+//   referral_winback_sent = TRUE so it can never double-send if revived.
+// The brevo.ts send functions are left in place but are no longer called.
 
 async function sendMidTrialEmailBlast(): Promise<void> {
   await sendDay3EmailBlast();
@@ -889,9 +923,17 @@ async function crownMonthlyWinner(): Promise<void> {
   `);
   if (rows.length === 0) return;
 
-  const prevMonthDate = new Date();
-  prevMonthDate.setMonth(prevMonthDate.getMonth() - 1);
-  const monthName = prevMonthDate.toLocaleString("default", { month: "long", year: "numeric" });
+  // The month being AWARDED, derived with the same boundary as prevMonthStart
+  // above (not the server's local clock), e.g. "2026-09" when run on Oct 1.
+  const { rows: ymRows } = await pool.query<{ ym: string }>(
+    `SELECT to_char(date_trunc('month', now() - INTERVAL '5 hours' - INTERVAL '1 month'), 'YYYY-MM') AS ym`
+  );
+  const awardedMonth = ymRows[0].ym;
+  // Record the win mid-month of the month that was won (same as the manual
+  // /admin/award-monthly-winner route). Storing NOW() (the 1st of the next
+  // month) shifted the sit-out month by one and mislabelled the app banner.
+  const winAt = `${awardedMonth}-15T12:00:00Z`;
+  const monthName = new Date(winAt).toLocaleString("en-US", { month: "long", year: "numeric", timeZone: "UTC" });
   console.log(`[WELL CUP] ${monthName} monthly leader: ${rows[0].member_email} (${rows[0].total} pts)`);
 
   await sendNotificationToUser(rows[0].member_email, {
@@ -903,8 +945,8 @@ async function crownMonthlyWinner(): Promise<void> {
 
   // Record the win so the app can show a share-card banner when the winner opens it.
   await pool.query(
-    `UPDATE members SET last_monthly_win_at = NOW(), last_monthly_win_pts = $2 WHERE email = $1`,
-    [rows[0].member_email, rows[0].total]
+    `UPDATE members SET last_monthly_win_at = $3::timestamptz, last_monthly_win_pts = $2 WHERE email = $1`,
+    [rows[0].member_email, rows[0].total, winAt]
   ).catch((err) => console.error("[WELL CUP] Monthly win record update failed:", err));
 
   // Alert admin to manually skip the winner's next payment in the payment processor.
@@ -916,6 +958,10 @@ async function crownMonthlyWinner(): Promise<void> {
     rows[0].total,
     monthName
   ).catch((err) => console.error("[WELL CUP] Admin alert email failed:", err));
+
+  // Congratulate the winner by email (from Loretta).
+  await sendWellCupWinnerEmail(rows[0].member_email, rows[0].name, rows[0].total, monthName)
+    .catch((err) => console.error("[WELL CUP] Winner email failed:", err));
 }
 
 async function crownYearlyWinner(): Promise<void> {
@@ -1099,16 +1145,10 @@ export function startScheduler(): void {
     sendTrialWinbackEmails().catch((err) => console.error("Trial win-back emails failed:", err));
   }, { timezone: CRON_TIMEZONE });
 
-  // REFERRAL WEEK-1 EMAIL: 9am ET — sent to referred members (30-day trial)
-  // who joined exactly 7 days ago and haven't converted yet.
+  // TRIAL DAY-15 and DAY-27 ("trial ends in 3 days") EMAILS: 9am ET, trials only.
+  // (Referral week-1 and referral winback crons were retired 2026-09-29.)
   cron.schedule("0 9 * * *", () => {
-    sendReferralWeek1Emails().catch((err) => console.error("Referral week-1 emails failed:", err));
-  }, { timezone: CRON_TIMEZONE });
-
-  // REFERRAL WINBACK EMAIL: 9am ET — sent to referred members whose 30-day
-  // trial has ended and who haven't converted to a paid membership.
-  cron.schedule("0 9 * * *", () => {
-    sendReferralWinbackEmails().catch((err) => console.error("Referral winback emails failed:", err));
+    sendTrialDayEmails().catch((err) => console.error("Trial day-15/27 emails failed:", err));
   }, { timezone: CRON_TIMEZONE });
 
   // TRIBE PRUNE: 2am ET daily — remove expired/lapsed members from all tribes.

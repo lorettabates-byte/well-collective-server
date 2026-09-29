@@ -897,6 +897,9 @@ export async function initDb(): Promise<void> {
   await pool.query(`ALTER TABLE members ADD COLUMN IF NOT EXISTS referred_by TEXT;`);
   await pool.query(`ALTER TABLE members ADD COLUMN IF NOT EXISTS referral_week1_email_sent BOOLEAN NOT NULL DEFAULT FALSE;`);
   await pool.query(`ALTER TABLE members ADD COLUMN IF NOT EXISTS referral_winback_sent BOOLEAN NOT NULL DEFAULT FALSE;`);
+  // Trial lifecycle emails added 2026-09-29 (day 15 and day 27 "ends in 3 days").
+  await pool.query(`ALTER TABLE members ADD COLUMN IF NOT EXISTS day15_email_sent BOOLEAN NOT NULL DEFAULT FALSE;`);
+  await pool.query(`ALTER TABLE members ADD COLUMN IF NOT EXISTS trial_ending_email_sent BOOLEAN NOT NULL DEFAULT FALSE;`);
 
   await pool.query(`ALTER TABLE members ADD COLUMN IF NOT EXISTS breathwork_log TEXT[];`);
   await pool.query(`ALTER TABLE members ADD COLUMN IF NOT EXISTS well_activity_log TEXT[];`);

@@ -64,3 +64,38 @@ export async function filterActiveMemberSubscriptions(
 
   return active;
 }
+
+export type UmpMembershipState = "active" | "inactive" | "unknown";
+
+// Strict, three-state version of verifyMembership() for decisions that must
+// not fail open (e.g. "has this trial person become a paying member?").
+// Returns "unknown" on any error, timeout, non-200, bad JSON or missing
+// WELL_API_KEY: callers should skip and retry later, never treat it as paid
+// or unpaid.
+export async function umpMembershipState(email: string): Promise<UmpMembershipState> {
+  if (email.toLowerCase() === FOUNDER_EMAIL) return "active";
+  if (!WELL_API_KEY) {
+    console.warn("WELL_API_KEY not set, membership state unknown");
+    return "unknown";
+  }
+  try {
+    const response = await fetch(
+      `${WORDPRESS_URL}/wp-json/well/v1/membership-status?email=${encodeURIComponent(email)}`,
+      {
+        headers: { "X-WELL-API-KEY": WELL_API_KEY },
+        signal: AbortSignal.timeout(8000),
+      }
+    );
+    if (!response.ok) {
+      console.warn(`Membership state check failed for ${email}: HTTP ${response.status}`);
+      return "unknown";
+    }
+    const data = (await response.json()) as { active?: unknown };
+    if (data.active === true) return "active";
+    if (data.active === false) return "inactive";
+    return "unknown";
+  } catch (err) {
+    console.error(`Membership state check error for ${email}:`, err);
+    return "unknown";
+  }
+}

@@ -10,13 +10,31 @@
  *      the member to join the full community.
  *
  * Required env var: BREVO_API_KEY
- * Optional env var: BREVO_SENDER_EMAIL  (defaults to loretta@lorettabates.com)
+ * Member emails always send from loretta@lorettabates.com (BREVO_SENDER_EMAIL is no longer read).
  */
+
+import {
+  RenderedEmail,
+  firstNameFrom,
+  plainText,
+  renderDay15Email,
+  renderDay3Email,
+  renderTrialEndedEmail,
+  renderTrialEndingEmail,
+  renderWelcomeEmail,
+  renderWellCupWinnerEmail,
+} from "./emailTemplates";
 
 const BREVO_API_KEY = process.env.BREVO_API_KEY;
 const BREVO_BASE = "https://api.brevo.com/v3";
 const SENDER_NAME = "Loretta Bates";
-const SENDER_EMAIL = process.env.BREVO_SENDER_EMAIL || "loretta@lorettabates.com";
+// Every member-facing email comes from Loretta herself (decided 2026-09-29), so
+// members see one sender across the app, UMP and Brevo automations, and replies
+// land in a monitored inbox. Deliberately NOT overridable by BREVO_SENDER_EMAIL.
+const MEMBER_SENDER_EMAIL = "loretta@lorettabates.com";
+const MEMBER_SENDER = { name: SENDER_NAME, email: MEMBER_SENDER_EMAIL };
+const MEMBER_REPLY_TO = { name: SENDER_NAME, email: MEMBER_SENDER_EMAIL };
+// Internal admin alerts only.
 const WELL_SENDER_EMAIL = "well@lorettabates.com";
 const TRIAL_LIST_NAME = "App Free Trial";
 const TRIAL_COMPLETED_LIST_NAME = "App Trial Completed";
@@ -28,6 +46,47 @@ function brevoHeaders(): Record<string, string> {
     "Content-Type": "application/json",
     Accept: "application/json",
   };
+}
+
+/**
+ * Sends one member-facing transactional email from Loretta via Brevo.
+ * Returns true when Brevo accepted it, false otherwise (never throws), so
+ * schedulers can set their sent-flags only on success.
+ */
+async function sendMemberEmail(
+  label: string,
+  email: string,
+  name: string,
+  rendered: RenderedEmail
+): Promise<boolean> {
+  if (!BREVO_API_KEY) {
+    console.warn(`[BREVO] BREVO_API_KEY not set, skipping ${label} email`);
+    return false;
+  }
+  try {
+    const res = await fetch(`${BREVO_BASE}/smtp/email`, {
+      method: "POST",
+      headers: brevoHeaders(),
+      body: JSON.stringify({
+        sender: MEMBER_SENDER,
+        replyTo: MEMBER_REPLY_TO,
+        to: [{ email, name: plainText(name || "") || undefined }],
+        subject: rendered.subject,
+        htmlContent: rendered.html,
+        textContent: rendered.text,
+      }),
+    });
+    if (res.ok) {
+      console.log(`[BREVO] ${label} email sent to ${email}`);
+      return true;
+    }
+    const err = await res.text();
+    console.error(`[BREVO] Failed to send ${label} email to ${email} (${res.status}): ${err}`);
+    return false;
+  } catch (err) {
+    console.error(`[BREVO] ${label} email error for ${email}:`, err);
+    return false;
+  }
 }
 
 // Cache list IDs so we only look them up once per process lifetime.
@@ -219,362 +278,57 @@ export async function addResumedTrialContactToBrevo(
 
 /**
  * Sends an immediate welcome email when a member starts their free trial for the first time.
- * Warm and brief — the day-3 email handles the full feature tour.
+ * Copy: src/emailTemplates/welcome.ts (approved 2026-09-29).
  */
-export async function sendWelcomeEmail(
-  email: string,
-  name: string
-): Promise<void> {
-  if (!BREVO_API_KEY) {
-    console.warn("[BREVO] BREVO_API_KEY not set — skipping welcome email");
-    return;
-  }
-
-  const firstName = name.split(" ")[0];
-
-  const htmlContent = `
-<!DOCTYPE html>
-<html lang="en" style="color-scheme:dark;background-color:#020810;">
-<head>
-<meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>Welcome to WELL with Loretta!</title>
-<meta name="color-scheme" content="dark">
-<meta name="supported-color-schemes" content="dark">
-</head>
-<body bgcolor="#0a0e1a" style="margin:0;padding:0;background-color:#0a0e1a !important;font-family:'Helvetica Neue',Arial,sans-serif;color:#e8e8e8;">
-  <table width="100%" cellpadding="0" cellspacing="0" style="background-color:#0a0e1a !important;padding:40px 20px;">
-    <tr>
-      <td align="center">
-        <table width="560" cellpadding="0" cellspacing="0" style="background:#0d1117;border:1px solid #1e2a3a;border-radius:16px;overflow:hidden;max-width:560px;width:100%;">
-
-          <!-- Header -->
-          <tr>
-            <td style="background:linear-gradient(135deg,#1a6fb8,#4db8e8);padding:32px 40px 28px;text-align:center;">
-              <img src="https://lorettabates.com/wp-content/uploads/2025/11/WELL-Logo-white.png"
-                   alt="WELL with Loretta"
-                   width="200"
-                   style="display:block;margin:0 auto 10px;max-width:200px;height:auto;" />
-              <p style="margin:0;font-family:Arial,sans-serif;font-size:12px;color:#c8e8f8;letter-spacing:1.5px;text-transform:uppercase;">by Loretta Bates</p>
-            </td>
-          </tr>
-
-          <!-- Body -->
-          <tr>
-            <td style="padding:40px 40px 36px;">
-              <p style="margin:0 0 20px;font-size:22px;font-weight:bold;color:#ffffff;line-height:1.3;">Welcome, ${firstName}!</p>
-
-              <p style="margin:0 0 20px;font-size:15px;line-height:1.75;color:#c8cdd6;">
-                I am so glad you are here. Your 30-day free trial is officially active and everything inside the WELL with Loretta App is yours to explore.
-              </p>
-
-              <p style="margin:0 0 20px;font-size:15px;line-height:1.75;color:#c8cdd6;">
-                Live fitness classes, breathwork, meal plans, a curated playlist, and a community of people on the same journey — it is all waiting for you. And every time you show up, you earn points in the <strong style="color:#4db8e8;">WELL Cup</strong>, where daily and monthly winners take home real prizes.
-              </p>
-
-              <p style="margin:0 0 32px;font-size:15px;line-height:1.75;color:#c8cdd6;">
-                Start by opening the app and completing your profile. Then come say hello in the Community tab — I would love to see you there.
-              </p>
-
-              <!-- CTA -->
-              <table width="100%" cellpadding="0" cellspacing="0" style="margin:0 0 32px;">
-                <tr>
-                  <td align="center">
-                    <a href="https://app.lorettabates.com"
-                       style="display:inline-block;background:linear-gradient(135deg,#1a6fb8,#4db8e8);color:#ffffff;font-family:Arial,sans-serif;font-size:15px;font-weight:bold;text-decoration:none;padding:16px 44px;border-radius:50px;letter-spacing:0.5px;">
-                      Open the App
-                    </a>
-                  </td>
-                </tr>
-              </table>
-
-              <p style="margin:0;font-size:15px;line-height:1.75;color:#c8cdd6;">
-                With love,<br />
-                <strong style="color:#e8e8e8;">Loretta</strong>
-              </p>
-            </td>
-          </tr>
-
-          <!-- Footer -->
-          <tr>
-            <td style="padding:20px 40px 28px;border-top:1px solid #1e2a3a;text-align:center;">
-              <p style="margin:0;font-size:11px;color:#4b5563;line-height:1.6;">
-                You're receiving this because you started a free trial at the WELL with Loretta App.<br />
-                Questions? Reply to this email anytime.
-              </p>
-            </td>
-          </tr>
-
-        </table>
-      </td>
-    </tr>
-  </table>
-</body>
-</html>
-  `.trim();
-
-  const textContent = `Welcome, ${firstName}!
-
-I am so glad you are here. Your 30-day free trial is officially active and everything inside the WELL with Loretta App is yours to explore.
-
-Live fitness classes, breathwork, meal plans, a curated playlist, and a community of people on the same journey — it is all waiting for you. And every time you show up, you earn points in the WELL Cup, where daily and monthly winners take home real prizes.
-
-Start by opening the app and completing your profile. Then come say hello in the Community tab.
-
-Open the App: https://app.lorettabates.com
-
-With love,
-Loretta`;
-
-  try {
-    const res = await fetch(`${BREVO_BASE}/smtp/email`, {
-      method: "POST",
-      headers: brevoHeaders(),
-      body: JSON.stringify({
-        sender: { name: SENDER_NAME, email: WELL_SENDER_EMAIL },
-        to: [{ email, name }],
-        subject: `Welcome, ${firstName}! Your 30-day trial starts now.`,
-        htmlContent,
-        textContent,
-      }),
-    });
-
-    if (res.ok || res.status === 201) {
-      console.log(`[BREVO] Welcome email sent to ${email}`);
-    } else {
-      const err = await res.text();
-      console.error(`[BREVO] Failed to send welcome email (${res.status}): ${err}`);
-    }
-  } catch (err) {
-    console.error("[BREVO] sendWelcomeEmail error:", err);
-  }
+export async function sendWelcomeEmail(email: string, name: string): Promise<boolean> {
+  const rendered = renderWelcomeEmail({ firstName: firstNameFrom(name) });
+  return sendMemberEmail("welcome", email, name, rendered);
 }
 
 /**
- * Sends the day-3 mid-trial email via Brevo transactional email API.
- * Called by the daily scheduler for members whose trial started exactly 3 days ago.
+ * Sends the day-3 email (trial and paid members alike) via Brevo.
+ * Called by the daily scheduler for members who joined 3 to 4 days ago.
+ * Copy: src/emailTemplates/day3.ts (approved 2026-09-29).
  */
+export async function sendDay3Email(email: string, name: string): Promise<boolean> {
+  const rendered = renderDay3Email({ firstName: firstNameFrom(name) });
+  return sendMemberEmail("day-3", email, name, rendered);
+}
+
 // Kept as alias so existing scheduler call sites don't break
 export const sendMidTrialEmail = sendDay3Email;
 
-export async function sendDay3Email(
+/**
+ * Day 15 of the 30-day trial (trial_ends_at = today + 15). Trials only.
+ * Copy: src/emailTemplates/day15.ts. Replaces the retired referral week-1 email.
+ */
+export async function sendDay15Email(email: string, name: string): Promise<boolean> {
+  const rendered = renderDay15Email({ firstName: firstNameFrom(name) });
+  return sendMemberEmail("day-15", email, name, rendered);
+}
+
+/**
+ * Day 27: "your trial ends in 3 days" (trial_ends_at = today + 3). Trials only.
+ * Copy: src/emailTemplates/trialEnding.ts.
+ */
+export async function sendTrialEndingEmail(email: string, name: string): Promise<boolean> {
+  const rendered = renderTrialEndingEmail({ firstName: firstNameFrom(name) });
+  return sendMemberEmail("trial-ending", email, name, rendered);
+}
+
+/**
+ * Congratulates the monthly WELL Cup winner. monthName is the month that was WON
+ * (e.g. "September 2026"), not the month the crown ran in.
+ * Copy: src/emailTemplates/wellCupWinner.ts.
+ */
+export async function sendWellCupWinnerEmail(
   email: string,
-  name: string
-): Promise<void> {
-  if (!BREVO_API_KEY) {
-    console.warn("[BREVO] BREVO_API_KEY not set — skipping day-3 email");
-    return;
-  }
-
-  const firstName = name.split(" ")[0];
-
-  const htmlContent = `
-<!DOCTYPE html>
-<html lang="en" style="color-scheme:dark;background-color:#020810;">
-<head>
-<meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>You're 3 days in — here's what you might be missing!</title>
-<style>@import url('https://fonts.googleapis.com/css2?family=Poppins:wght@400;600;700&display=swap');</style>
-<meta name="color-scheme" content="dark">
-<meta name="supported-color-schemes" content="dark">
-</head>
-<body bgcolor="#0d1117" style="margin:0;padding:0;background-color:#0d1117 !important;font-family:'Poppins',Arial,sans-serif;color:#e8e8e8;">
-  <table width="100%" cellpadding="0" cellspacing="0" style="background-color:#0d1117 !important;padding:40px 20px;">
-    <tr>
-      <td align="center">
-        <table width="560" cellpadding="0" cellspacing="0" style="background:#0d1117;border:1px solid #1e2a3a;border-radius:16px;overflow:hidden;max-width:560px;width:100%;">
-
-          <!-- Header -->
-          <tr>
-            <td style="background:linear-gradient(135deg,#1a6fb8,#4db8e8);padding:28px 40px 24px;text-align:center;">
-              <img src="https://lorettabates.com/wp-content/uploads/2025/11/WELL-Logo-white.png"
-                   alt="WELL Collective by Loretta Bates"
-                   width="220"
-                   style="display:block;margin:0 auto 12px;max-width:220px;height:auto;" />
-              <p style="margin:0;font-family:'Poppins',Arial,sans-serif;font-size:13px;color:#c8e8f8;letter-spacing:1px;text-transform:uppercase;">by Loretta Bates</p>
-            </td>
-          </tr>
-
-          <!-- Body -->
-          <tr>
-            <td style="padding:40px 40px 32px;">
-              <p style="margin:0 0 24px;font-size:18px;color:#e8e8e8;">Hey ${firstName},</p>
-
-              <p style="margin:0 0 20px;font-size:15px;line-height:1.7;color:#c8cdd6;">
-                You've been a part of the WELL Collective for 3 days now, and I just want to make sure you're getting the most out of every single day!
-              </p>
-
-              <p style="margin:0 0 28px;font-size:15px;line-height:1.7;color:#c8cdd6;">
-                Here are the features I don't want you to miss:
-              </p>
-
-              <!-- Feature: WELL Cup -->
-              <table width="100%" cellpadding="0" cellspacing="0" style="margin:0 0 20px;">
-                <tr>
-                  <td style="background:#0a1520;border:1px solid #1e2a3a;border-radius:12px;padding:20px 24px;">
-                    <p style="margin:0 0 6px;font-size:16px;font-weight:bold;color:#4db8e8;">🏆 The WELL Cup</p>
-                    <p style="margin:0;font-size:14px;line-height:1.7;color:#c8cdd6;">
-                      Everything you do inside the app earns you points: opening the app, logging sleep, completing a workout, listening to music, attending a live event, even accepting a daily challenge! The top point-earner each day wins the WELL Cup. It's our way of celebrating you for showing up. The Monthly Cup Winner gets a <strong style="color:#e8e8e8;">FREE month of the WELL Collective</strong>, and the WELL CROWN winner (for the year) receives a <strong style="color:#e8e8e8;">FREE WELL ESCAPE!</strong>
-                    </p>
-                  </td>
-                </tr>
-              </table>
-
-              <!-- Feature: Live Classes -->
-              <table width="100%" cellpadding="0" cellspacing="0" style="margin:0 0 20px;">
-                <tr>
-                  <td style="background:#0a1520;border:1px solid #1e2a3a;border-radius:12px;padding:20px 24px;">
-                    <p style="margin:0 0 6px;font-size:16px;font-weight:bold;color:#4db8e8;">🎥 Live Classes + Video Library</p>
-                    <p style="margin:0;font-size:14px;line-height:1.7;color:#c8cdd6;">
-                      New classes drop weekly! Breathwork, strength training, stretching, cardio, and more. Can't make it live? Every class is saved in the video library so you can work out on your schedule, not mine.
-                    </p>
-                  </td>
-                </tr>
-              </table>
-
-              <!-- Feature: Nutrition -->
-              <table width="100%" cellpadding="0" cellspacing="0" style="margin:0 0 20px;">
-                <tr>
-                  <td style="background:#0a1520;border:1px solid #1e2a3a;border-radius:12px;padding:20px 24px;">
-                    <p style="margin:0 0 6px;font-size:16px;font-weight:bold;color:#4db8e8;">🥗 Nutrition</p>
-                    <p style="margin:0;font-size:14px;line-height:1.7;color:#c8cdd6;">
-                      A new recipe is waiting for you every single day. Add it to your weekly meal plan, and the app will automatically build your shopping list. You can also log your meals, track nutrition info, and add your own items to the list manually.
-                    </p>
-                  </td>
-                </tr>
-              </table>
-
-              <!-- Feature: Music -->
-              <table width="100%" cellpadding="0" cellspacing="0" style="margin:0 0 20px;">
-                <tr>
-                  <td style="background:#0a1520;border:1px solid #1e2a3a;border-radius:12px;padding:20px 24px;">
-                    <p style="margin:0 0 6px;font-size:16px;font-weight:bold;color:#4db8e8;">🎵 Music</p>
-                    <p style="margin:0;font-size:14px;line-height:1.7;color:#c8cdd6;">
-                      We curated a full playlist just for your encouragement and wellness moments. Browse by category to find the right vibe, or tap the heart to save songs to your own personal Favorites playlist.
-                    </p>
-                  </td>
-                </tr>
-              </table>
-
-              <!-- Feature: Events -->
-              <table width="100%" cellpadding="0" cellspacing="0" style="margin:0 0 20px;">
-                <tr>
-                  <td style="background:#0a1520;border:1px solid #1e2a3a;border-radius:12px;padding:20px 24px;">
-                    <p style="margin:0 0 6px;font-size:16px;font-weight:bold;color:#4db8e8;">📅 Events</p>
-                    <p style="margin:0;font-size:14px;line-height:1.7;color:#c8cdd6;">
-                      Workshops, livestreams, and WELL Escapes are all in one place. Click <strong style="color:#e8e8e8;">Going</strong> on any event and points will be automatically added to your account after the event finishes.
-                    </p>
-                  </td>
-                </tr>
-              </table>
-
-              <!-- Feature: Community -->
-              <table width="100%" cellpadding="0" cellspacing="0" style="margin:0 0 28px;">
-                <tr>
-                  <td style="background:#0a1520;border:1px solid #1e2a3a;border-radius:12px;padding:20px 24px;">
-                    <p style="margin:0 0 6px;font-size:16px;font-weight:bold;color:#4db8e8;">💬 Community</p>
-                    <p style="margin:0;font-size:14px;line-height:1.7;color:#c8cdd6;">
-                      You don't have to do this alone. The WELL Collective community is inside the app! Be sure to post, comment, share wins, and connect with people who are on the same journey.
-                    </p>
-                  </td>
-                </tr>
-              </table>
-
-              <p style="margin:0 0 28px;font-size:15px;line-height:1.7;color:#c8cdd6;">
-                You are a vital part of this community, and it needs what you have to offer!
-              </p>
-
-              <!-- CTA -->
-              <table width="100%" cellpadding="0" cellspacing="0">
-                <tr>
-                  <td align="center">
-                    <a href="https://app.lorettabates.com"
-                       style="display:inline-block;background:linear-gradient(135deg,#1a6fb8,#4db8e8);color:#ffffff;font-family:Arial,sans-serif;font-size:15px;font-weight:bold;text-decoration:none;padding:16px 40px;border-radius:50px;letter-spacing:0.5px;">
-                      Open the App →
-                    </a>
-                  </td>
-                </tr>
-              </table>
-            </td>
-          </tr>
-
-          <!-- Footer -->
-          <tr>
-            <td style="padding:24px 40px;border-top:1px solid #1e2a3a;text-align:center;">
-              <p style="margin:0 0 6px;font-size:13px;color:#6b7280;">
-                With love,
-              </p>
-              <p style="margin:0;font-size:14px;font-weight:bold;color:#c8cdd6;">Loretta</p>
-              <p style="margin:12px 0 0;font-size:11px;color:#4b5563;">
-                You're receiving this because you're a member of the WELL Collective app. Questions? Reply to this email anytime.
-              </p>
-            </td>
-          </tr>
-
-        </table>
-      </td>
-    </tr>
-  </table>
-</body>
-</html>
-  `.trim();
-
-  const textContent = `Hey ${firstName},
-
-You've been a part of the WELL Collective for 3 days now, and I just want to make sure you're getting the most out of every single day!
-
-Here are the features I don't want you to miss:
-
-🏆 THE WELL CUP
-Everything you do inside the app earns you points: opening the app, logging sleep, completing a workout, listening to music, attending a live event, even accepting a daily challenge! The top point-earner each day wins the WELL Cup. It's our way of celebrating you for showing up. The Monthly Cup Winner gets a FREE month of the WELL Collective, and the WELL CROWN winner (for the year) receives a FREE WELL ESCAPE!
-
-🎥 LIVE CLASSES + VIDEO LIBRARY
-New classes drop weekly! Breathwork, strength training, stretching, cardio, and more. Can't make it live? Every class is saved in the video library so you can work out on your schedule, not mine.
-
-🥗 NUTRITION
-A new recipe is waiting for you every single day. Add it to your weekly meal plan, and the app will automatically build your shopping list. You can also log your meals, track nutrition info, and add your own items to the list manually.
-
-🎵 MUSIC
-We curated a full playlist just for your encouragement and wellness moments. Browse by category to find the right vibe, or tap the heart to save songs to your own personal Favorites playlist.
-
-📅 EVENTS
-Workshops, livestreams, and WELL Escapes are all in one place. Click Going on any event and points will be automatically added to your account after the event finishes.
-
-💬 COMMUNITY
-You don't have to do this alone. The WELL Collective community is inside the app! Be sure to post, comment, share wins, and connect with people who are on the same journey.
-
-You are a vital part of this community, and it needs what you have to offer!
-
-Open the App: https://app.lorettabates.com
-
-With love,
-Loretta
-
-You're receiving this because you're a member of the WELL Collective app. Questions? Reply to this email anytime.`;
-
-  try {
-    const res = await fetch(`${BREVO_BASE}/smtp/email`, {
-      method: "POST",
-      headers: brevoHeaders(),
-      body: JSON.stringify({
-        sender: { name: SENDER_NAME, email: WELL_SENDER_EMAIL },
-        to: [{ email, name }],
-        subject: `You're 3 days in — here's what you might be missing! ✨`,
-        htmlContent,
-        textContent,
-      }),
-    });
-
-    if (res.ok || res.status === 201) {
-      console.log(`[BREVO] Day-3 email sent to ${email}`);
-    } else {
-      const err = await res.text();
-      console.error(`[BREVO] Failed to send day-3 email (${res.status}): ${err}`);
-    }
-  } catch (err) {
-    console.error("[BREVO] sendDay3Email error:", err);
-  }
+  name: string,
+  points: number,
+  monthName: string
+): Promise<boolean> {
+  const rendered = renderWellCupWinnerEmail({ firstName: firstNameFrom(name), monthName, points });
+  return sendMemberEmail("wellcup-winner", email, name, rendered);
 }
 
 /**
@@ -689,7 +443,8 @@ Loretta`;
       method: "POST",
       headers: brevoHeaders(),
       body: JSON.stringify({
-        sender: { name: SENDER_NAME, email: WELL_SENDER_EMAIL },
+        sender: MEMBER_SENDER,
+        replyTo: MEMBER_REPLY_TO,
         to: [{ email, name }],
         subject: `One week in — are you taking advantage of everything? ✨`,
         htmlContent,
@@ -802,7 +557,8 @@ Loretta Bates`;
       method: "POST",
       headers: brevoHeaders(),
       body: JSON.stringify({
-        sender: { name: SENDER_NAME, email: SENDER_EMAIL },
+        sender: MEMBER_SENDER,
+        replyTo: MEMBER_REPLY_TO,
         to: [{ email, name }],
         subject: `We miss you — and we mean it`,
         htmlContent,
@@ -821,159 +577,14 @@ Loretta Bates`;
 }
 
 /**
- * Sends the post-trial win-back email via Brevo transactional email API.
- * Called once per expired trial by the daily scheduler.
+ * Sends the post-trial email ("your spot is still here") via Brevo.
+ * Called once per expired, non-paying trial by the daily scheduler.
+ * Copy: src/emailTemplates/trialEnded.ts (approved 2026-09-29).
+ * Returns true only when Brevo accepted the email.
  */
-export async function sendTrialExpiredEmail(
-  email: string,
-  name: string
-): Promise<void> {
-  if (!BREVO_API_KEY) {
-    console.warn("[BREVO] BREVO_API_KEY not set — skipping win-back email");
-    return;
-  }
-
-  const firstName = name.split(" ")[0];
-
-  const htmlContent = `
-<!DOCTYPE html>
-<html lang="en" style="color-scheme:dark;background-color:#020810;">
-<head>
-<meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>We miss what you had to offer</title>
-<style>@import url('https://fonts.googleapis.com/css2?family=Poppins:wght@400;600;700&display=swap');</style>
-<meta name="color-scheme" content="dark">
-<meta name="supported-color-schemes" content="dark">
-</head>
-<body bgcolor="#0d1117" style="margin:0;padding:0;background-color:#0d1117 !important;font-family:'Poppins',Arial,sans-serif;color:#e8e8e8;">
-  <table width="100%" cellpadding="0" cellspacing="0" style="background-color:#0d1117 !important;padding:40px 20px;">
-    <tr>
-      <td align="center">
-        <table width="560" cellpadding="0" cellspacing="0" style="background:#0d1117;border:1px solid #1e2a3a;border-radius:16px;overflow:hidden;max-width:560px;width:100%;">
-
-          <!-- Header -->
-          <tr>
-            <td style="background:linear-gradient(135deg,#1a6fb8,#4db8e8);padding:28px 40px 24px;text-align:center;">
-              <img src="https://lorettabates.com/wp-content/uploads/2025/11/WELL-Logo-white.png"
-                   alt="WELL Collective by Loretta Bates"
-                   width="220"
-                   style="display:block;margin:0 auto 12px;max-width:220px;height:auto;" />
-              <p style="margin:0;font-family:'Poppins',Arial,sans-serif;font-size:13px;color:#c8e8f8;letter-spacing:1px;text-transform:uppercase;">by Loretta Bates</p>
-            </td>
-          </tr>
-
-          <!-- Body -->
-          <tr>
-            <td style="padding:40px 40px 32px;">
-              <p style="margin:0 0 8px;font-size:22px;font-weight:bold;color:#ffffff;font-family:'Poppins',Arial,sans-serif;">We miss what you had to offer</p>
-              <p style="margin:0 0 24px;font-size:18px;color:#e8e8e8;">Hi ${firstName},</p>
-
-              <p style="margin:0 0 20px;font-size:15px;line-height:1.7;color:#c8cdd6;">
-                I've been thinking about you. Your trial week in the WELL Collective has come to an end, and I just want you to know that it really meant a lot to me that you showed up!
-              </p>
-
-              <p style="margin:0 0 20px;font-size:15px;line-height:1.7;color:#c8cdd6;">
-                There's something I truly believe with everything in me: <strong style="color:#4db8e8;">you only get out what you give.</strong> The people who are transforming by showing up for their workouts, leaning into the weekly themes, encouraging one another in the forums, they are not doing it because it's easy! They're doing it because they decided to give it their whole selves.
-              </p>
-
-              <p style="margin:0 0 20px;font-size:15px;line-height:1.7;color:#c8cdd6;">
-                That is what the WELL Collective is! It is a place where people who are choosing to take care of themselves come together every single day and there is definitely a place in it for <em>you</em>!
-              </p>
-
-              <!-- Pull quote -->
-              <table width="100%" cellpadding="0" cellspacing="0" style="margin:28px 0;">
-                <tr>
-                  <td style="border-left:3px solid #4db8e8;padding:16px 20px;background:#0a1520;border-radius:0 8px 8px 0;">
-                    <p style="margin:0;font-size:16px;font-style:italic;color:#4db8e8;line-height:1.6;">
-                      "The community is here. The classes are here. The inspiration is here! It is all waiting for you to pour yourself into it and watch it pour right back."
-                    </p>
-                    <p style="margin:8px 0 0;font-size:12px;color:#6b7280;">— Loretta</p>
-                  </td>
-                </tr>
-              </table>
-
-              <p style="margin:0 0 28px;font-size:15px;line-height:1.7;color:#c8cdd6;">
-                Come back. Join us as a full member. Come to the Tuesday livestream. Post in the Community. Cheer on a fellow member. Start a streak. You might be surprised what happens when you give this community everything you've got.
-              </p>
-
-              <!-- CTA -->
-              <table width="100%" cellpadding="0" cellspacing="0">
-                <tr>
-                  <td align="center">
-                    <a href="https://lorettabates.com/videolibrary.lorettabates.com/subscription-plan/"
-                       style="display:inline-block;background:linear-gradient(135deg,#1a6fb8,#4db8e8);color:#ffffff;font-family:Arial,sans-serif;font-size:15px;font-weight:bold;text-decoration:none;padding:16px 40px;border-radius:50px;letter-spacing:0.5px;">
-                      Join the WELL Collective →
-                    </a>
-                  </td>
-                </tr>
-              </table>
-            </td>
-          </tr>
-
-          <!-- Footer -->
-          <tr>
-            <td style="padding:24px 40px;border-top:1px solid #1e2a3a;text-align:center;">
-              <p style="margin:0 0 6px;font-size:13px;color:#6b7280;">
-                With love and belief in you,
-              </p>
-              <p style="margin:0;font-size:14px;font-weight:bold;color:#c8cdd6;">Loretta Bates</p>
-              <p style="margin:12px 0 0;font-size:11px;color:#4b5563;">
-                You're receiving this because you started a free trial in the WELL Collective app.
-              </p>
-            </td>
-          </tr>
-
-        </table>
-      </td>
-    </tr>
-  </table>
-</body>
-</html>
-  `.trim();
-
-  const textContent = `We miss what you had to offer
-
-Hi ${firstName},
-
-I've been thinking about you. Your trial week in the WELL Collective has come to an end, and I just want you to know that it really meant a lot to me that you showed up!
-
-There's something I truly believe with everything in me: you only get out what you give. The people who are transforming by showing up for their workouts, leaning into the weekly themes, encouraging one another in the forums, they are not doing it because it's easy! They're doing it because they decided to give it their whole selves.
-
-That is what the WELL Collective is! It is a place where people who are choosing to take care of themselves come together every single day and there is definitely a place in it for you!
-
-"The community is here. The classes are here. The inspiration is here! It is all waiting for you to pour yourself into it and watch it pour right back."
-— Loretta
-
-Come back. Join us as a full member. Come to the Tuesday livestream. Post in the Community. Cheer on a fellow member. Start a streak. You might be surprised what happens when you give this community everything you've got.
-
-Join the WELL Collective: https://lorettabates.com/videolibrary.lorettabates.com/subscription-plan/
-
-With love and belief in you,
-Loretta Bates`;
-
-  try {
-    const res = await fetch(`${BREVO_BASE}/smtp/email`, {
-      method: "POST",
-      headers: brevoHeaders(),
-      body: JSON.stringify({
-        sender: { name: SENDER_NAME, email: SENDER_EMAIL },
-        to: [{ email, name }],
-        subject: `We miss what you had to offer!`,
-        htmlContent,
-        textContent,
-      }),
-    });
-
-    if (res.ok || res.status === 201) {
-      console.log(`[BREVO] Win-back email sent to ${email}`);
-    } else {
-      const err = await res.text();
-      console.error(`[BREVO] Failed to send win-back email (${res.status}): ${err}`);
-    }
-  } catch (err) {
-    console.error("[BREVO] sendTrialExpiredEmail error:", err);
-  }
+export async function sendTrialExpiredEmail(email: string, name: string): Promise<boolean> {
+  const rendered = renderTrialEndedEmail({ firstName: firstNameFrom(name) });
+  return sendMemberEmail("trial-ended", email, name, rendered);
 }
 
 /**
@@ -1100,7 +711,8 @@ Loretta`;
       method: "POST",
       headers: brevoHeaders(),
       body: JSON.stringify({
-        sender: { name: SENDER_NAME, email: WELL_SENDER_EMAIL },
+        sender: MEMBER_SENDER,
+        replyTo: MEMBER_REPLY_TO,
         to: [{ email, name }],
         subject: `Your membership includes this - have you tried it yet?`,
         htmlContent,
@@ -1231,7 +843,8 @@ Loretta Bates`;
       method: "POST",
       headers: brevoHeaders(),
       body: JSON.stringify({
-        sender: { name: SENDER_NAME, email: WELL_SENDER_EMAIL },
+        sender: MEMBER_SENDER,
+        replyTo: MEMBER_REPLY_TO,
         to: [{ email, name }],
         subject: `You're invited back - one month on me`,
         htmlContent,
@@ -1407,7 +1020,8 @@ Founder, WELL Collective`;
       method: "POST",
       headers: brevoHeaders(),
       body: JSON.stringify({
-        sender: { name: SENDER_NAME, email: WELL_SENDER_EMAIL },
+        sender: MEMBER_SENDER,
+        replyTo: MEMBER_REPLY_TO,
         to: [{ email, name }],
         subject: "Did you get my message?",
         htmlContent,
@@ -1559,7 +1173,8 @@ Founder, WELL Collective`;
       method: "POST",
       headers: brevoHeaders(),
       body: JSON.stringify({
-        sender: { name: SENDER_NAME, email: WELL_SENDER_EMAIL },
+        sender: MEMBER_SENDER,
+        replyTo: MEMBER_REPLY_TO,
         to: [{ email, name }],
         subject: `${firstName}, your ${remainingDays} days are still waiting`,
         htmlContent,
@@ -1616,7 +1231,6 @@ export async function sendWellCupWinnerAdminAlert(
           <li>Log in to your payment processor (Stripe or PayPal)</li>
           <li>Find <strong style="color:#ffffff;">${winnerEmail}</strong></li>
           <li>Skip or credit their next billing cycle</li>
-          <li>Their UMP expiry date was already extended in WordPress</li>
         </ol>
 
         <p style="margin:0;font-size:13px;color:#556677;">This alert was sent automatically when the monthly winner was crowned.</p>
