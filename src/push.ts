@@ -2,6 +2,7 @@ import webpush from "web-push";
 import { initializeApp, getApps, cert } from "firebase-admin/app";
 import { getMessaging } from "firebase-admin/messaging";
 import { pool } from "./db";
+import { apnsReady, isApnsToken, sendApns } from "./apns";
 import { verifyMembership } from "./membership";
 import { deriveMemberId } from "./utils/memberUtils";
 
@@ -153,11 +154,22 @@ async function sendFcmToTokens(
   tokens: { token: string; platform: string }[],
   payload: NotificationPayload
 ): Promise<{ sent: number; removed: number }> {
-  if (!fcmReady || tokens.length === 0) return { sent: 0, removed: 0 };
   let sent = 0;
   let removed = 0;
   await Promise.all(
     tokens.map(async ({ token, platform }) => {
+      if (isApnsToken(token)) {
+        if (!apnsReady) return;
+        const result = await sendApns(token, payload);
+        if (result === "sent") sent += 1;
+        if (result === "invalid") {
+          await pool.query("DELETE FROM device_tokens WHERE token = $1", [token]);
+          removed += 1;
+          console.log("[APNS] Removed invalid token");
+        }
+        return;
+      }
+      if (!fcmReady) return;
       try {
         const message: import("firebase-admin/messaging").Message = {
           token,
