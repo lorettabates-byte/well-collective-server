@@ -54,10 +54,18 @@ async function load(): Promise<PaidMembers> {
   return { website, apple, fetchedAt: Date.now() };
 }
 
-export async function getPaidMembers(): Promise<PaidMembers> {
-  if (cache && Date.now() - cache.fetchedAt < CACHE_MS) return cache;
+function refresh(): Promise<PaidMembers> {
   inflight ??= load()
     .then((result) => (cache = result))
     .finally(() => { inflight = null; });
   return inflight;
 }
+
+// The level lookup takes ~40s, so serve the last result while refreshing in the background.
+export async function getPaidMembers(): Promise<PaidMembers> {
+  if (!cache) return refresh();
+  if (Date.now() - cache.fetchedAt >= CACHE_MS) refresh().catch((err) => console.error("[PAID] refresh failed:", err));
+  return cache;
+}
+
+refresh().catch((err) => console.error("[PAID] initial load failed:", err));
