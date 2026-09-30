@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { pool } from "../db";
 import { requireAdmin } from "../middleware/adminAuth";
-import { broadcastNotification } from "../push";
+import { broadcastNotification, sendNotificationToUser } from "../push";
 import type { ContentBatchEntry } from "../types";
 import { parseIngredientsForNutritionLookup } from "../anthropic";
 import { computeNutritionFromIngredients } from "../usda";
@@ -410,12 +410,15 @@ router.put("/content-schedule/:date", requireAdmin, async (req, res) => {
 
 router.post("/send-test", requireAdmin, async (req, res) => {
   try {
-    const { title, body } = req.body as { title?: string; body?: string };
-    const result = await broadcastNotification({
+    const { title, body, email } = req.body as { title?: string; body?: string; email?: string };
+    const payload = {
       title: title || "WELL Collective",
       body: body || "This is a test notification from your WELL Collective app.",
       tag: "test",
-    });
+    };
+    const result = email
+      ? await sendNotificationToUser(email.toLowerCase(), payload)
+      : await broadcastNotification(payload);
     res.json(result);
   } catch (err) {
     console.error("send-test error:", err);
