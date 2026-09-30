@@ -2,6 +2,7 @@ import { Router } from "express";
 import { pool } from "../db";
 import { requireAdmin } from "../middleware/adminAuth";
 import { sendNotificationToUser } from "../push";
+import { getPaidMembers } from "../paidMembers";
 
 const router = Router();
 
@@ -394,6 +395,24 @@ router.get("/analytics/dashboard", requireAdmin, async (_req, res) => {
     FROM members
   `);
 
+  const appleIapRaw = appleIapRows[0] as Record<string, string | number> | undefined;
+  let appleIap: { active_count: number; total_count: number; new_this_month: number; web_active_count: number } | null = null;
+  if (appleIapRaw) {
+    appleIap = {
+      active_count: Number(appleIapRaw.active_count),
+      total_count: Number(appleIapRaw.total_count),
+      new_this_month: Number(appleIapRaw.new_this_month),
+      web_active_count: Number(appleIapRaw.web_active_count),
+    };
+    try {
+      const paid = await getPaidMembers();
+      appleIap.web_active_count = paid.website.size;
+      appleIap.active_count = paid.apple.size;
+    } catch (err) {
+      console.error("[PAID] Falling back to DB membership counts:", err);
+    }
+  }
+
   // ── WELL Escape events (for retreat points UI) ────────────────────
   const wellEscapeEventRows = await q("wellEscapeEvents", `
     SELECT id, title, date::text AS date
@@ -462,7 +481,7 @@ router.get("/analytics/dashboard", requireAdmin, async (_req, res) => {
     brainGameDaily: brainGameDailyRows,
     gameChallengeStats: gameChallengeStatsRows[0] ?? null,
     gameChallengesByGame: gameChallengesByGameRows,
-    appleIap: appleIapRows[0] ?? null,
+    appleIap: appleIap,
     wellEscapeEvents: wellEscapeEventRows,
     membersBySource: membersBySourceRows,
   });

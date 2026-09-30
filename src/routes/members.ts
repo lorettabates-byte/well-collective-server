@@ -1,5 +1,6 @@
 import { Router } from "express";
 import { pool } from "../db";
+import { getPaidMembers } from "../paidMembers";
 import { requireAdmin } from "../middleware/adminAuth";
 import { computeBonusBadges, computeLevelBadge, SPECIAL_BADGE_IDS } from "../badges";
 import { ADMIN_NOTIFY_EMAIL, ADMIN_NOTIFY_EMAILS, sendNotificationToUser } from "../push";
@@ -453,9 +454,14 @@ router.get("/admin/members", requireAdmin, async (_req, res) => {
     for (const b of badgeRows) {
       badgesByEmail.set(b.member_email, [...(badgesByEmail.get(b.member_email) ?? []), b.badge_id]);
     }
+    const paid = await getPaidMembers().catch((err) => {
+      console.error("[PAID] admin members lookup failed:", err);
+      return null;
+    });
     res.json({
       members: rows.map((row) => ({
         email: row.email,
+        paidVia: paid?.website.has(row.email.toLowerCase()) ? "website" : paid?.apple.has(row.email.toLowerCase()) ? "apple" : undefined,
         name: row.name,
         avatar: row.avatar ?? undefined,
         // pg parses DATE columns into JS Date objects, which JSON.stringify
