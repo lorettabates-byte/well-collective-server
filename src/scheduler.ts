@@ -1,7 +1,7 @@
 import cron from "node-cron";
 import { sendWinbacks } from "./winback";
 
-const WINBACK_LIVE = false;
+const WINBACK_LIVE = true;
 import {
   generateDailyInspiration,
   generateMotivationBoost,
@@ -1156,7 +1156,6 @@ export function startScheduler(): void {
 
   // WIN-BACK: 10am ET daily. One "first month free" email (UMP coupon COMEBACK) a week
   // after a paid membership ends; rules and once-only log live in winback.ts.
-  // Off until Loretta approves the email copy.
   if (WINBACK_LIVE) {
     cron.schedule("0 10 * * *", () => {
       sendWinbacks().catch((err) => console.error("Win-back emails failed:", err));
