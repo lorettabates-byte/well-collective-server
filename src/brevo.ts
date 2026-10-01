@@ -89,6 +89,10 @@ async function sendMemberEmail(
   }
 }
 
+export function sendOutreachEmail(email: string, name: string, rendered: RenderedEmail): Promise<boolean> {
+  return sendMemberEmail("outreach", email, name, rendered);
+}
+
 // Cache list IDs so we only look them up once per process lifetime.
 const listIdCache = new Map<string, number>();
 

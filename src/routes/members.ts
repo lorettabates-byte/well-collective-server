@@ -4,7 +4,7 @@ import { getPaidMembers } from "../paidMembers";
 import { requireAdmin } from "../middleware/adminAuth";
 import { computeBonusBadges, computeLevelBadge, SPECIAL_BADGE_IDS } from "../badges";
 import { ADMIN_NOTIFY_EMAIL, ADMIN_NOTIFY_EMAILS, sendNotificationToUser } from "../push";
-import { addTrialContactToBrevo } from "../brevo";
+import { addTrialContactToBrevo, sendOutreachEmail } from "../brevo";
 import { sendDay3EmailBlast } from "../scheduler";
 import { deriveMemberId, findEmailByMemberId } from "../utils/memberUtils";
 
@@ -793,6 +793,26 @@ router.put("/members/leaderboard-visibility", async (req, res) => {
 });
 
 // Admin: manually fire the day-3 engagement email blast to all members who haven't received it
+// One-off member outreach: each recipient gets their own pre-rendered email (no shared To/CC).
+router.post("/admin/send-outreach", requireAdmin, async (req, res) => {
+  const { emails } = req.body as {
+    emails?: { email: string; name: string; subject: string; html: string; text: string }[];
+  };
+  if (!Array.isArray(emails) || emails.length === 0 || emails.length > 25) {
+    return res.status(400).json({ error: "emails must be an array of 1-25 items" });
+  }
+  const results: { email: string; sent: boolean }[] = [];
+  for (const e of emails) {
+    if (!e.email || !e.subject || !e.html) {
+      results.push({ email: e.email, sent: false });
+      continue;
+    }
+    const sent = await sendOutreachEmail(e.email.trim(), e.name || "", { subject: e.subject, html: e.html, text: e.text || "" });
+    results.push({ email: e.email, sent });
+  }
+  res.json({ results });
+});
+
 router.post("/admin/send-day3-blast", requireAdmin, async (_req, res) => {
   try {
     const result = await sendDay3EmailBlast();
