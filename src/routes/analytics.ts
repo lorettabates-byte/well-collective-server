@@ -408,6 +408,7 @@ router.get("/analytics/dashboard", requireAdmin, async (_req, res) => {
       const paid = await getPaidMembers();
       appleIap.web_active_count = paid.website.size;
       appleIap.active_count = paid.apple.size;
+      Object.assign(appleIap, { apple_source: paid.appleSource, apple_source_error: paid.appleError });
     } catch (err) {
       // DB membership_status is never cleared, so its counts overstate income; hide the card instead.
       console.error("[PAID] Paid member lookup failed:", err);

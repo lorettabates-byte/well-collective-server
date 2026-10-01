@@ -25,18 +25,20 @@ async function rcGet<T>(pathOrUrl: string): Promise<T> {
 }
 
 // The app sets RevenueCat's appUserID to the member's email (src/utils/iap.ts), so customer ids are emails.
-export async function getAppleSubscriberEmails(): Promise<Set<string>> {
+export async function getAppleSubscribers(): Promise<Map<string, number | null>> {
   const now = Date.now();
-  const emails = new Set<string>();
+  const subs = new Map<string, number | null>();
   let next: string | null = `/projects/${PROJECT}/customers?limit=100`;
   for (let page = 0; next && page < 50; page++) {
     const body: { items: RcCustomer[]; next_page: string | null } = await rcGet(next);
     for (const c of body.items) {
       const ents = Array.isArray(c.active_entitlements) ? c.active_entitlements : c.active_entitlements?.items ?? [];
-      const active = ents.some((e) => e.expires_at === null || e.expires_at > now);
-      if (active && c.id.includes("@")) emails.add(c.id.toLowerCase());
+      const live = ents.filter((e) => e.expires_at === null || e.expires_at > now);
+      if (live.length && c.id.includes("@")) {
+        subs.set(c.id.toLowerCase(), live.some((e) => e.expires_at === null) ? null : Math.max(...live.map((e) => e.expires_at as number)));
+      }
     }
     next = body.next_page;
   }
-  return emails;
+  return subs;
 }

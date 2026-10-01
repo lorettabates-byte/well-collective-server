@@ -1,5 +1,5 @@
 import { pool } from "./db";
-import { getAppleSubscriberEmails, revenueCatReady } from "./revenuecat";
+import { getAppleSubscribers, revenueCatReady } from "./revenuecat";
 
 const WP_BASE = "https://lorettabates.com/videolibrary.lorettabates.com/wp-json/well/v1";
 const WELL_API_KEY = process.env.WELL_API_KEY || "";
@@ -17,6 +17,8 @@ export interface PaidMembers {
   website: Set<string>;
   apple: Set<string>;
   appleSource: "revenuecat" | "app_records";
+  appleError?: string;
+  appleExpires: Map<string, string>;
   fetchedAt: number;
 }
 
@@ -42,12 +44,22 @@ async function load(): Promise<PaidMembers> {
 
   // RevenueCat knows live App Store status. Without it, fall back to the app's own purchase
   // records, which never expire and so overcount cancelled subscribers.
-  let appleEmails: string[];
-  let appleSource: PaidMembers["appleSource"];
+  let appleEmails: string[] = [];
+  let appleSource: PaidMembers["appleSource"] | undefined;
+  let appleError: string | undefined;
+  const appleExpires = new Map<string, string>();
   if (revenueCatReady) {
-    appleEmails = [...(await getAppleSubscriberEmails())];
-    appleSource = "revenuecat";
-  } else {
+    try {
+      const subs = await getAppleSubscribers();
+      appleEmails = [...subs.keys()];
+      subs.forEach((exp, e) => { if (exp) appleExpires.set(e, new Date(exp).toISOString()); });
+      appleSource = "revenuecat";
+    } catch (err) {
+      appleError = String(err instanceof Error ? err.message : err).slice(0, 300);
+      console.error("[PAID] RevenueCat lookup failed, using app purchase records:", err);
+    }
+  }
+  if (!appleSource) {
     const { rows } = await pool.query<{ email: string; name: string | null }>(
       "SELECT email, name FROM members WHERE membership_source = 'iap_apple' AND membership_status = 'active'"
     );
@@ -56,7 +68,7 @@ async function load(): Promise<PaidMembers> {
   }
   const apple = new Set(appleEmails.filter((e) => !isExcluded(e) && !website.has(e)));
 
-  return { website, apple, appleSource, fetchedAt: Date.now() };
+  return { website, apple, appleSource, appleError, appleExpires, fetchedAt: Date.now() };
 }
 
 function refresh(): Promise<PaidMembers> {
