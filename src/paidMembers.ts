@@ -5,6 +5,14 @@ const WELL_API_KEY = process.env.WELL_API_KEY || "";
 const PAID_LEVEL = 4;
 const CACHE_MS = 15 * 60 * 1000;
 
+// Loretta's family, team, and test accounts hold comp memberships, not real income.
+const EXCLUDED_EMAIL = /loretta|rettabates|wellescape|kendallarianab|wmorganbates/i;
+const EXCLUDED_NAME = /^(loretta bates|kendall bates|morgan bates|lloyd killian)$/i;
+
+function isExcluded(email: string, name?: string | null): boolean {
+  return EXCLUDED_EMAIL.test(email) || EXCLUDED_NAME.test((name ?? "").trim());
+}
+
 export interface PaidMembers {
   website: Set<string>;
   apple: Set<string>;
@@ -26,8 +34,10 @@ async function wpGet<T>(path: string): Promise<T> {
 // all-members "active" = level 4 or 7 with an unexpired expire_time, but can't tell
 // them apart; membership-status reports levels but ignores expiry. Paid needs both.
 async function load(): Promise<PaidMembers> {
-  const { members } = await wpGet<{ members: { email: string; active: boolean }[] }>("/all-members");
-  const candidates = members.filter((m) => m.active).map((m) => m.email.toLowerCase());
+  const { members } = await wpGet<{ members: { email: string; name?: string; active: boolean }[] }>("/all-members");
+  const candidates = members
+    .filter((m) => m.active && !isExcluded(m.email, m.name))
+    .map((m) => m.email.toLowerCase());
 
   const website = new Set<string>();
   const queue = [...candidates];
@@ -46,10 +56,15 @@ async function load(): Promise<PaidMembers> {
 
   // Apple subscriptions without a website account. Expiry isn't tracked server-side,
   // so this is "activated via Apple", not a live App Store check.
-  const { rows } = await pool.query<{ email: string }>(
-    "SELECT email FROM members WHERE membership_source = 'iap_apple' AND membership_status = 'active'"
+  const { rows } = await pool.query<{ email: string; name: string | null }>(
+    "SELECT email, name FROM members WHERE membership_source = 'iap_apple' AND membership_status = 'active'"
   );
-  const apple = new Set(rows.map((r) => r.email.toLowerCase()).filter((e) => !website.has(e)));
+  const apple = new Set(
+    rows
+      .filter((r) => !isExcluded(r.email, r.name))
+      .map((r) => r.email.toLowerCase())
+      .filter((e) => !website.has(e))
+  );
 
   return { website, apple, fetchedAt: Date.now() };
 }
