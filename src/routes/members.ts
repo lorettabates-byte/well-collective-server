@@ -445,7 +445,7 @@ router.post("/admin/members/:email/badges", requireAdmin, async (req, res) => {
 router.get("/admin/members", requireAdmin, async (_req, res) => {
   try {
     const { rows } = await pool.query(
-      `SELECT m.email, m.name, m.avatar, m.trial_started_at, m.trial_ends_at, m.updated_at,
+      `SELECT m.email, m.name, m.avatar, m.trial_started_at, m.trial_ends_at, m.updated_at, m.last_monthly_win_at, m.last_monthly_win_pts,
               COALESCE((SELECT SUM(al.points) FROM activity_logs al WHERE al.member_email = m.email), 0) AS well_cup_points
        FROM members m ORDER BY m.updated_at DESC`
     );
@@ -475,6 +475,9 @@ router.get("/admin/members", requireAdmin, async (_req, res) => {
         updatedAt: row.updated_at,
         grantedBadges: badgesByEmail.get(row.email) ?? [],
         well_cup_points: Number(row.well_cup_points),
+        // The monthly WELL Cup win, so Claudine can give the winner their free month.
+        lastMonthlyWinAt: row.last_monthly_win_at ? new Date(row.last_monthly_win_at).toISOString() : undefined,
+        lastMonthlyWinPts: row.last_monthly_win_pts != null ? Number(row.last_monthly_win_pts) : undefined,
       })),
     });
   } catch (err) {
@@ -795,6 +798,21 @@ router.put("/members/leaderboard-visibility", async (req, res) => {
 });
 
 // Admin: manually fire the day-3 engagement email blast to all members who haven't received it
+// Admin: set app access for a member. Rejoining (website level 4 or an App Store purchase) sets them active again.
+router.patch("/admin/members/:email/status", requireAdmin, async (req, res) => {
+  const email = decodeURIComponent(req.params.email).toLowerCase().trim();
+  const { status } = req.body as { status?: string };
+  if (!status || !["active", "expired"].includes(status)) {
+    return res.status(400).json({ error: "status must be active or expired" });
+  }
+  const { rowCount } = await pool.query(
+    "UPDATE members SET membership_status = $1, updated_at = now() WHERE email = $2",
+    [status, email]
+  );
+  if (!rowCount) return res.status(404).json({ error: "Member not found" });
+  res.json({ ok: true, email, status });
+});
+
 // Who the nightly win-back would email today, and why everyone else is skipped.
 router.get("/admin/winback-plan", requireAdmin, async (_req, res) => {
   try {
