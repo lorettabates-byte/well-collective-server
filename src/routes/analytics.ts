@@ -754,9 +754,22 @@ router.get("/analytics/claudio-snapshot", requireClaudio, async (_req, res) => {
   const retentionByDay = Object.fromEntries(
     retention.map((r) => [`d${r.day}`, { cohort_size: Number(r.cohort_size), pct: Number(r.pct) }])
   );
-  const paidWeb = Number(members?.paid_web ?? 0);
-  const paidAppStore = Number(members?.paid_app_store ?? 0);
-  const paidTotal = Number(members?.paid_total ?? 0);
+  // Paid = real Stripe/PayPal charges plus live App Store subscriptions (see paidMembers.ts).
+  // The members table's membership_status is never cleared, so it is only a last-resort fallback.
+  let paidWeb = Number(members?.paid_web ?? 0);
+  let paidAppStore = Number(members?.paid_app_store ?? 0);
+  let paidSource = "app records (overstates: never cleared when people stop paying)";
+  try {
+    const paid = await getPaidMembers();
+    paidWeb = paid.website.size;
+    paidAppStore = paid.apple.size;
+    paidSource = paid.appleSource === "revenuecat"
+      ? "Stripe/PayPal charges in the last 35 days + live App Store subscriptions from RevenueCat"
+      : "Stripe/PayPal charges in the last 35 days + App Store purchases recorded by the app (cancellations not yet tracked)";
+  } catch (err) {
+    console.error("[Claudio snapshot] paid member lookup failed:", err);
+  }
+  const paidTotal = paidWeb + paidAppStore;
   const directWebGross = paidWeb * MONTHLY_MEMBERSHIP_PRICE_USD;
   const appStoreGross = paidAppStore * MONTHLY_MEMBERSHIP_PRICE_USD;
   const appStoreNetEstimate = appStoreGross * APPLE_NET_FACTOR;
@@ -817,7 +830,8 @@ router.get("/analytics/claudio-snapshot", requireClaudio, async (_req, res) => {
       app_store_active_members: paidAppStore,
       membership_price_usd: MONTHLY_MEMBERSHIP_PRICE_USD,
       app_store_net_factor: APPLE_NET_FACTOR,
-      methodology: "Active memberships × $30 monthly; Apple membership revenue is modeled at 70% after an estimated 30% store fee. This is a current monthly run-rate estimate, not settled deposits or payouts.",
+      paid_member_source: paidSource,
+      methodology: `Paid members (${paidSource}) × $30 monthly, excluding Loretta's family and test accounts; Apple revenue is modeled at 70% after an estimated 30% store fee. A current monthly run-rate estimate, not settled deposits or payouts.`,
     },
   });
 });
