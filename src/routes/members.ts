@@ -463,6 +463,7 @@ router.get("/admin/members", requireAdmin, async (_req, res) => {
         email: row.email,
         paidVia: paid?.website.has(row.email.toLowerCase()) ? "website" : paid?.apple.has(row.email.toLowerCase()) ? "apple" : undefined,
         appleRenewsOrEndsAt: paid?.appleExpires.get(row.email.toLowerCase()),
+        appleSetToCancel: paid?.appleCancelling.has(row.email.toLowerCase()) || undefined,
         name: row.name,
         avatar: row.avatar ?? undefined,
         // pg parses DATE columns into JS Date objects, which JSON.stringify

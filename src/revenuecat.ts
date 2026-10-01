@@ -6,11 +6,6 @@ export const revenueCatReady = Boolean(SECRET && PROJECT);
 
 interface RcEntitlement { entitlement_id: string; expires_at: number | null }
 
-interface RcCustomer {
-  id: string;
-  active_entitlements?: RcEntitlement[] | { items?: RcEntitlement[] };
-}
-
 async function rcGet<T>(pathOrUrl: string): Promise<T> {
   // next_page may come back absolute or as a "/v2/..." path.
   const url = pathOrUrl.startsWith("http")
@@ -24,21 +19,55 @@ async function rcGet<T>(pathOrUrl: string): Promise<T> {
   return res.json() as Promise<T>;
 }
 
+export interface AppleSub {
+  endsAt: number | null;
+  // null when the key can't read subscriptions (only customers), so cancel intent is unknown.
+  willRenew: boolean | null;
+}
+
+interface RcSubscription {
+  gives_access?: boolean;
+  auto_renewal_status?: string;
+  current_period_ends_at?: number | null;
+}
+
 // The app sets RevenueCat's appUserID to the member's email (src/utils/iap.ts), so customer ids are emails.
-export async function getAppleSubscribers(): Promise<Map<string, number | null>> {
-  const now = Date.now();
-  const subs = new Map<string, number | null>();
+export async function getAppleSubscribers(): Promise<Map<string, AppleSub>> {
+  const ids: string[] = [];
   let next: string | null = `/projects/${PROJECT}/customers?limit=100`;
   for (let page = 0; next && page < 50; page++) {
-    const body: { items: RcCustomer[]; next_page: string | null } = await rcGet(next);
-    for (const c of body.items) {
-      const ents = Array.isArray(c.active_entitlements) ? c.active_entitlements : c.active_entitlements?.items ?? [];
-      const live = ents.filter((e) => e.expires_at === null || e.expires_at > now);
-      if (live.length && c.id.includes("@")) {
-        subs.set(c.id.toLowerCase(), live.some((e) => e.expires_at === null) ? null : Math.max(...live.map((e) => e.expires_at as number)));
+    const body: { items: { id: string }[]; next_page: string | null } = await rcGet(next);
+    for (const c of body.items) if (c.id.includes("@")) ids.push(c.id);
+    next = body.next_page;
+  }
+
+  const subs = new Map<string, AppleSub>();
+  const now = Date.now();
+  let canReadSubscriptions = true;
+  for (const id of ids) {
+    const base = `/projects/${PROJECT}/customers/${encodeURIComponent(id)}`;
+    if (canReadSubscriptions) {
+      try {
+        const { items } = await rcGet<{ items: RcSubscription[] }>(`${base}/subscriptions`);
+        const live = items.filter((x) => x.gives_access);
+        if (live.length) {
+          const endsAt = Math.max(...live.map((x) => x.current_period_ends_at ?? 0)) || null;
+          subs.set(id.toLowerCase(), { endsAt, willRenew: live.some((x) => x.auto_renewal_status !== "will_not_renew") });
+        }
+        continue;
+      } catch (err) {
+        if (!String(err).includes("RevenueCat 403")) throw err;
+        canReadSubscriptions = false;
       }
     }
-    next = body.next_page;
+    const { items } = await rcGet<{ items: RcEntitlement[] }>(`${base}/active_entitlements`);
+    const live = items.filter((e) => e.expires_at === null || e.expires_at > now);
+    if (live.length) {
+      subs.set(id.toLowerCase(), {
+        endsAt: live.some((e) => e.expires_at === null) ? null : Math.max(...live.map((e) => e.expires_at as number)),
+        willRenew: null,
+      });
+    }
   }
   return subs;
 }

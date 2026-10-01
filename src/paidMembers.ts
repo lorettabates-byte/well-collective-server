@@ -19,6 +19,7 @@ export interface PaidMembers {
   appleSource: "revenuecat" | "app_records";
   appleError?: string;
   appleExpires: Map<string, string>;
+  appleCancelling: Set<string>;
   fetchedAt: number;
 }
 
@@ -48,11 +49,15 @@ async function load(): Promise<PaidMembers> {
   let appleSource: PaidMembers["appleSource"] | undefined;
   let appleError: string | undefined;
   const appleExpires = new Map<string, string>();
+  const appleCancelling = new Set<string>();
   if (revenueCatReady) {
     try {
       const subs = await getAppleSubscribers();
       appleEmails = [...subs.keys()];
-      subs.forEach((exp, e) => { if (exp) appleExpires.set(e, new Date(exp).toISOString()); });
+      subs.forEach((sub, e) => {
+        if (sub.endsAt) appleExpires.set(e, new Date(sub.endsAt).toISOString());
+        if (sub.willRenew === false) appleCancelling.add(e);
+      });
       appleSource = "revenuecat";
     } catch (err) {
       appleError = String(err instanceof Error ? err.message : err).slice(0, 300);
@@ -68,7 +73,7 @@ async function load(): Promise<PaidMembers> {
   }
   const apple = new Set(appleEmails.filter((e) => !isExcluded(e) && !website.has(e)));
 
-  return { website, apple, appleSource, appleError, appleExpires, fetchedAt: Date.now() };
+  return { website, apple, appleSource, appleError, appleExpires, appleCancelling, fetchedAt: Date.now() };
 }
 
 function refresh(): Promise<PaidMembers> {
