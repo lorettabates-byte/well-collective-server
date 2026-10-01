@@ -1,4 +1,7 @@
 import cron from "node-cron";
+import { sendWinbacks } from "./winback";
+
+const WINBACK_LIVE = false;
 import {
   generateDailyInspiration,
   generateMotivationBoost,
@@ -1151,6 +1154,14 @@ export function startScheduler(): void {
     sendTrialDayEmails().catch((err) => console.error("Trial day-15/27 emails failed:", err));
   }, { timezone: CRON_TIMEZONE });
 
+  // WIN-BACK: 10am ET daily. One "first month free" email (UMP coupon COMEBACK) a week
+  // after a paid membership ends; rules and once-only log live in winback.ts.
+  // Off until Loretta approves the email copy.
+  if (WINBACK_LIVE) {
+    cron.schedule("0 10 * * *", () => {
+      sendWinbacks().catch((err) => console.error("Win-back emails failed:", err));
+    }, { timezone: CRON_TIMEZONE });
+  }
   // TRIBE PRUNE: 2am ET daily — remove expired/lapsed members from all tribes.
   cron.schedule("0 2 * * *", () => {
     pruneExpiredTribeMembers().catch((err) => console.error("Tribe prune failed:", err));

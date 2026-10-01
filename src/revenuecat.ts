@@ -20,6 +20,7 @@ async function rcGet<T>(pathOrUrl: string): Promise<T> {
 }
 
 export interface AppleSub {
+  firstSeenAt: number | null;
   endsAt: number | null;
   // null when the key can't read subscriptions (only customers), so cancel intent is unknown.
   willRenew: boolean | null;
@@ -34,10 +35,11 @@ interface RcSubscription {
 // The app sets RevenueCat's appUserID to the member's email (src/utils/iap.ts), so customer ids are emails.
 export async function getAppleSubscribers(): Promise<Map<string, AppleSub>> {
   const ids: string[] = [];
+  const firstSeen = new Map<string, number | null>();
   let next: string | null = `/projects/${PROJECT}/customers?limit=100`;
   for (let page = 0; next && page < 50; page++) {
-    const body: { items: { id: string }[]; next_page: string | null } = await rcGet(next);
-    for (const c of body.items) if (c.id.includes("@")) ids.push(c.id);
+    const body: { items: { id: string; first_seen_at?: number | null }[]; next_page: string | null } = await rcGet(next);
+    for (const c of body.items) if (c.id.includes("@")) { ids.push(c.id); firstSeen.set(c.id, c.first_seen_at ?? null); }
     next = body.next_page;
   }
 
@@ -52,7 +54,7 @@ export async function getAppleSubscribers(): Promise<Map<string, AppleSub>> {
         const live = items.filter((x) => x.gives_access);
         if (live.length) {
           const endsAt = Math.max(...live.map((x) => x.current_period_ends_at ?? 0)) || null;
-          subs.set(id.toLowerCase(), { endsAt, willRenew: live.some((x) => x.auto_renewal_status !== "will_not_renew") });
+          subs.set(id.toLowerCase(), { firstSeenAt: firstSeen.get(id) ?? null, endsAt, willRenew: live.some((x) => x.auto_renewal_status !== "will_not_renew") });
         }
         continue;
       } catch (err) {
@@ -64,6 +66,7 @@ export async function getAppleSubscribers(): Promise<Map<string, AppleSub>> {
     const live = items.filter((e) => e.expires_at === null || e.expires_at > now);
     if (live.length) {
       subs.set(id.toLowerCase(), {
+        firstSeenAt: firstSeen.get(id) ?? null,
         endsAt: live.some((e) => e.expires_at === null) ? null : Math.max(...live.map((e) => e.expires_at as number)),
         willRenew: null,
       });

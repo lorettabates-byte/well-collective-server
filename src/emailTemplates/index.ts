@@ -5,3 +5,4 @@ export { renderDay15Email } from "./day15";
 export { renderTrialEndingEmail } from "./trialEnding";
 export { renderTrialEndedEmail } from "./trialEnded";
 export { renderWellCupWinnerEmail } from "./wellCupWinner";
+export { renderWinBackEmail } from "./winBack";

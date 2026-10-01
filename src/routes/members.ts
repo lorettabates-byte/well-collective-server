@@ -795,6 +795,16 @@ router.put("/members/leaderboard-visibility", async (req, res) => {
 });
 
 // Admin: manually fire the day-3 engagement email blast to all members who haven't received it
+// Who the nightly win-back would email today, and why everyone else is skipped.
+router.get("/admin/winback-plan", requireAdmin, async (_req, res) => {
+  try {
+    const { planWinbacks } = await import("../winback");
+    res.json({ plan: await planWinbacks() });
+  } catch (err) {
+    res.status(500).json({ error: String(err) });
+  }
+});
+
 // One-off member outreach: each recipient gets their own pre-rendered email (no shared To/CC).
 router.post("/admin/send-outreach", requireAdmin, async (req, res) => {
   const { emails } = req.body as {

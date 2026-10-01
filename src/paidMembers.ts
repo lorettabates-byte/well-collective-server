@@ -1,5 +1,6 @@
 import { pool } from "./db";
 import { getAppleSubscribers, revenueCatReady } from "./revenuecat";
+import { syncAppleSubscribers } from "./winback";
 
 const WP_BASE = "https://lorettabates.com/videolibrary.lorettabates.com/wp-json/well/v1";
 const WELL_API_KEY = process.env.WELL_API_KEY || "";
@@ -9,7 +10,7 @@ const CACHE_MS = 15 * 60 * 1000;
 const EXCLUDED_EMAIL = /loretta|rettabates|wellescape|kendallarianab|wmorganbates/i;
 const EXCLUDED_NAME = /^(loretta bates|kendall bates|morgan bates|lloyd killian)$/i;
 
-function isExcluded(email: string, name?: string | null): boolean {
+export function isExcludedAccount(email: string, name?: string | null): boolean {
   return EXCLUDED_EMAIL.test(email) || EXCLUDED_NAME.test((name ?? "").trim());
 }
 
@@ -40,7 +41,7 @@ async function wpGet<T>(path: string): Promise<T> {
 async function load(): Promise<PaidMembers> {
   const { members } = await wpGet<{ members: { email: string; name?: string | null }[] }>("/paid-members");
   const website = new Set(
-    members.filter((m) => !isExcluded(m.email, m.name)).map((m) => m.email.toLowerCase())
+    members.filter((m) => !isExcludedAccount(m.email, m.name)).map((m) => m.email.toLowerCase())
   );
 
   // RevenueCat knows live App Store status. Without it, fall back to the app's own purchase
@@ -54,6 +55,7 @@ async function load(): Promise<PaidMembers> {
     try {
       const subs = await getAppleSubscribers();
       appleEmails = [...subs.keys()];
+      await syncAppleSubscribers(subs).catch((err) => console.error("[PAID] Apple subscriber sync failed:", err));
       subs.forEach((sub, e) => {
         if (sub.endsAt) appleExpires.set(e, new Date(sub.endsAt).toISOString());
         if (sub.willRenew === false) appleCancelling.add(e);
@@ -68,10 +70,10 @@ async function load(): Promise<PaidMembers> {
     const { rows } = await pool.query<{ email: string; name: string | null }>(
       "SELECT email, name FROM members WHERE membership_source = 'iap_apple' AND membership_status = 'active'"
     );
-    appleEmails = rows.filter((r) => !isExcluded(r.email, r.name)).map((r) => r.email.toLowerCase());
+    appleEmails = rows.filter((r) => !isExcludedAccount(r.email, r.name)).map((r) => r.email.toLowerCase());
     appleSource = "app_records";
   }
-  const apple = new Set(appleEmails.filter((e) => !isExcluded(e) && !website.has(e)));
+  const apple = new Set(appleEmails.filter((e) => !isExcludedAccount(e) && !website.has(e)));
 
   return { website, apple, appleSource, appleError, appleExpires, appleCancelling, fetchedAt: Date.now() };
 }
