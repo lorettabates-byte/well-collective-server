@@ -12,7 +12,7 @@ export function renderWelcomeEmail(v: { firstName: string }): RenderedEmail {
 }
 
 function subject(firstName: string): string {
-  return `Welcome in, ${firstName}. Your 30 days start now`;
+  return `${firstName}, you're in! Start here`;
 }
 
 function text(firstName: string): string {

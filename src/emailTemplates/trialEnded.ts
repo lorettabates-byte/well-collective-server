@@ -12,7 +12,7 @@ export function renderTrialEndedEmail(v: { firstName: string }): RenderedEmail {
 }
 
 function subject(firstName: string): string {
-  return `${firstName}, your spot is still here`;
+  return `${firstName}, I saved your spot`;
 }
 
 function text(firstName: string): string {

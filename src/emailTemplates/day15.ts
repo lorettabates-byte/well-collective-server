@@ -12,7 +12,7 @@ export function renderDay15Email(v: { firstName: string }): RenderedEmail {
 }
 
 function subject(firstName: string): string {
-  return `Halfway there, ${firstName}`;
+  return `${firstName}, 15 days in. How do you feel?`;
 }
 
 function text(firstName: string): string {

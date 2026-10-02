@@ -12,7 +12,7 @@ export function renderDay3Email(v: { firstName: string }): RenderedEmail {
 }
 
 function subject(firstName: string): string {
-  return `${firstName}, here is where the good stuff happens`;
+  return `${firstName}, have you found this yet?`;
 }
 
 function text(firstName: string): string {

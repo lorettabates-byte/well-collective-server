@@ -12,7 +12,7 @@ export function renderTrialEndingEmail(v: { firstName: string }): RenderedEmail 
 }
 
 function subject(firstName: string): string {
-  return `${firstName}, your trial ends in 3 days. Keep everything you built`;
+  return `3 days left, ${firstName}`;
 }
 
 function text(firstName: string): string {
