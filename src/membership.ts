@@ -90,8 +90,16 @@ export async function umpMembershipState(email: string): Promise<UmpMembershipSt
       console.warn(`Membership state check failed for ${email}: HTTP ${response.status}`);
       return "unknown";
     }
-    const data = (await response.json()) as { active?: unknown };
-    if (data.active === true) return "active";
+    const data = (await response.json()) as { active?: unknown; levels?: unknown };
+    if (data.active === true) {
+      // Level 7 = 30-day free trial. If it is present the person has not
+      // converted to a paid subscription yet, even if they also hold level 4
+      // (base-access). Treat them as inactive so the scheduler does not mark
+      // them as a paying member and skip their trial-ended email.
+      const levels = Array.isArray(data.levels) ? (data.levels as number[]) : [];
+      if (levels.includes(7)) return "inactive";
+      return "active";
+    }
     if (data.active === false) return "inactive";
     return "unknown";
   } catch (err) {
