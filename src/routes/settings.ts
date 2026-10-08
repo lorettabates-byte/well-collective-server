@@ -1,7 +1,9 @@
 import { Router } from "express";
 import { pool } from "../db";
 import { requireAdmin } from "../middleware/adminAuth";
-import { sendTrialExpiredEmail, sendWelcomeEmail, sendDay3Email, sendDay15Email, sendTrialEndingEmail, sendWellCupWinnerEmail } from "../brevo";
+import { sendTrialExpiredEmail, sendWelcomeEmail, sendDay3Email, sendDay15Email, sendTrialEndingEmail, sendWellCupWinnerEmail, sendOutreachEmail } from "../brevo";
+import { renderSetPasswordEmail } from "../emailTemplates/setPassword";
+import { firstNameFrom } from "../emailTemplates/shared";
 
 const router = Router();
 
@@ -205,7 +207,7 @@ router.post("/settings/test-winback-email", requireAdmin, async (req, res) => {
 
 // Admin-only preview send of one lifecycle email to one address (e.g. loretta@).
 // POST /settings/test-lifecycle-email { email, kind, name? }
-// kind: welcome | day3 | day15 | trial-ending | trial-ended | wellcup-winner
+// kind: welcome | day3 | day15 | trial-ending | trial-ended | wellcup-winner | set-password
 router.post("/settings/test-lifecycle-email", requireAdmin, async (req, res) => {
   const { email, kind, name } = req.body as { email?: string; kind?: string; name?: string };
   if (!email || !kind) return res.status(400).json({ error: "email and kind required" });
@@ -217,6 +219,8 @@ router.post("/settings/test-lifecycle-email", requireAdmin, async (req, res) => 
     "trial-ending": () => sendTrialEndingEmail(email, n),
     "trial-ended": () => sendTrialExpiredEmail(email, n),
     "wellcup-winner": () => sendWellCupWinnerEmail(email, n, 4321, "September 2026"),
+    // 2026-10-08 one-off note to trial members whose signup never asked for a password.
+    "set-password": () => sendOutreachEmail(email, n, renderSetPasswordEmail({ firstName: firstNameFrom(n), email })),
   };
   const send = senders[kind];
   if (!send) return res.status(400).json({ error: `unknown kind; use one of ${Object.keys(senders).join(", ")}` });

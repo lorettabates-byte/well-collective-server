@@ -6,3 +6,4 @@ export { renderTrialEndingEmail } from "./trialEnding";
 export { renderTrialEndedEmail } from "./trialEnded";
 export { renderWellCupWinnerEmail } from "./wellCupWinner";
 export { renderWinBackEmail } from "./winBack";
+export { renderSetPasswordEmail, SET_PASSWORD_URL } from "./setPassword";
