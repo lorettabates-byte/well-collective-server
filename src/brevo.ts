@@ -404,7 +404,7 @@ export async function sendReferralWeek1Email(
               <p style="margin:0 0 28px;font-size:15px;line-height:1.7;color:#c8cdd6;">You are here for a reason. I believe that. Now let's make these 30 days count!</p>
               <table width="100%" cellpadding="0" cellspacing="0">
                 <tr><td align="center">
-                  <a href="https://lorettabates.com/videolibrary.lorettabates.com/subscription-plan/" style="display:inline-block;background:linear-gradient(135deg,#1a6fb8,#4db8e8);color:#ffffff;font-family:Arial,sans-serif;font-size:15px;font-weight:bold;text-decoration:none;padding:16px 40px;border-radius:50px;letter-spacing:0.5px;">Join the WELL Collective →</a>
+                  <a href="https://lorettabates.com/videolibrary.lorettabates.com/register/?lid=4&upgrade=1" style="display:inline-block;background:linear-gradient(135deg,#1a6fb8,#4db8e8);color:#ffffff;font-family:Arial,sans-serif;font-size:15px;font-weight:bold;text-decoration:none;padding:16px 40px;border-radius:50px;letter-spacing:0.5px;">Join the WELL Collective →</a>
                 </td></tr>
               </table>
             </td>
@@ -437,7 +437,7 @@ You still have three weeks left on your trial — here's what I don't want you t
 
 You are here for a reason. Let's make these 30 days count!
 
-Join the WELL Collective: https://lorettabates.com/videolibrary.lorettabates.com/subscription-plan/
+Join the WELL Collective: https://lorettabates.com/videolibrary.lorettabates.com/register/?lid=4&upgrade=1
 
 With love,
 Loretta`;
@@ -519,7 +519,7 @@ export async function sendReferralWinbackEmail(
               <p style="margin:0 0 28px;font-size:15px;line-height:1.7;color:#c8cdd6;">${firstName}, come back as a full member. Join us for the Tuesday livestream. Post in the Community. Cheer someone on. Start a streak. Let's do this together!</p>
               <table width="100%" cellpadding="0" cellspacing="0">
                 <tr><td align="center">
-                  <a href="https://lorettabates.com/videolibrary.lorettabates.com/subscription-plan/" style="display:inline-block;background:linear-gradient(135deg,#1a6fb8,#4db8e8);color:#ffffff;font-family:Arial,sans-serif;font-size:15px;font-weight:bold;text-decoration:none;padding:16px 40px;border-radius:50px;letter-spacing:0.5px;">Join the WELL Collective →</a>
+                  <a href="https://lorettabates.com/videolibrary.lorettabates.com/register/?lid=4&upgrade=1" style="display:inline-block;background:linear-gradient(135deg,#1a6fb8,#4db8e8);color:#ffffff;font-family:Arial,sans-serif;font-size:15px;font-weight:bold;text-decoration:none;padding:16px 40px;border-radius:50px;letter-spacing:0.5px;">Join the WELL Collective →</a>
                 </td></tr>
               </table>
             </td>
@@ -551,7 +551,7 @@ I truly believe that the people who are transforming inside the WELL Collective 
 
 ${firstName}, come back as a full member. Join us for the Tuesday livestream. Post in the Community. Cheer someone on. Start a streak. Let's do this together!
 
-Join the WELL Collective: https://lorettabates.com/videolibrary.lorettabates.com/subscription-plan/
+Join the WELL Collective: https://lorettabates.com/videolibrary.lorettabates.com/register/?lid=4&upgrade=1
 
 With love and belief in you,
 Loretta Bates`;
@@ -748,7 +748,7 @@ export async function sendMemberWinbackEmail(
     return;
   }
   const firstName = name.split(" ")[0];
-  const trialUrl = `https://app.lorettabates.com?ref=${encodeURIComponent(referralCode)}`;
+  const trialUrl = `https://lorettabates.com/videolibrary.lorettabates.com/member-login/?trial=1&ref=${encodeURIComponent(referralCode)}`;
   const htmlContent = `
 <!DOCTYPE html>
 <html lang="en" style="color-scheme:dark;background-color:#020810;">
