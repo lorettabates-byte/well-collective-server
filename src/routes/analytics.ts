@@ -611,10 +611,11 @@ function requireClaudio(req: Parameters<typeof requireAdmin>[0], res: Parameters
 
 router.get("/analytics/claudio-snapshot", requireClaudio, async (_req, res) => {
   // This is the same transparent run-rate model shown in the private app
-  // dashboard: $30 per active membership and a 30% Apple store fee estimate.
+  // dashboard: $30 per active membership less the store fee. Loretta is in
+  // Apple's Small Business Program, so Apple keeps 15% (confirmed 2026-10-12).
   // It is deliberately not presented as settled cash, deposits, or payouts.
   const MONTHLY_MEMBERSHIP_PRICE_USD = 30;
-  const APPLE_NET_FACTOR = 0.70;
+  const APPLE_NET_FACTOR = 0.85;
   // Google Play takes 15% on subscriptions.
   const GOOGLE_NET_FACTOR = 0.85;
   async function q<T>(label: string, sql: string, params?: unknown[]): Promise<T | null> {
@@ -851,7 +852,7 @@ router.get("/analytics/claudio-snapshot", requireClaudio, async (_req, res) => {
       membership_price_usd: MONTHLY_MEMBERSHIP_PRICE_USD,
       app_store_net_factor: APPLE_NET_FACTOR,
       paid_member_source: paidSource,
-      methodology: `Paid members (${paidSource}) × $30 monthly, excluding Loretta's family and test accounts; Apple revenue is modeled at 70% after an estimated 30% store fee, Google Play at 85% after its 15% subscription fee. A current monthly run-rate estimate, not settled deposits or payouts.`,
+      methodology: `Paid members (${paidSource}) × $30 monthly, excluding Loretta's family and test accounts; Apple revenue is modeled at 85% (Small Business Program, 15% fee) and Google Play at 85% after its 15% subscription fee. A current monthly run-rate estimate, not settled deposits or payouts.`,
     },
   });
 });
