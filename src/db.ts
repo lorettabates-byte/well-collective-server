@@ -717,6 +717,18 @@ export async function initDb(): Promise<void> {
   await pool.query(
     `CREATE INDEX IF NOT EXISTS idx_class_cancellation_pushes_due ON class_cancellation_pushes (status, send_at);`
   );
+  // Auto-picked replacement classes: which on-demand class went with which
+  // cancelled date, so the rotation never offers the same class twice.
+  await pool.query(`ALTER TABLE class_cancellations ADD COLUMN IF NOT EXISTS replacement_vod_id INTEGER;`);
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS class_cancellation_replacements (
+      vod_id INTEGER PRIMARY KEY,
+      class_date DATE NOT NULL,
+      title TEXT NOT NULL,
+      url TEXT NOT NULL,
+      chosen_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    );
+  `);
 
   // Tracks whether the post-trial win-back email (sent by the daily Brevo
   // scheduler job) has already been dispatched for this member. Guards against

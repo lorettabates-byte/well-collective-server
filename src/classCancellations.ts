@@ -391,3 +391,92 @@ export async function sendTest(c: Cancellation): Promise<{
   }
   return { sent_to: ADMIN_NOTIFY_EMAIL, pushes: out };
 }
+
+// ---------------------------------------------------------------------------
+// Automatic replacement class. When the Command Center doesn't name one, the
+// server picks one of Loretta's recorded Zumba® classes from the video library.
+// A class is never offered twice; once every class has been used, the ones
+// used longest ago come back around first.
+
+const VOD_API = "https://lorettabates.com/videolibrary.lorettabates.com/wp-json/wp/v2/wpstream_product_vod";
+const LIBRARY_BASE = "https://lorettabates.com/videolibrary.lorettabates.com";
+const SKIP_NEWEST_DAYS = 28; // members likely just did the newest classes
+const MONTHS = ["january", "february", "march", "april", "may", "june", "july", "august", "september", "october", "november", "december"];
+
+export interface LibraryClass {
+  vod_id: number;
+  title: string; // sentence form, "my class from October 6"
+  url: string;
+  recorded: string; // YYYY-MM-DD from the class name
+}
+
+let libraryCache: { at: number; list: LibraryClass[] } | null = null;
+
+// "Zumba® In Person Class Tuesday October 6, 2026" -> "2026-10-06"
+function recordedDate(name: string): string | null {
+  const m = name.toLowerCase().match(/(january|february|march|april|may|june|july|august|september|october|november|december)\s+(\d{1,2})\s*,\s*(\d{4})/);
+  if (!m) return null;
+  return `${m[3]}-${String(MONTHS.indexOf(m[1]) + 1).padStart(2, "0")}-${m[2].padStart(2, "0")}`;
+}
+
+function sentenceTitle(recorded: string): string {
+  const d = new Date(`${recorded}T12:00:00Z`);
+  const sameYear = d.getUTCFullYear() === new Date().getUTCFullYear();
+  return `my class from ${d.toLocaleDateString("en-US", {
+    month: "long", day: "numeric", ...(sameYear ? {} : { year: "numeric" }), timeZone: "UTC",
+  })}`;
+}
+
+export async function loadLibraryClasses(): Promise<LibraryClass[]> {
+  if (libraryCache && Date.now() - libraryCache.at < 6 * 60 * 60 * 1000) return libraryCache.list;
+  const all: { id: number; link: string; title: { rendered: string } }[] = [];
+  for (let page = 1; page <= 10; page++) {
+    const res = await fetch(`${VOD_API}?per_page=100&page=${page}&_fields=id,link,title`, { signal: AbortSignal.timeout(15000) });
+    if (res.status === 400) break; // past the last page
+    if (!res.ok) throw new Error(`video library -> ${res.status}`);
+    const batch = (await res.json()) as typeof all;
+    all.push(...batch);
+    if (batch.length < 100) break;
+  }
+  const list: LibraryClass[] = [];
+  for (const v of all) {
+    const name = v.title.rendered.replace(/<[^>]*>/g, "").replace(/&#174;|&reg;/g, "®");
+    const recorded = recordedDate(name);
+    const slug = v.link.match(/\/wpstream_vod\/([^/]+)\/?$/)?.[1];
+    if (!/zumba/i.test(name) || !recorded || !slug) continue; // Zumba® classes only
+    list.push({ vod_id: v.id, title: sentenceTitle(recorded), url: `${LIBRARY_BASE}/wpstream_vod/${slug}/`, recorded });
+  }
+  libraryCache = { at: Date.now(), list };
+  return list;
+}
+
+// Picks the next class for a cancelled date without saving the choice.
+export async function chooseReplacement(classDate: string): Promise<LibraryClass | null> {
+  const { rows: existing } = await pool.query<{ vod_id: number; title: string; url: string }>(
+    "SELECT vod_id, title, url FROM class_cancellation_replacements WHERE class_date = $1 ORDER BY chosen_at DESC LIMIT 1",
+    [classDate]
+  );
+  if (existing[0]) return { ...existing[0], recorded: "" };
+
+  const library = await loadLibraryClasses();
+  const cutoff = new Date(Date.now() - SKIP_NEWEST_DAYS * 86400000).toISOString().slice(0, 10);
+  const pool_ = library.filter((c) => c.recorded < cutoff);
+  if (pool_.length === 0) return null;
+
+  const { rows: used } = await pool.query<{ vod_id: number; chosen_at: Date }>(
+    "SELECT vod_id, chosen_at FROM class_cancellation_replacements"
+  );
+  const usedAt = new Map(used.map((u) => [u.vod_id, u.chosen_at.getTime()]));
+  const fresh = pool_.filter((c) => !usedAt.has(c.vod_id));
+  if (fresh.length > 0) return fresh[Math.floor(Math.random() * fresh.length)];
+  // Every class has had a turn: start again with the one used longest ago.
+  return [...pool_].sort((a, b) => (usedAt.get(a.vod_id) ?? 0) - (usedAt.get(b.vod_id) ?? 0))[0];
+}
+
+export async function recordReplacement(classDate: string, pick: LibraryClass): Promise<void> {
+  await pool.query(
+    `INSERT INTO class_cancellation_replacements (vod_id, class_date, title, url) VALUES ($1, $2, $3, $4)
+     ON CONFLICT (vod_id) DO UPDATE SET class_date = EXCLUDED.class_date, chosen_at = now()`,
+    [pick.vod_id, classDate, pick.title, pick.url]
+  );
+}
