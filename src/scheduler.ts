@@ -20,6 +20,7 @@ import { createMemberNotification } from "./memberNotifications";
 import { computeNutritionFromIngredients, isUsdaConfigured } from "./usda";
 import { addTrialContactToBrevo, moveTrialContactToCompleted, sendMidTrialEmail, sendTrialExpiredEmail, sendDay15Email, sendTrialEndingEmail, sendWellCupWinnerAdminAlert, sendWellCupWinnerEmail } from "./brevo";
 import { umpMembershipState } from "./membership";
+import { isClassCancelled, processDueClassCancellationPushes } from "./classCancellations";
 import { awardPoints } from "./routes/points";
 import { TIMEZONE, CRON_TIMEZONE, todayInTimezone, addDays, SQL_DAY_START, SQL_MONTH_START, SQL_YEAR_START } from "./dateUtils";
 // scheduledNotifications import removed — it duplicated content-driven sends
@@ -397,6 +398,12 @@ async function sendMotivationBoost(): Promise<void> {
 async function sendLivestreamReminder(): Promise<void> {
   const date = todayInTimezone();
   if (await alreadySent(date, "livestreamReminder")) return;
+
+  // Cancelled from the Command Center: members already got their two notices.
+  if (await isClassCancelled(date)) {
+    await markSent(date, "livestreamReminder");
+    return;
+  }
 
   // Scheduled ahead of time from the admin panel — sends a cancellation
   // notice instead of the normal reminder, using the same sent_log kind so
@@ -1097,6 +1104,11 @@ export function startScheduler(): void {
   cron.schedule("0 15 * * *", () => {
     sendMotivationBoost().catch((err) => console.error("Motivation boost send failed:", err));
   }, { timezone: CRON_TIMEZONE });
+
+  // Class cancellation pushes: every minute, sends any that are due.
+  cron.schedule("* * * * *", () => {
+    processDueClassCancellationPushes().catch((err) => console.error("Class cancellation pushes failed:", err));
+  });
 
   // Livestream reminder: every Tuesday at 8:00am (1 hour before 9am livestream)
   cron.schedule("0 8 * * 2", () => {

@@ -679,6 +679,45 @@ export async function initDb(): Promise<void> {
     );
   `);
 
+  // Class cancellations saved by the Command Center (Claudia). Each one shows a
+  // banner in the app and queues two pushes (a week ahead, the evening before).
+  // Times are America/New_York wall-clock.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS class_cancellations (
+      date DATE PRIMARY KEY,
+      class_time TEXT NOT NULL DEFAULT '09:00',
+      back_on DATE NOT NULL,
+      back_time TEXT NOT NULL DEFAULT '09:00',
+      replacement_title TEXT,
+      replacement_url TEXT,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    );
+  `);
+  // One row per push. Rows outlive their cancellation so "sent to N members"
+  // stays visible; status is pending, sending, sent, cancelled or skipped.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS class_cancellation_pushes (
+      id SERIAL PRIMARY KEY,
+      class_date DATE NOT NULL,
+      kind TEXT NOT NULL,
+      send_at TIMESTAMPTZ NOT NULL,
+      status TEXT NOT NULL DEFAULT 'pending',
+      title TEXT,
+      body TEXT,
+      url TEXT,
+      eligible_count INTEGER,
+      sent_count INTEGER,
+      device_count INTEGER,
+      note TEXT,
+      sent_at TIMESTAMPTZ,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    );
+  `);
+  await pool.query(
+    `CREATE INDEX IF NOT EXISTS idx_class_cancellation_pushes_due ON class_cancellation_pushes (status, send_at);`
+  );
+
   // Tracks whether the post-trial win-back email (sent by the daily Brevo
   // scheduler job) has already been dispatched for this member. Guards against
   // re-sending if the cron runs more than once on expiry day.
