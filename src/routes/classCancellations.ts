@@ -47,8 +47,8 @@ router.post("/admin/class-cancellations", requireAdmin, async (req, res) => {
   if (!c) return res.status(400).json({ ok: false, error });
 
   try {
+    const plan = await planPushes(c);
     if (req.body.test === true) {
-      const plan = await planPushes(c);
       const result = await sendTest(c);
       return res.json({
         ok: true,
@@ -63,6 +63,9 @@ router.post("/admin/class-cancellations", requireAdmin, async (req, res) => {
       });
     }
 
+    if (plan.every((p) => p.reason === "class time has passed")) {
+      return res.status(400).json({ ok: false, error: "That class time has already passed" });
+    }
     const saved = await saveCancellation(c);
     processDueClassCancellationPushes().catch((err) => console.error("[CLASS CANCEL] Immediate send failed:", err));
     res.json({ ok: true, date: c.date, banner: bannerText(c), ...saved });
