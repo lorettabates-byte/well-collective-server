@@ -6,8 +6,10 @@ export function requireAdmin(req: Request, res: Response, next: NextFunction): v
   const authHeader = req.header("Authorization");
   if (authHeader?.startsWith("Bearer ")) {
     const token = authHeader.slice(7);
+    // Member logins are signed with the same secret, so only a token that
+    // carries an adminId (issued by /auth/login) counts as an admin.
     const payload = verifyToken(token);
-    if (payload) {
+    if (payload && typeof payload.adminId === "number") {
       (req as any).admin = payload;
       next();
       return;

@@ -1,5 +1,6 @@
 import bcrypt from "bcrypt";
 import { Router } from "express";
+import { requireAdmin } from "../middleware/adminAuth";
 import jwt from "jsonwebtoken";
 import { pool } from "../db";
 import { ADMIN_NOTIFY_EMAIL, sendNotificationToUser } from "../push";
@@ -43,6 +44,11 @@ const DEMO_ACCOUNTS = new Set([
   "demo@wellcollective.app",
 ]);
 
+// Admin sessions slide: the app swaps its token for a fresh one through
+// /auth/refresh every time the admin panel opens, so Loretta only has to log in
+// again after 90 days without opening it.
+const ADMIN_TOKEN_TTL = "90d";
+
 export interface AuthTokenPayload {
   adminId: number;
   email: string;
@@ -78,7 +84,7 @@ router.post("/login", async (req, res) => {
       return res.status(401).json({ error: "Invalid email or password" });
     }
 
-    const token = jwt.sign({ adminId: admin.id, email: admin.email }, JWT_SECRET, { expiresIn: "30d" });
+    const token = jwt.sign({ adminId: admin.id, email: admin.email }, JWT_SECRET, { expiresIn: ADMIN_TOKEN_TTL });
 
     res.json({
       token,
@@ -402,7 +408,8 @@ router.post("/start-trial", async (req, res) => {
   }
 });
 
-router.post("/register", async (req, res) => {
+// Only an existing admin can add another admin.
+router.post("/register", requireAdmin, async (req, res) => {
   const { email, password, name } = req.body as { email?: string; password?: string; name?: string };
 
   if (!email || !password || !name) {
@@ -422,7 +429,7 @@ router.post("/register", async (req, res) => {
     );
 
     const admin = rows[0];
-    const token = jwt.sign({ adminId: admin.id, email: admin.email }, JWT_SECRET, { expiresIn: "30d" });
+    const token = jwt.sign({ adminId: admin.id, email: admin.email }, JWT_SECRET, { expiresIn: ADMIN_TOKEN_TTL });
 
     res.status(201).json({
       token,
@@ -448,11 +455,30 @@ router.post("/verify", (req, res) => {
   }
 
   const payload = verifyToken(token);
-  if (!payload) {
+  if (!payload || typeof payload.adminId !== "number") {
     return res.status(401).json({ error: "Invalid token" });
   }
 
   res.json({ valid: true, admin: payload });
+});
+
+// Swap a still-valid admin token for a fresh 90-day one.
+router.post("/refresh", async (req, res) => {
+  const token = req.headers.authorization?.split(" ")[1];
+  const payload = token ? verifyToken(token) : null;
+  if (!payload || typeof payload.adminId !== "number") {
+    return res.status(401).json({ error: "Session expired" });
+  }
+  try {
+    const { rows } = await pool.query("SELECT id, email, name FROM admin_users WHERE id = $1", [payload.adminId]);
+    if (rows.length === 0) return res.status(401).json({ error: "Session expired" });
+    const admin = rows[0];
+    const fresh = jwt.sign({ adminId: admin.id, email: admin.email }, JWT_SECRET, { expiresIn: ADMIN_TOKEN_TTL });
+    res.json({ token: fresh, admin: { id: admin.id, name: admin.name, email: admin.email } });
+  } catch (err) {
+    console.error("Admin refresh error:", err);
+    res.status(500).json({ error: "Refresh failed" });
+  }
 });
 
 export default router;
