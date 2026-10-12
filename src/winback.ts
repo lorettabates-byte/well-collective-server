@@ -124,7 +124,7 @@ export async function planWinbacks(): Promise<WinbackDecision[]> {
     let reason = "";
     if (isExcludedAccount(c.email, c.name)) reason = "family or test account";
     else if (c.paidMonths < 1) reason = "never paid";
-    else if (paid.website.has(c.email) || paid.apple.has(c.email)) reason = "already back";
+    else if (paid.website.has(c.email) || paid.apple.has(c.email) || paid.play.has(c.email)) reason = "already back";
     else if (age < SEND_AFTER_DAYS) reason = `ended ${Math.floor(age)} days ago, waits until day ${SEND_AFTER_DAYS}`;
     else if (c.paidMonths <= 1 && history.length) reason = "one paid month and already had a win-back";
     else if (history.length && now - history[0].sent_at.getTime() < REPEAT_GAP_DAYS * DAY) reason = "had a win-back recently";

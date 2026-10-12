@@ -409,6 +409,7 @@ router.get("/analytics/dashboard", requireAdmin, async (_req, res) => {
       appleIap.web_active_count = paid.website.size;
       appleIap.active_count = paid.apple.size;
       Object.assign(appleIap, {
+        google_play_count: paid.play.size,
         apple_source: paid.appleSource,
         apple_source_error: paid.appleError,
         apple_subscribers: [...paid.apple].map((email) => ({
@@ -614,6 +615,8 @@ router.get("/analytics/claudio-snapshot", requireClaudio, async (_req, res) => {
   // It is deliberately not presented as settled cash, deposits, or payouts.
   const MONTHLY_MEMBERSHIP_PRICE_USD = 30;
   const APPLE_NET_FACTOR = 0.70;
+  // Google Play takes 15% on subscriptions.
+  const GOOGLE_NET_FACTOR = 0.85;
   async function q<T>(label: string, sql: string, params?: unknown[]): Promise<T | null> {
     try {
       const { rows } = await pool.query(sql, params);
@@ -767,22 +770,26 @@ router.get("/analytics/claudio-snapshot", requireClaudio, async (_req, res) => {
   // The members table's membership_status is never cleared, so it is only a last-resort fallback.
   let paidWeb = Number(members?.paid_web ?? 0);
   let paidAppStore = Number(members?.paid_app_store ?? 0);
+  let paidPlay = 0;
   let paidSource = "app records (overstates: never cleared when people stop paying)";
   try {
     const paid = await getPaidMembers();
     paidWeb = paid.website.size;
     paidAppStore = paid.apple.size;
+    paidPlay = paid.play.size;
     paidSource = paid.appleSource === "revenuecat"
-      ? "Stripe/PayPal charges in the last 35 days + live App Store subscriptions from RevenueCat"
+      ? "Stripe/PayPal charges in the last 35 days + live App Store and Google Play subscriptions from RevenueCat"
       : "Stripe/PayPal charges in the last 35 days + App Store purchases recorded by the app (cancellations not yet tracked)";
   } catch (err) {
     console.error("[Claudio snapshot] paid member lookup failed:", err);
   }
-  const paidTotal = paidWeb + paidAppStore;
+  const paidTotal = paidWeb + paidAppStore + paidPlay;
   const directWebGross = paidWeb * MONTHLY_MEMBERSHIP_PRICE_USD;
   const appStoreGross = paidAppStore * MONTHLY_MEMBERSHIP_PRICE_USD;
   const appStoreNetEstimate = appStoreGross * APPLE_NET_FACTOR;
-  const estimatedMonthlyRecurringRevenue = directWebGross + appStoreNetEstimate;
+  const playGross = paidPlay * MONTHLY_MEMBERSHIP_PRICE_USD;
+  const playNetEstimate = playGross * GOOGLE_NET_FACTOR;
+  const estimatedMonthlyRecurringRevenue = directWebGross + appStoreNetEstimate + playNetEstimate;
 
   res.json({
     as_of: new Date().toISOString(),
@@ -790,6 +797,7 @@ router.get("/analytics/claudio-snapshot", requireClaudio, async (_req, res) => {
       paid_total: paidTotal,
       paid_web: paidWeb,
       paid_app_store: paidAppStore,
+      paid_google_play: paidPlay,
       active_trials: Number(members?.active_trials ?? 0),
       new_this_month: Number(members?.new_this_month ?? 0),
       new_this_week: Number(members?.new_this_week ?? 0),
@@ -834,13 +842,16 @@ router.get("/analytics/claudio-snapshot", requireClaudio, async (_req, res) => {
       app_store_monthly_gross: Number(appStoreGross.toFixed(2)),
       app_store_monthly_net_estimate: Number(appStoreNetEstimate.toFixed(2)),
       app_store_fee_estimate: Number((appStoreGross - appStoreNetEstimate).toFixed(2)),
+      google_play_monthly_gross: Number(playGross.toFixed(2)),
+      google_play_monthly_net_estimate: Number(playNetEstimate.toFixed(2)),
       active_paid_members: paidTotal,
       website_active_members: paidWeb,
       app_store_active_members: paidAppStore,
+      google_play_active_members: paidPlay,
       membership_price_usd: MONTHLY_MEMBERSHIP_PRICE_USD,
       app_store_net_factor: APPLE_NET_FACTOR,
       paid_member_source: paidSource,
-      methodology: `Paid members (${paidSource}) × $30 monthly, excluding Loretta's family and test accounts; Apple revenue is modeled at 70% after an estimated 30% store fee. A current monthly run-rate estimate, not settled deposits or payouts.`,
+      methodology: `Paid members (${paidSource}) × $30 monthly, excluding Loretta's family and test accounts; Apple revenue is modeled at 70% after an estimated 30% store fee, Google Play at 85% after its 15% subscription fee. A current monthly run-rate estimate, not settled deposits or payouts.`,
     },
   });
 });

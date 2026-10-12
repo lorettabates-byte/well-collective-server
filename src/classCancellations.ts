@@ -293,6 +293,7 @@ export async function eligibleRecipients(): Promise<string[]> {
       return r.trial
         || paid.website.has(e)
         || paid.apple.has(e)
+        || paid.play.has(e)
         || ADMIN_NOTIFY_EMAILS.includes(e)
         || isExcludedAccount(e); // Loretta's family and team comp accounts
     })

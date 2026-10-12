@@ -16,7 +16,8 @@ export function isExcludedAccount(email: string, name?: string | null): boolean 
 
 export interface PaidMembers {
   website: Set<string>;
-  apple: Set<string>;
+  apple: Set<string>; // App Store subscribers (RevenueCat)
+  play: Set<string>; // Google Play subscribers (RevenueCat)
   appleSource: "revenuecat" | "app_records";
   appleError?: string;
   appleExpires: Map<string, string>;
@@ -47,6 +48,7 @@ async function load(): Promise<PaidMembers> {
   // RevenueCat knows live App Store status. Without it, fall back to the app's own purchase
   // records, which never expire and so overcount cancelled subscribers.
   let appleEmails: string[] = [];
+  let playEmails: string[] = [];
   let appleSource: PaidMembers["appleSource"] | undefined;
   let appleError: string | undefined;
   const appleExpires = new Map<string, string>();
@@ -54,7 +56,8 @@ async function load(): Promise<PaidMembers> {
   if (revenueCatReady) {
     try {
       const subs = await getAppleSubscribers();
-      appleEmails = [...subs.keys()];
+      appleEmails = [...subs].filter(([, s]) => s.store !== "play_store").map(([e]) => e);
+      playEmails = [...subs].filter(([, s]) => s.store === "play_store").map(([e]) => e);
       await syncAppleSubscribers(subs).catch((err) => console.error("[PAID] Apple subscriber sync failed:", err));
       subs.forEach((sub, e) => {
         if (sub.endsAt) appleExpires.set(e, new Date(sub.endsAt).toISOString());
@@ -74,8 +77,9 @@ async function load(): Promise<PaidMembers> {
     appleSource = "app_records";
   }
   const apple = new Set(appleEmails.filter((e) => !isExcludedAccount(e) && !website.has(e)));
+  const play = new Set(playEmails.filter((e) => !isExcludedAccount(e) && !website.has(e) && !apple.has(e)));
 
-  return { website, apple, appleSource, appleError, appleExpires, appleCancelling, fetchedAt: Date.now() };
+  return { website, apple, play, appleSource, appleError, appleExpires, appleCancelling, fetchedAt: Date.now() };
 }
 
 function refresh(): Promise<PaidMembers> {

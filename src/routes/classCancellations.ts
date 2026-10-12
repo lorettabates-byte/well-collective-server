@@ -1,4 +1,5 @@
 import { Router } from "express";
+import { addDays } from "../dateUtils";
 import { requireAdmin } from "../middleware/adminAuth";
 import {
   bannerText,
@@ -118,7 +119,9 @@ router.get("/class-cancellations", async (_req, res) => {
     const list = await listUpcoming();
     res.set("Cache-Control", "public, max-age=60");
     res.json({
-      cancellations: list.map((c) => ({ ...c, banner: bannerText(c) })),
+      // banner_from: the app shows the banner from 6 days before the class
+      // (Loretta, 2026-10-12). The livestream is hidden for the whole time.
+      cancellations: list.map((c) => ({ ...c, banner: bannerText(c), banner_from: addDays(c.date, -6) })),
     });
   } catch (err) {
     console.error("Public class cancellations error:", err);

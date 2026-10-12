@@ -24,10 +24,13 @@ export interface AppleSub {
   endsAt: number | null;
   // null when the key can't read subscriptions (only customers), so cancel intent is unknown.
   willRenew: boolean | null;
+  // Which store bills them. Unknown (entitlement-only keys) counts as the App Store.
+  store: "app_store" | "play_store" | "other";
 }
 
 interface RcSubscription {
   gives_access?: boolean;
+  store?: string;
   auto_renewal_status?: string;
   current_period_ends_at?: number | null;
 }
@@ -54,7 +57,9 @@ export async function getAppleSubscribers(): Promise<Map<string, AppleSub>> {
         const live = items.filter((x) => x.gives_access);
         if (live.length) {
           const endsAt = Math.max(...live.map((x) => x.current_period_ends_at ?? 0)) || null;
-          subs.set(id.toLowerCase(), { firstSeenAt: firstSeen.get(id) ?? null, endsAt, willRenew: live.some((x) => x.auto_renewal_status !== "will_not_renew") });
+          const stores = live.map((x) => x.store ?? "");
+          const store = stores.includes("app_store") ? "app_store" : stores.includes("play_store") ? "play_store" : "other";
+          subs.set(id.toLowerCase(), { firstSeenAt: firstSeen.get(id) ?? null, endsAt, willRenew: live.some((x) => x.auto_renewal_status !== "will_not_renew"), store });
         }
         continue;
       } catch (err) {
@@ -69,6 +74,7 @@ export async function getAppleSubscribers(): Promise<Map<string, AppleSub>> {
         firstSeenAt: firstSeen.get(id) ?? null,
         endsAt: live.some((e) => e.expires_at === null) ? null : Math.max(...live.map((e) => e.expires_at as number)),
         willRenew: null,
+        store: "app_store",
       });
     }
   }
