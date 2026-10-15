@@ -24,7 +24,8 @@ function well_paid_members(WP_REST_Request $request) {
         "SELECT LOWER(u.user_email) AS email,
                 u.display_name AS name,
                 MAX(o.create_date) AS last_paid,
-                SUBSTRING_INDEX(GROUP_CONCAT(m.meta_value ORDER BY o.create_date DESC), ',', 1) AS gateway
+                SUBSTRING_INDEX(GROUP_CONCAT(m.meta_value ORDER BY o.create_date DESC), ',', 1) AS gateway,
+                (SELECT MAX(ul.start_time) FROM {$p}ihc_user_levels ul WHERE ul.user_id = u.ID AND ul.level_id = 4) AS started_at
          FROM {$p}ihc_orders o
          JOIN {$p}users u ON u.ID = o.uid
          LEFT JOIN {$p}ihc_orders_meta m ON m.order_id = o.id AND m.meta_key = 'ihc_payment_type'
@@ -57,6 +58,7 @@ function well_lapsed_members(WP_REST_Request $request) {
     $rows = $wpdb->get_results($wpdb->prepare(
         "SELECT LOWER(u.user_email) AS email, u.display_name AS name,
                 MAX(ul.expire_time) AS ended_at,
+                MAX(ul.start_time) AS started_at,
                 (SELECT COUNT(*) FROM {$p}ihc_orders o
                   WHERE o.uid = u.ID AND o.lid = 4 AND o.amount_value > 0 AND o.status = 'Completed') AS paid_months
          FROM {$p}ihc_user_levels ul
