@@ -959,15 +959,9 @@ async function crownMonthlyWinner(): Promise<void> {
     [rows[0].member_email, rows[0].total, winAt]
   ).catch((err) => console.error("[WELL CUP] Monthly win record update failed:", err));
 
-  // Alert admin to manually skip the winner's next payment in the payment processor.
-  // Changing the UMP expiry date does not prevent the payment processor from charging,
-  // so this step must be done manually in Stripe or PayPal until a processor API is integrated.
-  await sendWellCupWinnerAdminAlert(
-    rows[0].member_email,
-    rows[0].name,
-    rows[0].total,
-    monthName
-  ).catch((err) => console.error("[WELL CUP] Admin alert email failed:", err));
+  // The free month is handled by Claudine in the WELL Team Command Center (2026-10-15): early the same morning she
+  // refunds the winner's next membership payment (Stripe or PayPal), sends the winner a note, and emails Loretta the
+  // month's WELL Cup report. The old "skip their payment by hand" admin email is no longer sent.
 
   // Congratulate the winner by email (from Loretta).
   await sendWellCupWinnerEmail(rows[0].member_email, rows[0].name, rows[0].total, monthName)
