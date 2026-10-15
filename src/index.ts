@@ -34,6 +34,7 @@ import gameChallengesRouter from "./routes/gameChallenges";
 import videoNotificationsRouter from "./routes/video-notifications";
 import pixabayRouter from "./routes/pixabay";
 import membershipMovementRouter from "./routes/membershipMovement";
+import ownerAlertsRouter from "./routes/ownerAlerts";
 import { ensureMembershipTables } from "./membershipEvents";
 import { startScheduler } from "./scheduler";
 import { scheduleTimezoneNotifications } from "./scheduledNotifications";
@@ -124,6 +125,7 @@ app.use("/api/blocks", blocksRouter);
 app.use("/api/sso", ssoRouter);
 app.use("/api", pixabayRouter);
 app.use("/api", membershipMovementRouter);
+app.use("/api", ownerAlertsRouter);
 
 async function main() {
   await initDb();
