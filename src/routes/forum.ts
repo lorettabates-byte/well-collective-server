@@ -19,11 +19,17 @@ interface MessageRow {
   image: string | null;
 }
 
+// Community names never show an email address (some members typed theirs into their display name).
+function publicName(name: string | null | undefined): string {
+  const cleaned = String(name ?? "").replace(/\S+@\S+/g, "").replace(/\s+/g, " ").trim();
+  return cleaned || "A WELL member";
+}
+
 function formatMessage(row: MessageRow) {
   return {
     id: row.id,
     authorId: row.author_id,
-    authorName: row.author_name,
+    authorName: publicName(row.author_name),
     authorAvatar: row.author_avatar ?? "",
     text: row.text,
     createdAt: row.created_at.toISOString(),
@@ -136,7 +142,7 @@ router.get("/threads", async (req, res) => {
       categoryId: row.category_id,
       title: row.title,
       authorId: row.author_id,
-      authorName: row.author_name,
+      authorName: publicName(row.author_name),
       authorAvatar: row.author_avatar ?? "",
       createdAt: row.created_at.toISOString(),
       pinnedAt: row.pinned_at?.toISOString() ?? undefined,
