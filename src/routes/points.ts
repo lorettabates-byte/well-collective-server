@@ -749,6 +749,13 @@ router.get("/admin/well-cup-month", requireAdmin, async (req, res) => {
       `SELECT activity_type, COUNT(*)::int AS times, COALESCE(SUM(points),0)::int AS points
        FROM activity_logs WHERE created_at >= ${start} AND created_at < ${end}
        GROUP BY activity_type ORDER BY times DESC LIMIT 8`, [month]);
+    // Members (2026-10-15, for Loretta's monthly report): new accounts, trials started and trials that ended this month.
+    const people = await pool.query(
+      `SELECT
+         COUNT(*) FILTER (WHERE created_at >= ${start} AND created_at < ${end})::int AS new_users,
+         COUNT(*) FILTER (WHERE trial_started_at >= ${start} AND trial_started_at < ${end})::int AS trials_started,
+         COUNT(*) FILTER (WHERE trial_ends_at >= (${start})::date AND trial_ends_at < (${end})::date)::int AS trials_ended
+       FROM members`, [month]);
     const daily = await pool.query(
       `SELECT m.name, COUNT(*)::int AS wins FROM well_cup_wins w JOIN members m ON m.email = w.member_email
        WHERE to_char(w.win_date, 'YYYY-MM') = $1 GROUP BY m.name ORDER BY wins DESC LIMIT 5`, [month]);
@@ -758,6 +765,7 @@ router.get("/admin/well-cup-month", requireAdmin, async (req, res) => {
       totals: { members: Number(totals.rows[0]?.members || 0), points: Number(totals.rows[0]?.points || 0), activities: Number(totals.rows[0]?.activities || 0) },
       kinds: kinds.rows.map(r => ({ type: r.activity_type, times: Number(r.times), points: Number(r.points) })),
       dailyWins: daily.rows.map(r => ({ name: r.name, wins: Number(r.wins) })),
+      members: { newUsers: Number(people.rows[0]?.new_users || 0), trialsStarted: Number(people.rows[0]?.trials_started || 0), trialsEnded: Number(people.rows[0]?.trials_ended || 0) },
     });
   } catch (err) {
     console.error("Well cup month error:", err);
