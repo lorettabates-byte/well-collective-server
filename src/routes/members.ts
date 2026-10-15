@@ -58,7 +58,6 @@ router.post("/members/sync", async (req, res) => {
 
   try {
     const { rows: existingRows } = await pool.query("SELECT 1 FROM members WHERE email = $1", [normalizedEmail]);
-    const isFirstTimeJoin = existingRows.length === 0;
 
     // Use COALESCE so a blank/missing avatar, bio, birthday, or workout log
     // from the client (e.g. a false-positive "new member" reset on the
@@ -121,17 +120,6 @@ router.post("/members/sync", async (req, res) => {
         (req.body as Record<string, unknown>).goalsRefreshPeriod || null,
       ]
     );
-
-    if (isFirstTimeJoin && !ADMIN_NOTIFY_EMAILS.includes(normalizedEmail)) {
-      for (const adminEmail of ADMIN_NOTIFY_EMAILS) {
-        sendNotificationToUser(adminEmail, {
-          title: "New WELL Collective signup",
-          body: `${name} (${normalizedEmail}) just joined as a paid member.`,
-          tag: "new-signup",
-          url: "/admin",
-        }).catch((err) => console.error("Admin signup notification failed:", err));
-      }
-    }
 
     if (birthday) {
       syncBirthdayToWordPress(normalizedEmail, birthday);

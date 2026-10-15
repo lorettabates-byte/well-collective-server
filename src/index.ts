@@ -33,6 +33,8 @@ import tribeRouter from "./routes/tribe";
 import gameChallengesRouter from "./routes/gameChallenges";
 import videoNotificationsRouter from "./routes/video-notifications";
 import pixabayRouter from "./routes/pixabay";
+import membershipMovementRouter from "./routes/membershipMovement";
+import { ensureMembershipTables } from "./membershipEvents";
 import { startScheduler } from "./scheduler";
 import { scheduleTimezoneNotifications } from "./scheduledNotifications";
 
@@ -121,9 +123,11 @@ app.use("/api/referrals", referralsRouter);
 app.use("/api/blocks", blocksRouter);
 app.use("/api/sso", ssoRouter);
 app.use("/api", pixabayRouter);
+app.use("/api", membershipMovementRouter);
 
 async function main() {
   await initDb();
+  await ensureMembershipTables();
   startScheduler();
   scheduleTimezoneNotifications();
   app.listen(PORT, () => {

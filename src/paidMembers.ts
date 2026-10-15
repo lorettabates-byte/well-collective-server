@@ -1,6 +1,7 @@
 import { pool } from "./db";
-import { getAppleSubscribers, revenueCatReady } from "./revenuecat";
+import { getAppleSubscribers, revenueCatReady, type AppleSub } from "./revenuecat";
 import { syncAppleSubscribers } from "./winback";
+import { reconcileFromSnapshot, getFlag, type Source } from "./membershipEvents";
 
 const WP_BASE = "https://lorettabates.com/videolibrary.lorettabates.com/wp-json/well/v1";
 const WELL_API_KEY = process.env.WELL_API_KEY || "";
@@ -40,7 +41,7 @@ async function wpGet<T>(path: string): Promise<T> {
 // Paid = a real Stripe/PayPal charge for Level 4 in the last 35 days (wordpress-snippets/paid-members.php).
 // Level 4 alone isn't proof: lapsed trials were moved onto it for free.
 async function load(): Promise<PaidMembers> {
-  const { members } = await wpGet<{ members: { email: string; name?: string | null }[] }>("/paid-members");
+  const { members } = await wpGet<{ members: { email: string; name?: string | null; gateway?: string | null; started_at?: string | null }[] }>("/paid-members");
   const website = new Set(
     members.filter((m) => !isExcludedAccount(m.email, m.name)).map((m) => m.email.toLowerCase())
   );
@@ -53,9 +54,11 @@ async function load(): Promise<PaidMembers> {
   let appleError: string | undefined;
   const appleExpires = new Map<string, string>();
   const appleCancelling = new Set<string>();
+  let storeSubs = new Map<string, AppleSub>();
   if (revenueCatReady) {
     try {
       const subs = await getAppleSubscribers();
+      storeSubs = subs;
       appleEmails = [...subs].filter(([, s]) => s.store !== "play_store").map(([e]) => e);
       playEmails = [...subs].filter(([, s]) => s.store === "play_store").map(([e]) => e);
       await syncAppleSubscribers(subs).catch((err) => console.error("[PAID] Apple subscriber sync failed:", err));
@@ -79,7 +82,43 @@ async function load(): Promise<PaidMembers> {
   const apple = new Set(appleEmails.filter((e) => !isExcludedAccount(e) && !website.has(e)));
   const play = new Set(playEmails.filter((e) => !isExcludedAccount(e) && !website.has(e) && !apple.has(e)));
 
+  if (appleSource === "revenuecat") {
+    trackMovement(members, website, storeSubs).catch((err) => console.error("[MEMBERSHIP] reconcile failed:", err));
+  }
+
   return { website, apple, play, appleSource, appleError, appleExpires, appleCancelling, fetchedAt: Date.now() };
+}
+
+const GATEWAY: Record<string, string> = { stripe_connect: "Stripe", stripe: "Stripe", paypal: "PayPal" };
+
+// Only runs on a full read (website + RevenueCat), so a failed lookup never looks like everyone left.
+async function trackMovement(
+  members: { email: string; name?: string | null; gateway?: string | null; started_at?: string | null }[],
+  website: Set<string>,
+  storeSubs: Map<string, AppleSub>
+): Promise<void> {
+  const web = new Map<string, { name?: string | null; gateway?: string | null; startedAt?: string | null }>();
+  for (const m of members) {
+    const e = m.email.toLowerCase();
+    if (website.has(e)) web.set(e, { name: m.name, gateway: m.gateway ? GATEWAY[m.gateway] ?? m.gateway : null, startedAt: m.started_at ?? null });
+  }
+  const store = new Map<string, { store: "app_store" | "google_play"; willRenew: boolean | null; endsAt: number | null; startedAt: number | null }>();
+  for (const [e, sub] of storeSubs) {
+    if (isExcludedAccount(e) || website.has(e)) continue;
+    store.set(e, { store: sub.store === "play_store" ? "google_play" : "app_store", willRenew: sub.willRenew, endsAt: sub.endsAt, startedAt: sub.startedAt ?? sub.firstSeenAt });
+  }
+
+  let lapsed: { email: string; name?: string | null; source: Source; startedAt?: string | number | null; endedAt: string | number }[] | undefined;
+  if ((await getFlag("seeded")) !== "1") {
+    lapsed = [];
+    const wl = await wpGet<{ members: { email: string; name?: string | null; ended_at: string; started_at?: string | null }[] }>("/lapsed-members?days=120");
+    for (const m of wl.members) lapsed.push({ email: m.email.toLowerCase(), name: m.name, source: "website", startedAt: m.started_at ?? null, endedAt: m.ended_at });
+    const { rows } = await pool.query<{ email: string; first_seen_at: Date | null; ended_at: Date }>(
+      "SELECT email, first_seen_at, ended_at FROM apple_subscriptions WHERE ended_at IS NOT NULL"
+    );
+    for (const r of rows) lapsed.push({ email: r.email, source: "app_store", startedAt: r.first_seen_at?.getTime() ?? null, endedAt: r.ended_at.getTime() });
+  }
+  await reconcileFromSnapshot({ website: web, store, lapsed });
 }
 
 function refresh(): Promise<PaidMembers> {

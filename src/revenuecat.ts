@@ -26,6 +26,8 @@ export interface AppleSub {
   willRenew: boolean | null;
   // Which store bills them. Unknown (entitlement-only keys) counts as the App Store.
   store: "app_store" | "play_store" | "other";
+  // Start of the live subscription (includes any free trial), when the key can read subscriptions.
+  startedAt: number | null;
 }
 
 interface RcSubscription {
@@ -33,6 +35,7 @@ interface RcSubscription {
   store?: string;
   auto_renewal_status?: string;
   current_period_ends_at?: number | null;
+  starts_at?: number | null;
 }
 
 // The app sets RevenueCat's appUserID to the member's email (src/utils/iap.ts), so customer ids are emails.
@@ -59,7 +62,8 @@ export async function getAppleSubscribers(): Promise<Map<string, AppleSub>> {
           const endsAt = Math.max(...live.map((x) => x.current_period_ends_at ?? 0)) || null;
           const stores = live.map((x) => x.store ?? "");
           const store = stores.includes("app_store") ? "app_store" : stores.includes("play_store") ? "play_store" : "other";
-          subs.set(id.toLowerCase(), { firstSeenAt: firstSeen.get(id) ?? null, endsAt, willRenew: live.some((x) => x.auto_renewal_status !== "will_not_renew"), store });
+          const starts = live.map((x) => x.starts_at ?? 0).filter(Boolean);
+          subs.set(id.toLowerCase(), { firstSeenAt: firstSeen.get(id) ?? null, endsAt, willRenew: live.some((x) => x.auto_renewal_status !== "will_not_renew"), store, startedAt: starts.length ? Math.min(...starts) : null });
         }
         continue;
       } catch (err) {
@@ -75,6 +79,7 @@ export async function getAppleSubscribers(): Promise<Map<string, AppleSub>> {
         endsAt: live.some((e) => e.expires_at === null) ? null : Math.max(...live.map((e) => e.expires_at as number)),
         willRenew: null,
         store: "app_store",
+        startedAt: null,
       });
     }
   }

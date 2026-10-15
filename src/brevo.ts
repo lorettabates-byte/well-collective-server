@@ -23,6 +23,7 @@ import {
   renderTrialEndingEmail,
   renderWelcomeEmail,
   renderWellCupWinnerEmail,
+  renderCancelReasonEmail,
 } from "./emailTemplates";
 
 const BREVO_API_KEY = process.env.BREVO_API_KEY;
@@ -1264,4 +1265,15 @@ export async function sendWellCupWinnerAdminAlert(
   } catch (err) {
     console.error("[BREVO] sendWellCupWinnerAdminAlert error:", err);
   }
+}
+
+const PUBLIC_API_URL = (process.env.PUBLIC_API_URL || "https://well-collective-server-production.up.railway.app").replace(/\/$/, "");
+
+/** One-question "why did you cancel?" email; each answer is a one-tap link. */
+export async function sendCancelReasonEmail(email: string, name: string, token: string): Promise<boolean> {
+  const rendered = renderCancelReasonEmail({
+    firstName: firstNameFrom(name),
+    answerUrl: (reason) => `${PUBLIC_API_URL}/api/cancel-reason?t=${encodeURIComponent(token)}&r=${reason}`,
+  });
+  return sendMemberEmail("cancel-reason", email, name, rendered);
 }

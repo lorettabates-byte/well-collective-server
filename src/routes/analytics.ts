@@ -391,7 +391,7 @@ router.get("/analytics/dashboard", requireAdmin, async (_req, res) => {
       COUNT(*) FILTER (WHERE membership_source = 'iap_apple' AND membership_status = 'active') AS active_count,
       COUNT(*) FILTER (WHERE membership_source = 'iap_apple') AS total_count,
       COUNT(*) FILTER (WHERE membership_source = 'iap_apple' AND created_at >= DATE_TRUNC('month', CURRENT_DATE)) AS new_this_month,
-      COUNT(*) FILTER (WHERE COALESCE(membership_source, 'web') != 'iap_apple' AND membership_status = 'active') AS web_active_count
+      COUNT(*) FILTER (WHERE COALESCE(membership_source, 'web') NOT IN ('iap_apple','iap_google') AND membership_status = 'active') AS web_active_count
     FROM members
   `);
 
@@ -503,7 +503,7 @@ router.get("/analytics/dashboard", requireAdmin, async (_req, res) => {
 router.patch("/analytics/member-source", requireAdmin, async (req, res) => {
   const { email, source } = req.body as { email?: string; source?: string };
   if (!email || !source) return res.status(400).json({ error: "email and source required" });
-  const allowed = ["iap_apple", "web", "trial"];
+  const allowed = ["iap_apple", "iap_google", "web", "trial"];
   if (!allowed.includes(source)) return res.status(400).json({ error: "invalid source" });
   try {
     await pool.query("UPDATE members SET membership_source = $1 WHERE email = $2", [source, email.toLowerCase()]);
@@ -644,7 +644,7 @@ router.get("/analytics/claudio-snapshot", requireClaudio, async (_req, res) => {
     q<Record<string, number>>("members", `
       SELECT
         COUNT(*) FILTER (WHERE membership_status = 'active') AS paid_total,
-        COUNT(*) FILTER (WHERE membership_status = 'active' AND COALESCE(membership_source,'web') != 'iap_apple') AS paid_web,
+        COUNT(*) FILTER (WHERE membership_status = 'active' AND COALESCE(membership_source,'web') NOT IN ('iap_apple','iap_google')) AS paid_web,
         COUNT(*) FILTER (WHERE membership_status = 'active' AND membership_source = 'iap_apple') AS paid_app_store,
         COUNT(*) FILTER (WHERE trial_ends_at IS NOT NULL AND trial_ends_at >= CURRENT_DATE) AS active_trials,
         COUNT(*) FILTER (WHERE created_at >= DATE_TRUNC('month', CURRENT_DATE)) AS new_this_month,

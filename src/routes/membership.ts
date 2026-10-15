@@ -14,6 +14,7 @@ const WELL_API_KEY = process.env.WELL_API_KEY || "";
 router.post("/iap/register", async (req, res) => {
   const email = (req.body.email as string | undefined)?.trim().toLowerCase();
   const name = ((req.body.name as string | undefined) || "").trim();
+  const source = req.body.platform === "android" ? "iap_google" : "iap_apple";
   if (!email) {
     res.status(400).json({ error: "email is required" });
     return;
@@ -22,9 +23,9 @@ router.post("/iap/register", async (req, res) => {
   try {
     await pool.query(
       `INSERT INTO members (email, name, membership_status, membership_source)
-       VALUES ($1, $2, 'active', 'iap_apple')
-       ON CONFLICT (email) DO UPDATE SET membership_status = 'active', membership_source = 'iap_apple'`,
-      [email, name]
+       VALUES ($1, $2, 'active', $3)
+       ON CONFLICT (email) DO UPDATE SET membership_status = 'active', membership_source = $3`,
+      [email, name, source]
     );
 
     if (WELL_API_KEY) {
@@ -70,8 +71,8 @@ router.post("/iap/activate", async (req, res) => {
 
     // Mark active in our database and record Apple IAP as the source
     await pool.query(
-      "UPDATE members SET membership_status = 'active', membership_source = 'iap_apple' WHERE email = $1",
-      [email]
+      "UPDATE members SET membership_status = 'active', membership_source = $2 WHERE email = $1",
+      [email, req.body.platform === "android" ? "iap_google" : "iap_apple"]
     );
 
     checkReferralConversion(email).catch((err) =>
