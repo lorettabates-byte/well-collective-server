@@ -728,6 +728,43 @@ router.get("/leaderboard/lucky-draw", async (_req, res) => {
 });
 
 // Admin: list all daily WELL Cup wins, optionally filtered by member email.
+// Admin: one month of WELL Cup at a glance, for Claudine's monthly report to Loretta (2026-10-15).
+// ?month=YYYY-MM. Uses the same 05:00 UTC month boundaries as crownMonthlyWinner. Read only.
+router.get("/admin/well-cup-month", requireAdmin, async (req, res) => {
+  const month = String((req.query as { month?: string }).month || "");
+  if (!/^\d{4}-\d{2}$/.test(month)) return res.status(400).json({ error: "month must be YYYY-MM" });
+  const start = `(($1 || '-01 05:00:00+00')::timestamptz)`;
+  const end = `((($1 || '-01 05:00:00+00')::timestamptz) + INTERVAL '1 month')`;
+  try {
+    const top = await pool.query(
+      `SELECT m.name, al.member_email AS email, SUM(al.points)::int AS points, COUNT(*)::int AS activities,
+              COUNT(DISTINCT date_trunc('day', al.created_at AT TIME ZONE '${TIMEZONE}'))::int AS active_days
+       FROM activity_logs al JOIN members m ON m.email = al.member_email
+       WHERE al.created_at >= ${start} AND al.created_at < ${end} AND m.show_on_leaderboard = TRUE
+       GROUP BY m.name, al.member_email ORDER BY points DESC LIMIT 10`, [month]);
+    const totals = await pool.query(
+      `SELECT COUNT(DISTINCT member_email)::int AS members, COALESCE(SUM(points),0)::int AS points, COUNT(*)::int AS activities
+       FROM activity_logs WHERE created_at >= ${start} AND created_at < ${end}`, [month]);
+    const kinds = await pool.query(
+      `SELECT activity_type, COUNT(*)::int AS times, COALESCE(SUM(points),0)::int AS points
+       FROM activity_logs WHERE created_at >= ${start} AND created_at < ${end}
+       GROUP BY activity_type ORDER BY times DESC LIMIT 8`, [month]);
+    const daily = await pool.query(
+      `SELECT m.name, COUNT(*)::int AS wins FROM well_cup_wins w JOIN members m ON m.email = w.member_email
+       WHERE to_char(w.win_date, 'YYYY-MM') = $1 GROUP BY m.name ORDER BY wins DESC LIMIT 5`, [month]);
+    res.json({
+      month,
+      top: top.rows.map(r => ({ name: r.name, email: r.email, points: Number(r.points), activities: Number(r.activities), activeDays: Number(r.active_days) })),
+      totals: { members: Number(totals.rows[0]?.members || 0), points: Number(totals.rows[0]?.points || 0), activities: Number(totals.rows[0]?.activities || 0) },
+      kinds: kinds.rows.map(r => ({ type: r.activity_type, times: Number(r.times), points: Number(r.points) })),
+      dailyWins: daily.rows.map(r => ({ name: r.name, wins: Number(r.wins) })),
+    });
+  } catch (err) {
+    console.error("Well cup month error:", err);
+    res.status(500).json({ error: "Failed to build the month" });
+  }
+});
+
 router.get("/admin/well-cup-wins", requireAdmin, async (req, res) => {
   const { email } = req.query as { email?: string };
   try {
