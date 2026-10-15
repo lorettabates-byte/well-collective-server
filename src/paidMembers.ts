@@ -1,7 +1,7 @@
 import { pool } from "./db";
-import { getAppleSubscribers, revenueCatReady, type AppleSub } from "./revenuecat";
+import { getAppleSubscribers, getStorePaidHistory, revenueCatReady, type AppleSub } from "./revenuecat";
 import { syncAppleSubscribers } from "./winback";
-import { reconcileFromSnapshot, getFlag, type Source } from "./membershipEvents";
+import { reconcileFromSnapshot, getFlag, SEED_VERSION, type Source } from "./membershipEvents";
 
 const WP_BASE = "https://lorettabates.com/videolibrary.lorettabates.com/wp-json/well/v1";
 const WELL_API_KEY = process.env.WELL_API_KEY || "";
@@ -109,14 +109,21 @@ async function trackMovement(
   }
 
   let lapsed: { email: string; name?: string | null; source: Source; startedAt?: string | number | null; endedAt: string | number }[] | undefined;
-  if ((await getFlag("seeded")) !== "1") {
+  if ((await getFlag("seeded")) !== SEED_VERSION) {
     lapsed = [];
-    const wl = await wpGet<{ members: { email: string; name?: string | null; ended_at: string; started_at?: string | null }[] }>("/lapsed-members?days=120");
-    for (const m of wl.members) lapsed.push({ email: m.email.toLowerCase(), name: m.name, source: "website", startedAt: m.started_at ?? null, endedAt: m.ended_at });
-    const { rows } = await pool.query<{ email: string; first_seen_at: Date | null; ended_at: Date }>(
-      "SELECT email, first_seen_at, ended_at FROM apple_subscriptions WHERE ended_at IS NOT NULL"
-    );
-    for (const r of rows) lapsed.push({ email: r.email, source: "app_store", startedAt: r.first_seen_at?.getTime() ?? null, endedAt: r.ended_at.getTime() });
+    // Only people who really paid: trial members were once moved onto Level 4 for free.
+    const wl = await wpGet<{ members: { email: string; name?: string | null; ended_at: string; started_at?: string | null; paid_months?: string | number }[] }>("/lapsed-members?days=120");
+    for (const m of wl.members) {
+      if (Number(m.paid_months ?? 0) <= 0 || isExcludedAccount(m.email, m.name)) continue;
+      lapsed.push({ email: m.email.toLowerCase(), name: m.name, source: "website", startedAt: m.started_at ?? null, endedAt: m.ended_at });
+    }
+    const history = await getStorePaidHistory().catch((err) => { console.error("[MEMBERSHIP] store history failed:", err); return []; });
+    for (const h of history) {
+      if (h.givesAccess || !h.endedAt || website.has(h.email) || isExcludedAccount(h.email)) continue;
+      lapsed.push({ email: h.email, source: h.store, startedAt: h.startedAt, endedAt: h.endedAt });
+    }
+    const live = new Map(history.filter((h) => h.givesAccess).map((h) => [h.email, h.startedAt] as const));
+    for (const [e, s] of store) { const started = live.get(e); if (started) s.startedAt = started; }
   }
   await reconcileFromSnapshot({ website: web, store, lapsed });
 }

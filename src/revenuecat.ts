@@ -38,6 +38,40 @@ interface RcSubscription {
   starts_at?: number | null;
 }
 
+export interface StorePaidHistory { email: string; store: "app_store" | "google_play"; startedAt: number | null; endedAt: number | null; givesAccess: boolean }
+
+/** Every subscription that ever earned money, live or ended. Empty when the key can't read subscriptions. */
+export async function getStorePaidHistory(): Promise<StorePaidHistory[]> {
+  const ids: string[] = [];
+  let next: string | null = `/projects/${PROJECT}/customers?limit=100`;
+  for (let page = 0; next && page < 50; page++) {
+    const body: { items: { id: string }[]; next_page: string | null } = await rcGet(next);
+    for (const c of body.items) if (c.id.includes("@")) ids.push(c.id);
+    next = body.next_page;
+  }
+  const out: StorePaidHistory[] = [];
+  for (const id of ids) {
+    let items: (RcSubscription & { ends_at?: number | null; total_revenue_in_usd?: { gross?: number } })[];
+    try {
+      ({ items } = await rcGet<{ items: typeof items }>(`/projects/${PROJECT}/customers/${encodeURIComponent(id)}/subscriptions`));
+    } catch (err) {
+      if (String(err).includes("RevenueCat 403")) return [];
+      throw err;
+    }
+    for (const x of items) {
+      if (!((x.total_revenue_in_usd?.gross ?? 0) > 0)) continue;
+      out.push({
+        email: id.toLowerCase(),
+        store: x.store === "play_store" ? "google_play" : "app_store",
+        startedAt: x.starts_at ?? null,
+        endedAt: x.gives_access ? null : x.ends_at ?? x.current_period_ends_at ?? null,
+        givesAccess: !!x.gives_access,
+      });
+    }
+  }
+  return out;
+}
+
 // The app sets RevenueCat's appUserID to the member's email (src/utils/iap.ts), so customer ids are emails.
 export async function getAppleSubscribers(): Promise<Map<string, AppleSub>> {
   const ids: string[] = [];

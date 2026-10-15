@@ -5,6 +5,7 @@ import { isExcludedAccount } from "./paidMembers";
 import { sendCancelReasonEmail } from "./brevo";
 
 export type Source = "website" | "app_store" | "google_play";
+export const SEED_VERSION = "2";
 export type Kind = "joined" | "cancelled" | "resumed" | "ended";
 
 export const REASONS: Record<string, string> = {
@@ -272,7 +273,13 @@ export async function reconcileFromSnapshot(snapshot: {
   lapsed?: { email: string; name?: string | null; source: Source; startedAt?: string | number | null; endedAt: string | number }[];
 }): Promise<void> {
   await ensureMembershipTables();
-  const seeded = (await getFlag("seeded")) === "1";
+  const seedFlag = await getFlag("seeded");
+  if (seedFlag && seedFlag !== SEED_VERSION) {
+    // An earlier fill-in counted unpaid trial moves; redo it. Live webhook and hook rows are kept.
+    await pool.query(`DELETE FROM membership_events WHERE via IN ('backfill','website_poll','revenuecat_poll')`);
+    await pool.query(`DELETE FROM membership_tracking WHERE key = 'seeded'`);
+  }
+  const seeded = seedFlag === SEED_VERSION;
   const when = (v: string | number | null | undefined): Date | null => {
     if (v === null || v === undefined || v === "") return null;
     const d = typeof v === "number" ? new Date(v) : new Date(String(v).replace(" ", "T") + (String(v).includes("Z") || String(v).includes("+") ? "" : "Z"));
@@ -326,5 +333,5 @@ export async function reconcileFromSnapshot(snapshot: {
       occurredAt: r.access_until ?? new Date(), notify: false,
     });
   }
-  if (!seeded) await setFlag("seeded", "1");
+  if (!seeded) await setFlag("seeded", SEED_VERSION);
 }
