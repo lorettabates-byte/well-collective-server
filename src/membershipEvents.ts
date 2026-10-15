@@ -5,7 +5,7 @@ import { isExcludedAccount } from "./paidMembers";
 import { sendCancelReasonEmail } from "./brevo";
 
 export type Source = "website" | "app_store" | "google_play";
-export const SEED_VERSION = "3";
+export const SEED_VERSION = "4";
 export type Kind = "joined" | "cancelled" | "resumed" | "ended";
 
 export const REASONS: Record<string, string> = {

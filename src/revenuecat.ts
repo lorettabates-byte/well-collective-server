@@ -58,7 +58,9 @@ export async function getStorePaidHistory(): Promise<StorePaidHistory[]> {
       if (String(err).includes("RevenueCat 403")) return [];
       throw err;
     }
-    for (const x of items) {
+    for (const x of items as (typeof items[number] & { environment?: string })[]) {
+      // Apple's review and test purchases are sandbox: no real money.
+      if (x.environment && x.environment !== "production") continue;
       if (!((x.total_revenue_in_usd?.gross ?? 0) > 0)) continue;
       out.push({
         email: id.toLowerCase(),
