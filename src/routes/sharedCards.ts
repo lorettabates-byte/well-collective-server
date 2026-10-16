@@ -154,6 +154,9 @@ router.post("/cards/shared/:code/try", async (req, res) => {
 
 // Loretta's count: cards shared outside the WELL Collective, opened, and taps on the free trial button.
 router.get("/admin/cards/shared-stats", requireAdmin, async (_req, res) => {
+  // Loretta's own cards (like the one in the members email) are left out, so the count shows
+  // how much members really use sharing (she asked 2026-10-16).
+  const L = "'loretta@lorettabates.com'";
   try {
     const { rows: [t] } = await pool.query(`
       SELECT count(*)::int AS shared,
@@ -162,23 +165,25 @@ router.get("/admin/cards/shared-stats", requireAdmin, async (_req, res) => {
              count(*) FILTER (WHERE try_taps > 0)::int AS cards_with_try,
              count(DISTINCT sender_email)::int AS senders,
              count(*) FILTER (WHERE created_at > now() - interval '30 days')::int AS shared_30d,
-             (SELECT count(*)::int FROM shared_card_signups) AS signups,
+             (SELECT count(*)::int FROM shared_card_signups s JOIN shared_cards c1 ON c1.code = s.code WHERE c1.sender_email <> ${L}) AS signups,
              (SELECT count(*)::int FROM shared_card_signups s JOIN members m ON m.email = s.email
-               WHERE m.membership_status = 'active') AS paying
-      FROM shared_cards`);
+               JOIN shared_cards c2 ON c2.code = s.code
+               WHERE m.membership_status = 'active' AND c2.sender_email <> ${L}) AS paying
+      FROM shared_cards WHERE sender_email <> ${L}`);
     const { rows: joined } = await pool.query(`
       SELECT s.name, s.created_at, c.sender_name, (m.membership_status = 'active') AS paying
       FROM shared_card_signups s JOIN shared_cards c ON c.code = s.code
       LEFT JOIN members m ON m.email = s.email
+      WHERE c.sender_email <> ${L}
       ORDER BY s.created_at DESC LIMIT 15`);
     const { rows: recent } = await pool.query(`
       SELECT c.sender_name, c.to_name, c.occasion_id, c.opens, c.try_taps, c.created_at,
              (SELECT count(*)::int FROM shared_card_signups s WHERE s.code = c.code) AS signups
-      FROM shared_cards c ORDER BY c.created_at DESC LIMIT 15`);
+      FROM shared_cards c WHERE c.sender_email <> ${L} ORDER BY c.created_at DESC LIMIT 15`);
     const { rows: top } = await pool.query(`
       SELECT c.sender_name, c.sender_email, count(*)::int AS shared, COALESCE(sum(c.try_taps), 0)::int AS try_taps,
              (SELECT count(*)::int FROM shared_card_signups s JOIN shared_cards c2 ON c2.code = s.code WHERE c2.sender_email = c.sender_email) AS signups
-      FROM shared_cards c GROUP BY c.sender_name, c.sender_email ORDER BY signups DESC, shared DESC LIMIT 5`);
+      FROM shared_cards c WHERE c.sender_email <> ${L} GROUP BY c.sender_name, c.sender_email ORDER BY signups DESC, shared DESC LIMIT 5`);
     res.json({
       totals: t,
       recent: recent.map((r) => ({ senderName: r.sender_name, toName: r.to_name, occasionId: r.occasion_id, opens: r.opens, tryTaps: r.try_taps, signups: r.signups, createdAt: new Date(r.created_at).toISOString() })),
