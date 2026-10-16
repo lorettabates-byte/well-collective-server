@@ -1,4 +1,5 @@
 import crypto from "crypto";
+import { maybeSendWelcomeCard } from "../welcomeCard";
 import express, { Router } from "express";
 import { pool } from "../db";
 import { requireAdmin } from "../middleware/adminAuth";
@@ -71,6 +72,9 @@ router.post("/webhooks/revenuecat", async (req, res) => {
 
     if ((e.type === "INITIAL_PURCHASE" && !trial) || (e.type === "RENEWAL" && e.is_trial_conversion)) {
       await recordMembershipEvent({ email, kind: "joined", source, via: "revenuecat_webhook", occurredAt: at(e.purchased_at_ms ?? e.event_timestamp_ms) });
+    } else if (e.type === "INITIAL_PURCHASE" && trial) {
+      // A store free trial is a new member too; the welcome card goes out once.
+      await maybeSendWelcomeCard(email, `store trial (${source})`);
     } else if (e.type === "CANCELLATION" && !trial) {
       await recordMembershipEvent({
         email, kind: "cancelled", source, via: "revenuecat_webhook", occurredAt: at(e.event_timestamp_ms),

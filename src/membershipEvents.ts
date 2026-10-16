@@ -3,6 +3,7 @@ import { pool } from "./db";
 import { ADMIN_NOTIFY_EMAILS, sendNotificationToUser } from "./push";
 import { isExcludedAccount } from "./paidMembers";
 import { sendCancelReasonEmail } from "./brevo";
+import { maybeSendWelcomeCard } from "./welcomeCard";
 
 export type Source = "website" | "app_store" | "google_play";
 export const SEED_VERSION = "4";
@@ -167,6 +168,13 @@ export async function recordMembershipEvent(input: EventInput): Promise<boolean>
     [email, name, input.kind, input.source, input.gateway ?? null, occurredAt, input.dateKnown !== false,
      since, input.accessUntil ?? null, input.storeReason ?? null, input.via]
   );
+
+  // Loretta's welcome card for a brand-new paying member (never for backfill rows).
+  if (input.kind === "joined" && !prev && input.notify !== false && input.via !== "backfill") {
+    maybeSendWelcomeCard(email, `joined (${input.source})`, name).catch((err) =>
+      console.error("[MEMBERSHIP] welcome card failed:", err)
+    );
+  }
 
   if (input.notify !== false) {
     notifyOwner({ ...input, email, name, since, occurredAt }).catch((err) =>

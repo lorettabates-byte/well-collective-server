@@ -7,6 +7,10 @@ import { ADMIN_NOTIFY_EMAIL, ADMIN_NOTIFY_EMAILS, sendNotificationToUser } from 
 import { addTrialContactToBrevo, sendOutreachEmail } from "../brevo";
 import { sendDay3EmailBlast } from "../scheduler";
 import { deriveMemberId, findEmailByMemberId } from "../utils/memberUtils";
+import {
+  ANNOUNCE_NOTE, lastWelcomeBroadcast, maybeSendWelcomeCard, planWelcomeBroadcast,
+  runWelcomeBroadcast, sendPendingWelcomeCard, welcomeBroadcastRunning,
+} from "../welcomeCard";
 
 const router = Router();
 
@@ -123,6 +127,11 @@ router.post("/members/sync", async (req, res) => {
 
     if (birthday) {
       syncBirthdayToWordPress(normalizedEmail, birthday);
+    }
+
+    // First app login for someone who joined on the website: their welcome card was waiting.
+    if (existingRows.length === 0) {
+      sendPendingWelcomeCard(normalizedEmail).catch((err) => console.error("Pending welcome card failed:", err));
     }
 
     res.json({ ok: true });
@@ -474,6 +483,38 @@ router.get("/admin/members", requireAdmin, async (_req, res) => {
   }
 });
 
+// Admin: Loretta's welcome card to every CURRENT member, once, to announce the
+// new card designs. Nothing runs on its own.
+//   { "dryRun": true }                      -> counts only, sends nothing
+//   { "dryRun": false }                     -> sends, one at a time, in the background
+//   { "dryRun": false, "onlyEmail": "x@y" } -> test send to one person (admins allowed)
+// Members who already have a welcome card are always skipped (never twice).
+router.post("/admin/cards/welcome-broadcast", requireAdmin, async (req, res) => {
+  const { dryRun, onlyEmail } = req.body as { dryRun?: boolean; onlyEmail?: string };
+  try {
+    const plan = await planWelcomeBroadcast(onlyEmail);
+    const summary = {
+      wouldSend: plan.recipients.length,
+      alreadyHaveOne: plan.alreadyHaveOne,
+      skippedTestOrAdminAccounts: plan.skipped,
+      note: ANNOUNCE_NOTE,
+      lastRun: await lastWelcomeBroadcast(),
+    };
+    if (dryRun !== false) {
+      return res.json({ dryRun: true, ...summary, sample: plan.recipients.slice(0, 10).map((r) => r.name || r.email) });
+    }
+    if (welcomeBroadcastRunning()) {
+      return res.status(409).json({ error: "A welcome card broadcast is already running." });
+    }
+    console.log(`[WELCOME BROADCAST] starting: ${plan.recipients.length} members${onlyEmail ? ` (only ${onlyEmail})` : ""}`);
+    runWelcomeBroadcast(plan.recipients).catch((err) => console.error("[WELCOME BROADCAST] crashed:", err));
+    res.status(202).json({ dryRun: false, started: true, ...summary });
+  } catch (err) {
+    console.error("Welcome broadcast error:", err);
+    res.status(500).json({ error: "Could not plan the welcome card broadcast" });
+  }
+});
+
 // Admin: manually add a member — either a full member (no trial dates) or a
 // trial grant (sets trial_started_at/trial_ends_at so they get trial access
 // immediately, same as a member who signed up for it themselves).
@@ -502,6 +543,8 @@ router.post("/admin/members", requireAdmin, async (req, res) => {
     if (grantTrial && trialEndsAt) {
       addTrialContactToBrevo(normalizedEmail, name.trim(), trialEndsAt)
         .catch((err) => console.error("Brevo trial sync (admin grant) failed:", err));
+      maybeSendWelcomeCard(normalizedEmail, "trial granted by admin", name.trim())
+        .catch((err) => console.error("Welcome card (admin grant) failed:", err));
     }
 
     res.status(201).json({ ok: true });

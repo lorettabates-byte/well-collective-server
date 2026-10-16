@@ -4,6 +4,7 @@ import { requireAdmin } from "../middleware/adminAuth";
 import jwt from "jsonwebtoken";
 import { pool } from "../db";
 import { ADMIN_NOTIFY_EMAIL, sendNotificationToUser } from "../push";
+import { maybeSendWelcomeCard } from "../welcomeCard";
 import { addTrialContactToBrevo, sendWelcomeEmail, addResumedTrialContactToBrevo } from "../brevo";
 
 const router = Router();
@@ -333,6 +334,12 @@ router.post("/start-trial", async (req, res) => {
          referred_by = COALESCE(members.referred_by, $4)`,
       [normalizedEmail, effectiveName, trialEndsAt, validReferrer]
     );
+
+    // Loretta's welcome card, once, the first time this person starts a trial.
+    if (!hasStartedTrial) {
+      maybeSendWelcomeCard(normalizedEmail, "trial started", effectiveName)
+        .catch((err) => console.error("Welcome card (trial) failed:", err));
+    }
 
     // Apply referral bonuses asynchronously — 25 pts to the referrer AND
     // 25 pts to the referred member for joining via a code.

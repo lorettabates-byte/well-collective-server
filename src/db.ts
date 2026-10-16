@@ -472,6 +472,20 @@ export async function initDb(): Promise<void> {
   `);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_tribe_cards_recipient_created
     ON tribe_cards (recipient_email, created_at DESC);`);
+  // New card designs (2026-10-16): the approved design id, the sender's
+  // signature, and an optional photo cover stored as a compressed JPEG data URL
+  // (same pattern as avatars and forum photos; the app keeps it near 900px/0.8).
+  // style_id stays for cards sent before this and for older app versions.
+  await pool.query(`ALTER TABLE tribe_cards ADD COLUMN IF NOT EXISTS design_id TEXT;`);
+  await pool.query(`ALTER TABLE tribe_cards ADD COLUMN IF NOT EXISTS signature TEXT;`);
+  await pool.query(`ALTER TABLE tribe_cards ADD COLUMN IF NOT EXISTS photo TEXT;`);
+  // Loretta's welcome card has no member sender row, so sender_email may be
+  // empty and sender_name says who it is from.
+  await pool.query(`ALTER TABLE tribe_cards ADD COLUMN IF NOT EXISTS sender_name TEXT;`);
+  await pool.query(`ALTER TABLE tribe_cards ALTER COLUMN sender_email DROP NOT NULL;`);
+  // One welcome card per member, ever.
+  await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS idx_tribe_cards_one_welcome
+    ON tribe_cards (recipient_email) WHERE occasion_id = 'welcome';`);
 
   await pool.query(`
     CREATE TABLE IF NOT EXISTS tribe_challenges (

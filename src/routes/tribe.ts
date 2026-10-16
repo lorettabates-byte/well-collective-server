@@ -409,17 +409,57 @@ router.post("/tribe/:memberId/cheer", async (req, res) => {
   }
 });
 
-// Send an occasion card (birthday / thinking of you / hi / etc.) to a tribe member.
+// Card designs a member can send (mirrors the approved cards in the app's
+// src/data/cardArt.ts). The welcome occasion is only ever sent by the server.
+const CARD_DESIGNS: Record<string, string[]> = {
+  birthday: ["b-shapes", "b-clay", "b-copper"],
+  "thinking-of-you": ["t-clay", "t-bloom", "t-night"],
+  "just-saying-hi": ["h-shapes", "h-clay", "h-bloom"],
+  condolences: ["c-clay", "c-copper", "c-drop"],
+  "youve-got-this": ["g-bloom", "g-shapes", "g-crown"],
+  congratulations: ["k-shapes", "k-copper", "k-clay"],
+};
+const CARD_MESSAGE_MAX = 220;
+const CARD_SIGNATURE_MAX = 40;
+// A 900px JPEG at 0.8 is usually 80-200 KB; leave room but refuse anything huge.
+const CARD_PHOTO_MAX_CHARS = 700_000;
+const CARD_PHOTO_RE = /^data:image\/(jpeg|png|webp);base64,[A-Za-z0-9+/=]+$/;
+
+// Send a card to any WELL Collective member (not only the sender's tribe).
+// Older app versions send { occasionId, styleId, message }; the new card
+// studio adds designId, signature and an optional photo.
 router.post("/tribe/:memberId/card", async (req, res) => {
-  const { email, occasionId, styleId, message } = req.body as {
+  const { email, occasionId, styleId, designId, message, signature, photo } = req.body as {
     email?: string;
     occasionId?: string;
     styleId?: string;
+    designId?: string;
     message?: string;
+    signature?: string;
+    photo?: string;
   };
-  if (!email || !occasionId || !styleId) {
-    return res.status(400).json({ error: "email, occasionId, and styleId required" });
+  const design = designId || styleId;
+  if (!email || !occasionId || !design) {
+    return res.status(400).json({ error: "email, occasionId, and designId required" });
   }
+  if (occasionId === "welcome") {
+    return res.status(400).json({ error: "That card can only come from Loretta" });
+  }
+  if (designId) {
+    const allowed = CARD_DESIGNS[occasionId];
+    if (!allowed) return res.status(400).json({ error: "Unknown occasion" });
+    if (designId === "photo") {
+      if (!photo || !CARD_PHOTO_RE.test(photo) || photo.length > CARD_PHOTO_MAX_CHARS) {
+        return res.status(400).json({ error: "That photo could not be used. Try a smaller one." });
+      }
+    } else if (!allowed.includes(designId)) {
+      return res.status(400).json({ error: "Unknown design" });
+    }
+  }
+  const cleanMessage = (message || "").slice(0, CARD_MESSAGE_MAX);
+  const cleanSignature = signature ? signature.trim().slice(0, CARD_SIGNATURE_MAX) : null;
+  const cleanPhoto = designId === "photo" ? photo! : null;
+
   try {
     const targetEmail = await findEmailByMemberId(req.params.memberId);
     if (!targetEmail) return res.status(404).json({ error: "Member not found" });
@@ -428,10 +468,10 @@ router.post("/tribe/:memberId/card", async (req, res) => {
     const senderName = rows[0]?.name || "Someone";
 
     const { rows: cardRows } = await pool.query(
-      `INSERT INTO tribe_cards (sender_email, recipient_email, occasion_id, style_id, message)
-       VALUES ($1, $2, $3, $4, $5)
+      `INSERT INTO tribe_cards (sender_email, recipient_email, occasion_id, style_id, design_id, message, signature, photo)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
        RETURNING id`,
-      [email.toLowerCase(), targetEmail.toLowerCase(), occasionId, styleId, message || ""]
+      [email.toLowerCase(), targetEmail.toLowerCase(), occasionId, styleId || design, designId || null, cleanMessage, cleanSignature, cleanPhoto]
     );
     const cardId = Number(cardRows[0].id);
     const link = `/tribe?card=${cardId}`;
@@ -470,11 +510,11 @@ router.get("/tribe/cards/:cardId", async (req, res) => {
 
   try {
     const { rows } = await pool.query(
-      `SELECT c.id, c.occasion_id, c.style_id, c.message, c.created_at,
-              sm.name AS sender_name, rm.name AS recipient_name,
+      `SELECT c.id, c.occasion_id, c.style_id, c.design_id, c.message, c.signature, c.photo, c.created_at,
+              COALESCE(c.sender_name, sm.name, 'Loretta') AS sender_name, rm.name AS recipient_name,
               c.sender_email, c.recipient_email
        FROM tribe_cards c
-       JOIN members sm ON sm.email = c.sender_email
+       LEFT JOIN members sm ON sm.email = c.sender_email
        JOIN members rm ON rm.email = c.recipient_email
        WHERE c.id = $1
          AND (c.sender_email = $2 OR c.recipient_email = $2)`,
@@ -496,7 +536,10 @@ router.get("/tribe/cards/:cardId", async (req, res) => {
         id: Number(row.id),
         occasionId: row.occasion_id,
         styleId: row.style_id,
+        designId: row.design_id ?? null,
         message: row.message,
+        signature: row.signature ?? null,
+        photo: row.photo ?? null,
         senderName: row.sender_name,
         recipientName: row.recipient_name,
         createdAt: iso(row.created_at),
