@@ -1,3 +1,4 @@
+import { recordSharedCardSignup } from "./sharedCards";
 import bcrypt from "bcrypt";
 import { Router } from "express";
 import { requireAdmin } from "../middleware/adminAuth";
@@ -201,7 +202,7 @@ router.post("/member-login", async (req, res) => {
 // their name/email here is logged back into their existing trial (same
 // trialEndsAt) instead of being rejected or having the clock reset.
 router.post("/start-trial", async (req, res) => {
-  const { email, name, referralCode, password } = req.body as { email?: string; name?: string; referralCode?: string; password?: string };
+  const { email, name, referralCode, password, cardCode } = req.body as { email?: string; name?: string; referralCode?: string; password?: string; cardCode?: string };
   if (!email?.trim()) {
     return res.status(400).json({ error: "Email is required" });
   }
@@ -335,6 +336,13 @@ router.post("/start-trial", async (req, res) => {
       [normalizedEmail, effectiveName, trialEndsAt, validReferrer]
     );
 
+    // Came from a card a member shared by link: credit the card (first trial only).
+    let cardSender: string | null = null;
+    if (!hasStartedTrial && cardCode) {
+      cardSender = await recordSharedCardSignup(cardCode, normalizedEmail, effectiveName)
+        .catch((err) => { console.error("Shared card signup record failed:", err); return null; });
+    }
+
     // Loretta's welcome card, once, the first time this person starts a trial.
     if (!hasStartedTrial) {
       maybeSendWelcomeCard(normalizedEmail, "trial started", effectiveName)
@@ -394,7 +402,7 @@ router.post("/start-trial", async (req, res) => {
       .catch((err) => console.error("WP create-trial error:", err));
 
     if (isFirstTimeJoin && normalizedEmail !== ADMIN_NOTIFY_EMAIL) {
-      const referralNote = validReferrer ? ` (referred by ${validReferrer})` : "";
+      const referralNote = (validReferrer ? ` (referred by ${validReferrer})` : "") + (cardSender ? ` from ${cardSender}'s card` : "");
       sendNotificationToUser(ADMIN_NOTIFY_EMAIL, {
         title: "New WELL Collective signup",
         body: `${effectiveName} (${normalizedEmail}) just joined as a Free Trial member${referralNote}.`,

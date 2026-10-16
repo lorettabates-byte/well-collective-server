@@ -2,6 +2,7 @@ import crypto from "crypto";
 import { Router } from "express";
 import { pool } from "../db";
 import { requireAdmin } from "../middleware/adminAuth";
+import { sendNotificationToUser } from "../push";
 import {
   CARD_DESIGNS, CARD_MESSAGE_MAX, CARD_PHOTO_MAX_CHARS, CARD_PHOTO_RE, CARD_SIGNATURE_MAX,
 } from "./tribe";
@@ -37,6 +38,33 @@ export async function ensureSharedCardsTable(): Promise<void> {
     );
   `);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_shared_cards_sender_created ON shared_cards (sender_email, created_at DESC);`);
+  // Who started a free trial from a shared card (one row per new member).
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS shared_card_signups (
+      email TEXT PRIMARY KEY,
+      code TEXT NOT NULL REFERENCES shared_cards(code) ON DELETE CASCADE,
+      name TEXT,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    );
+  `);
+}
+
+/** Called by /auth/start-trial when someone's first free trial started from a card link. */
+export async function recordSharedCardSignup(code: unknown, email: string, name: string): Promise<string | null> {
+  if (typeof code !== "string" || !CODE_RE.test(code)) return null;
+  const { rows } = await pool.query("SELECT sender_email, sender_name FROM shared_cards WHERE code = $1", [code]);
+  if (!rows.length || rows[0].sender_email === email) return null;
+  const { rowCount } = await pool.query(
+    "INSERT INTO shared_card_signups (email, code, name) VALUES ($1, $2, $3) ON CONFLICT (email) DO NOTHING", [email, code, name]);
+  if (!rowCount) return null;
+  const friend = firstName(name);
+  sendNotificationToUser(rows[0].sender_email, {
+    title: "Your card brought a friend!",
+    body: `${friend} just started a free trial of the WELL Collective from the card you sent. Thank you for sharing the love!`,
+    tag: "shared-card-signup",
+    url: "/tribe",
+  }).catch((err) => console.error("Shared card signup push (sender) failed:", err));
+  return rows[0].sender_name as string;
 }
 
 const firstName = (name: string) => (name || "").trim().split(/\s+/)[0] || "A friend";
@@ -128,18 +156,29 @@ router.get("/admin/cards/shared-stats", requireAdmin, async (_req, res) => {
              COALESCE(sum(try_taps), 0)::int AS try_taps,
              count(*) FILTER (WHERE try_taps > 0)::int AS cards_with_try,
              count(DISTINCT sender_email)::int AS senders,
-             count(*) FILTER (WHERE created_at > now() - interval '30 days')::int AS shared_30d
+             count(*) FILTER (WHERE created_at > now() - interval '30 days')::int AS shared_30d,
+             (SELECT count(*)::int FROM shared_card_signups) AS signups,
+             (SELECT count(*)::int FROM shared_card_signups s JOIN members m ON m.email = s.email
+               WHERE m.membership_status = 'active') AS paying
       FROM shared_cards`);
+    const { rows: joined } = await pool.query(`
+      SELECT s.name, s.created_at, c.sender_name, (m.membership_status = 'active') AS paying
+      FROM shared_card_signups s JOIN shared_cards c ON c.code = s.code
+      LEFT JOIN members m ON m.email = s.email
+      ORDER BY s.created_at DESC LIMIT 15`);
     const { rows: recent } = await pool.query(`
-      SELECT sender_name, to_name, occasion_id, opens, try_taps, created_at
-      FROM shared_cards ORDER BY created_at DESC LIMIT 15`);
+      SELECT c.sender_name, c.to_name, c.occasion_id, c.opens, c.try_taps, c.created_at,
+             (SELECT count(*)::int FROM shared_card_signups s WHERE s.code = c.code) AS signups
+      FROM shared_cards c ORDER BY c.created_at DESC LIMIT 15`);
     const { rows: top } = await pool.query(`
-      SELECT sender_name, sender_email, count(*)::int AS shared, COALESCE(sum(try_taps), 0)::int AS try_taps
-      FROM shared_cards GROUP BY sender_name, sender_email ORDER BY shared DESC LIMIT 5`);
+      SELECT c.sender_name, c.sender_email, count(*)::int AS shared, COALESCE(sum(c.try_taps), 0)::int AS try_taps,
+             (SELECT count(*)::int FROM shared_card_signups s JOIN shared_cards c2 ON c2.code = s.code WHERE c2.sender_email = c.sender_email) AS signups
+      FROM shared_cards c GROUP BY c.sender_name, c.sender_email ORDER BY signups DESC, shared DESC LIMIT 5`);
     res.json({
       totals: t,
-      recent: recent.map((r) => ({ senderName: r.sender_name, toName: r.to_name, occasionId: r.occasion_id, opens: r.opens, tryTaps: r.try_taps, createdAt: new Date(r.created_at).toISOString() })),
-      topSharers: top.map((r) => ({ name: r.sender_name, shared: r.shared, tryTaps: r.try_taps })),
+      recent: recent.map((r) => ({ senderName: r.sender_name, toName: r.to_name, occasionId: r.occasion_id, opens: r.opens, tryTaps: r.try_taps, signups: r.signups, createdAt: new Date(r.created_at).toISOString() })),
+      joined: joined.map((r) => ({ name: r.name, senderName: r.sender_name, paying: !!r.paying, createdAt: new Date(r.created_at).toISOString() })),
+      topSharers: top.map((r) => ({ name: r.sender_name, shared: r.shared, tryTaps: r.try_taps, signups: r.signups })),
     });
   } catch (err) {
     console.error("Shared card stats error:", err);
