@@ -1230,10 +1230,19 @@ router.get("/admin/push-diagnostic/:email", requireAdmin, async (req, res) => {
       "SELECT endpoint, created_at FROM push_subscriptions WHERE user_email = $1 ORDER BY created_at DESC",
       [email]
     );
-    const appMember = await pool.query("SELECT name, membership_status, trial_ends_at::text FROM members WHERE email = $1", [email]);
+    const appMember = await pool.query("SELECT name, membership_status, trial_ends_at::text, notification_settings, notif_quiet_start, notif_quiet_end, timezone FROM members WHERE email = $1", [email]);
+    // Phone app registrations (iOS APNs / Android FCM), recent cards and in-app notices, to see why a push did not arrive.
+    const devices = await pool.query("SELECT platform, length(token) AS token_length, created_at FROM device_tokens WHERE user_email = $1 ORDER BY created_at DESC", [email]);
+    const cards = await pool.query(
+      "SELECT id, occasion_id, design_id, COALESCE(sender_name, sender_email) AS sender, created_at, opened_at FROM tribe_cards WHERE recipient_email = $1 ORDER BY created_at DESC LIMIT 5", [email]);
+    const notices = await pool.query(
+      "SELECT type, title, created_at, read_at FROM member_notifications WHERE member_email = $1 ORDER BY created_at DESC LIMIT 5", [email]);
     res.json({
       email,
       member: appMember.rows[0] ?? null,
+      devices: devices.rows,
+      recentCards: cards.rows,
+      recentNotices: notices.rows,
       subscriptionCount: rows.length,
       subscriptions: rows.map((r) => ({
         platform: r.endpoint.includes("fcm") || r.endpoint.includes("googleapis") ? "Android/Chrome" :
