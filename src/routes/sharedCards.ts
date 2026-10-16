@@ -126,6 +126,8 @@ router.get("/cards/shared/:code", async (req, res) => {
       card: {
         occasionId: r.occasion_id, designId: r.design_id, message: r.message, signature: r.signature,
         photo: count ? r.photo : null, senderName: r.sender_name, toName: r.to_name,
+        // Cards from Loretta herself say she created the WELL Collective, instead of "dances with".
+        fromLoretta: r.sender_email === "loretta@lorettabates.com",
       },
     });
   } catch (err) {
