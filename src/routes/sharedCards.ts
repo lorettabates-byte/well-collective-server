@@ -84,6 +84,9 @@ router.post("/cards/share", async (req, res) => {
   } else if (!allowed.includes(designId)) {
     return res.status(400).json({ error: "Unknown design" });
   }
+  if (photo && (!CARD_PHOTO_RE.test(photo) || photo.length > CARD_PHOTO_MAX_CHARS)) {
+    return res.status(400).json({ error: "That photo could not be used. Try a smaller one." });
+  }
   const sender = email.toLowerCase().trim();
   try {
     const { rows } = await pool.query("SELECT name FROM members WHERE email = $1", [sender]);
@@ -98,7 +101,7 @@ router.post("/cards/share", async (req, res) => {
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
       [code, sender, firstName(rows[0].name), (toName || "").trim().slice(0, 40) || null, occasionId, designId,
         (message || "").slice(0, CARD_MESSAGE_MAX), signature ? signature.trim().slice(0, CARD_SIGNATURE_MAX) : null,
-        designId === "photo" ? photo : null]
+        photo || null]
     );
     res.status(201).json({ code, url: SHARE_PAGE + code });
   } catch (err) {
@@ -126,7 +129,7 @@ router.get("/cards/shared/:code", async (req, res) => {
       card: {
         occasionId: r.occasion_id, designId: r.design_id, message: r.message, signature: r.signature,
         photo: count ? r.photo : null, senderName: r.sender_name, toName: r.to_name,
-        // Cards from Loretta herself say she created the WELL Collective, instead of "dances with".
+        // Cards from Loretta herself say she is the founder of the WELL Collective, instead of "dances with".
         fromLoretta: r.sender_email === "loretta@lorettabates.com",
       },
     });

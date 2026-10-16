@@ -457,9 +457,13 @@ router.post("/tribe/:memberId/card", async (req, res) => {
       return res.status(400).json({ error: "Unknown design" });
     }
   }
+  // A photo can also go inside a designed card (2026-10-16), so check it whatever the design.
+  if (photo && (!CARD_PHOTO_RE.test(photo) || photo.length > CARD_PHOTO_MAX_CHARS)) {
+    return res.status(400).json({ error: "That photo could not be used. Try a smaller one." });
+  }
   const cleanMessage = (message || "").slice(0, CARD_MESSAGE_MAX);
   const cleanSignature = signature ? signature.trim().slice(0, CARD_SIGNATURE_MAX) : null;
-  const cleanPhoto = designId === "photo" ? photo! : null;
+  const cleanPhoto = designId && photo ? photo : null;
 
   try {
     const targetEmail = await findEmailByMemberId(req.params.memberId);
