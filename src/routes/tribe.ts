@@ -504,6 +504,26 @@ router.post("/tribe/:memberId/card", async (req, res) => {
   }
 });
 
+// Cards this member has not opened yet, newest first (the home screen "You have a card!" banner,
+// which works even when push notifications are off). Only names and occasions, never the card body.
+router.get("/tribe/cards-unopened", async (req, res) => {
+  const email = (req.query.email as string | undefined)?.toLowerCase();
+  if (!email) return res.status(400).json({ error: "email required" });
+  try {
+    const { rows } = await pool.query(
+      `SELECT c.id, c.occasion_id, COALESCE(c.sender_name, sm.name, 'Loretta') AS sender_name, c.created_at
+       FROM tribe_cards c LEFT JOIN members sm ON sm.email = c.sender_email
+       WHERE c.recipient_email = $1 AND c.opened_at IS NULL
+       ORDER BY c.created_at DESC LIMIT 10`,
+      [email]
+    );
+    res.json({ cards: rows.map((r) => ({ id: Number(r.id), occasionId: r.occasion_id, senderName: r.sender_name, createdAt: iso(r.created_at) })) });
+  } catch (err) {
+    console.error("Unopened cards error:", err);
+    res.status(500).json({ error: "Failed to load cards" });
+  }
+});
+
 // Open a received card. Only the sender or recipient can fetch the card body.
 router.get("/tribe/cards/:cardId", async (req, res) => {
   const email = (req.query.email as string | undefined)?.toLowerCase();
