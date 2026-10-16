@@ -412,12 +412,12 @@ router.post("/tribe/:memberId/cheer", async (req, res) => {
 // Card designs a member can send (mirrors the approved cards in the app's
 // src/data/cardArt.ts). The welcome occasion is only ever sent by the server.
 const CARD_DESIGNS: Record<string, string[]> = {
-  birthday: ["b-shapes", "b-clay", "b-copper"],
-  "thinking-of-you": ["t-clay", "t-bloom", "t-night"],
-  "just-saying-hi": ["h-shapes", "h-clay", "h-bloom"],
-  condolences: ["c-clay", "c-copper", "c-drop"],
-  "youve-got-this": ["g-bloom", "g-shapes", "g-crown"],
-  congratulations: ["k-shapes", "k-copper", "k-clay"],
+  birthday: ["b-shapes", "b-clay", "b-copper", "b-bloom", "b-cheers"],
+  "thinking-of-you": ["t-clay", "t-bloom", "t-night", "t-copper", "t-shapes"],
+  "just-saying-hi": ["h-shapes", "h-clay", "h-bloom", "h-copper", "h-hola"],
+  condolences: ["c-clay", "c-copper", "c-drop", "c-night", "c-blush"],
+  "youve-got-this": ["g-bloom", "g-shapes", "g-crown", "g-clay", "g-fierce"],
+  congratulations: ["k-shapes", "k-copper", "k-clay", "k-yay", "k-medal"],
 };
 const CARD_MESSAGE_MAX = 220;
 const CARD_SIGNATURE_MAX = 40;

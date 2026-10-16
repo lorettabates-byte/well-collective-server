@@ -9,8 +9,7 @@ import { sendDay3EmailBlast } from "../scheduler";
 import { deriveMemberId, findEmailByMemberId } from "../utils/memberUtils";
 import {
   ANNOUNCE_NOTE, lastWelcomeBroadcast, maybeSendWelcomeCard, planWelcomeBroadcast,
-  runWelcomeBroadcast, sendPendingWelcomeCard, welcomeBroadcastRunning,
-} from "../welcomeCard";
+  runWelcomeBroadcast, sendPendingWelcomeCard, welcomeBroadcastRunning, getWelcomeSchedule, saveWelcomeSchedule } from "../welcomeCard";
 
 const router = Router();
 
@@ -489,6 +488,20 @@ router.get("/admin/members", requireAdmin, async (_req, res) => {
 //   { "dryRun": false }                     -> sends, one at a time, in the background
 //   { "dryRun": false, "onlyEmail": "x@y" } -> test send to one person (admins allowed)
 // Members who already have a welcome card are always skipped (never twice).
+// Admin: see or change the scheduled welcome-card sends. Body {cancel:true} cancels what has not run;
+// {schedule:[{at, onlyEmail?}]} replaces the list.
+router.get("/admin/cards/welcome-schedule", requireAdmin, async (_req, res) => {
+  res.json({ schedule: await getWelcomeSchedule() });
+});
+router.post("/admin/cards/welcome-schedule", requireAdmin, async (req, res) => {
+  const { cancel, schedule } = req.body as { cancel?: boolean; schedule?: { at: string; onlyEmail?: string }[] };
+  let list = await getWelcomeSchedule();
+  if (cancel) list = list.map((s) => (s.done ? s : { ...s, cancelled: true }));
+  else if (Array.isArray(schedule)) list = schedule.filter((s) => s && !Number.isNaN(Date.parse(s.at))).map((s) => ({ at: new Date(s.at).toISOString(), onlyEmail: s.onlyEmail || undefined }));
+  await saveWelcomeSchedule(list);
+  res.json({ schedule: list });
+});
+
 router.post("/admin/cards/welcome-broadcast", requireAdmin, async (req, res) => {
   const { dryRun, onlyEmail } = req.body as { dryRun?: boolean; onlyEmail?: string };
   try {

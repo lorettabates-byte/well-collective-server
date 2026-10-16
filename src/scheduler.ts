@@ -23,6 +23,7 @@ import { umpMembershipState } from "./membership";
 import { isClassCancelled, processDueClassCancellationPushes } from "./classCancellations";
 import { awardPoints } from "./routes/points";
 import { addMembersToLorettasTribe } from "./lorettaTribe";
+import { runDueWelcomeSends } from "./welcomeCard";
 import { TIMEZONE, CRON_TIMEZONE, todayInTimezone, addDays, SQL_DAY_START, SQL_MONTH_START, SQL_YEAR_START } from "./dateUtils";
 // scheduledNotifications import removed — it duplicated content-driven sends
 
@@ -1070,6 +1071,11 @@ async function sendPersonalizedWellChecks(): Promise<void> {
 }
 
 export function startScheduler(): void {
+  // Scheduled welcome-card sends (test to Loretta, then everyone): checked every 5 minutes.
+  cron.schedule("*/5 * * * *", () => {
+    runDueWelcomeSends().catch((err) => console.error("Scheduled welcome card send failed:", err));
+  });
+
   // Everyone joins Loretta's WELL Tribe the day after they join: daily at 10:00am.
   cron.schedule("0 10 * * *", () => {
     addMembersToLorettasTribe().catch((err) => console.error("Loretta tribe add failed:", err));

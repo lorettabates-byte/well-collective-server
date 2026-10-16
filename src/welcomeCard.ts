@@ -177,3 +177,37 @@ export async function lastWelcomeBroadcast(): Promise<unknown> {
   if (!raw) return null;
   try { return JSON.parse(raw); } catch { return raw; }
 }
+
+/* ---------- Scheduled sends (Loretta, 2026-10-16: test to her Thursday, everyone Friday) ---------- */
+export interface ScheduledWelcomeSend { at: string; onlyEmail?: string; done?: string; cancelled?: boolean }
+const SCHEDULE_KEY = "welcome-broadcast-schedule";
+// First schedule, used until it is changed through the admin route: 9:00 AM ET Thu Oct 22 (test to Loretta),
+// 10:00 AM ET Fri Oct 23, 2026 (all current members).
+const DEFAULT_SCHEDULE: ScheduledWelcomeSend[] = [
+  { at: "2026-10-22T13:00:00Z", onlyEmail: "loretta@lorettabates.com" },
+  { at: "2026-10-23T14:00:00Z" },
+];
+
+export async function getWelcomeSchedule(): Promise<ScheduledWelcomeSend[]> {
+  const raw = await getFlag(SCHEDULE_KEY).catch(() => null);
+  if (!raw) return DEFAULT_SCHEDULE.map((s) => ({ ...s }));
+  try { return JSON.parse(raw) as ScheduledWelcomeSend[]; } catch { return []; }
+}
+
+export async function saveWelcomeSchedule(list: ScheduledWelcomeSend[]): Promise<void> {
+  await setFlag(SCHEDULE_KEY, JSON.stringify(list));
+}
+
+/** Runs from the scheduler every 5 minutes: sends whatever is due, once. */
+export async function runDueWelcomeSends(): Promise<void> {
+  if (welcomeBroadcastRunning()) return;
+  const list = await getWelcomeSchedule();
+  const now = Date.now();
+  const due = list.find((s) => !s.done && !s.cancelled && Date.parse(s.at) <= now && now - Date.parse(s.at) < 36 * 3600 * 1000);
+  if (!due) return;
+  due.done = new Date().toISOString();
+  await saveWelcomeSchedule(list); // mark first so a restart never sends twice
+  const plan = await planWelcomeBroadcast(due.onlyEmail);
+  console.log(`[WELCOME BROADCAST] scheduled send for ${due.at}: ${plan.recipients.length} members${due.onlyEmail ? ` (only ${due.onlyEmail})` : ""}`);
+  await runWelcomeBroadcast(plan.recipients);
+}
