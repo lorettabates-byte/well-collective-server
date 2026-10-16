@@ -22,6 +22,7 @@ import { addTrialContactToBrevo, moveTrialContactToCompleted, sendMidTrialEmail,
 import { umpMembershipState } from "./membership";
 import { isClassCancelled, processDueClassCancellationPushes } from "./classCancellations";
 import { awardPoints } from "./routes/points";
+import { addMembersToLorettasTribe } from "./lorettaTribe";
 import { TIMEZONE, CRON_TIMEZONE, todayInTimezone, addDays, SQL_DAY_START, SQL_MONTH_START, SQL_YEAR_START } from "./dateUtils";
 // scheduledNotifications import removed — it duplicated content-driven sends
 
@@ -1069,6 +1070,11 @@ async function sendPersonalizedWellChecks(): Promise<void> {
 }
 
 export function startScheduler(): void {
+  // Everyone joins Loretta's WELL Tribe the day after they join: daily at 10:00am.
+  cron.schedule("0 10 * * *", () => {
+    addMembersToLorettasTribe().catch((err) => console.error("Loretta tribe add failed:", err));
+  }, { timezone: CRON_TIMEZONE });
+
   // AI content generation (motivation boost, recipe, nutrition tip): every day
   // at 5:30am, tops up the next 7 days of content (not just today) so admins
   // have a week of lead time to preview/edit in the admin panel before
