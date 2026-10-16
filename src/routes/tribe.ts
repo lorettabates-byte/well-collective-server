@@ -418,6 +418,7 @@ export const CARD_DESIGNS: Record<string, string[]> = {
   condolences: ["c-clay", "c-copper", "c-drop", "c-night", "c-blush"],
   "youve-got-this": ["g-bloom", "g-shapes", "g-crown", "g-clay", "g-fierce"],
   congratulations: ["k-shapes", "k-copper", "k-clay", "k-yay", "k-medal"],
+  "thank-you": ["ty-disco", "ty-latte", "ty-repeat", "ty-stamp", "ty-bouquet"],
 };
 export const CARD_MESSAGE_MAX = 220;
 export const CARD_SIGNATURE_MAX = 40;
