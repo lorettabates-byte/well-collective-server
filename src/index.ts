@@ -13,6 +13,7 @@ import forumRouter from "./routes/forum";
 import inspirationReactionsRouter from "./routes/inspirationReactions";
 import liveEventNotificationsRouter from "./routes/live-event-notifications";
 import membersRouter from "./routes/members";
+import sharedCardsRouter, { ensureSharedCardsTable } from "./routes/sharedCards";
 import membershipRouter from "./routes/membership";
 import messagesRouter from "./routes/messages";
 import mealsRouter from "./routes/meals";
@@ -126,10 +127,12 @@ app.use("/api/sso", ssoRouter);
 app.use("/api", pixabayRouter);
 app.use("/api", membershipMovementRouter);
 app.use("/api", ownerAlertsRouter);
+app.use("/api", sharedCardsRouter);
 
 async function main() {
   await initDb();
   await ensureMembershipTables();
+  await ensureSharedCardsTable();
   startScheduler();
   scheduleTimezoneNotifications();
   app.listen(PORT, () => {

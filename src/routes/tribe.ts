@@ -411,7 +411,7 @@ router.post("/tribe/:memberId/cheer", async (req, res) => {
 
 // Card designs a member can send (mirrors the approved cards in the app's
 // src/data/cardArt.ts). The welcome occasion is only ever sent by the server.
-const CARD_DESIGNS: Record<string, string[]> = {
+export const CARD_DESIGNS: Record<string, string[]> = {
   birthday: ["b-shapes", "b-clay", "b-copper", "b-bloom", "b-cheers"],
   "thinking-of-you": ["t-clay", "t-bloom", "t-night", "t-copper", "t-shapes"],
   "just-saying-hi": ["h-shapes", "h-clay", "h-bloom", "h-copper", "h-hola"],
@@ -419,11 +419,11 @@ const CARD_DESIGNS: Record<string, string[]> = {
   "youve-got-this": ["g-bloom", "g-shapes", "g-crown", "g-clay", "g-fierce"],
   congratulations: ["k-shapes", "k-copper", "k-clay", "k-yay", "k-medal"],
 };
-const CARD_MESSAGE_MAX = 220;
-const CARD_SIGNATURE_MAX = 40;
+export const CARD_MESSAGE_MAX = 220;
+export const CARD_SIGNATURE_MAX = 40;
 // A 900px JPEG at 0.8 is usually 80-200 KB; leave room but refuse anything huge.
-const CARD_PHOTO_MAX_CHARS = 700_000;
-const CARD_PHOTO_RE = /^data:image\/(jpeg|png|webp);base64,[A-Za-z0-9+/=]+$/;
+export const CARD_PHOTO_MAX_CHARS = 700_000;
+export const CARD_PHOTO_RE = /^data:image\/(jpeg|png|webp);base64,[A-Za-z0-9+/=]+$/;
 
 // Send a card to any WELL Collective member (not only the sender's tribe).
 // Older app versions send { occasionId, styleId, message }; the new card
